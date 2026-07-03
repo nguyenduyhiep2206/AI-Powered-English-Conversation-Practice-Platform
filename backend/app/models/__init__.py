@@ -1,0 +1,69 @@
+# Import order:
+#   1. enums       — no dependencies
+#   2. user        — no FK deps (other tables point TO users)
+#   3. auth        — depends on users
+#   4. profile     — depends on users
+#   5. scenario    — no user FK at model level, but user_progress does
+#   6. chat        — depends on users + scenarios
+#   7. vocabulary  — depends on users + chat_sessions
+#   8. gamification— depends on users
+#
+# Every model must be imported here so SQLAlchemy's mapper registry can
+# resolve string-based relationship targets before init_db() runs.
+
+from app.models.enums import *
+
+from app.models.user import UserDB
+
+from app.models.auth import (
+    RoleDB,
+    PermissionDB,
+    RefreshTokenDB,
+    user_roles_table,
+    role_permissions_table,
+)
+
+from app.models.profile import UserProfileDB
+
+from app.models.scenario import (
+    ScenarioDB,
+    RoadmapStepDB,
+    UserProgressDB,
+)
+
+from app.models.chat import (
+    ChatSessionDB,
+    ChatMessageDB,
+)
+
+from app.models.vocabulary import (
+    VocabularyBankDB,
+    StoryVocabSelectionDB,
+    StoryVocabItemDB,
+    StoryExerciseDB,
+    StoryAnswerDB,
+)
+
+from app.models.gamification import (
+    QuizSessionDB,
+    UserStreakDB,
+    UserBadgeDB,
+    NotificationDB,
+)
+
+__all__ = [
+    # Auth & RBAC
+    "UserDB", "RoleDB", "PermissionDB", "RefreshTokenDB",
+    "user_roles_table", "role_permissions_table",
+    # Profile & Onboarding
+    "UserProfileDB",
+    # Scenario & Roadmap
+    "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
+    # Chat
+    "ChatSessionDB", "ChatMessageDB",
+    # Vocabulary & Story
+    "VocabularyBankDB", "StoryVocabSelectionDB", "StoryVocabItemDB",
+    "StoryExerciseDB", "StoryAnswerDB",
+    # Gamification
+    "QuizSessionDB", "UserStreakDB", "UserBadgeDB", "NotificationDB",
+]
