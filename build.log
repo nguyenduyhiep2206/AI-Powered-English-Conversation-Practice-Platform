@@ -1,0 +1,31 @@
+--progress is a global compose flag, better use `docker compose --progress xx build ...
+ Image fastapi-frontend Building 
+#1 [internal] load local bake definitions
+#1 reading from stdin 990B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile.dev
+#2 transferring dockerfile: 275B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/node:20-alpine
+#3 DONE 1.9s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [1/5] FROM docker.io/library/node:20-alpine@sha256:fb4cd12c85ee03686f6af5362a0b0d56d50c58a04632e6c0fb8363f609372293
+#5 DONE 0.0s
+
+#6 [2/5] WORKDIR /app
+#6 CACHED
+
+#7 [internal] load build context
+#7 transferring context: 2.85MB 1.0s done
+#7 DONE 1.1s
+
+#8 [3/5] COPY package.json package-lock.json ./
+#8 DONE 0.0s
+
+#9 [4/5] RUN npm install
