@@ -77,7 +77,7 @@ export default function GoogleSignInButton() {
           return;
         }
 
-        router.push("/dashboard");
+        router.replace("/start-onboarding");
         router.refresh();
       } catch (err) {
         console.error("Error connecting when signing in with Google", err);

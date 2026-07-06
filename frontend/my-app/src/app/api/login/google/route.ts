@@ -21,7 +21,7 @@ export async function POST(request: NextRequest) {
   try {
     const { credential } = await request.json();
 
-    const res = await fetch(`${API_URL}/google`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/google`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ credential }),

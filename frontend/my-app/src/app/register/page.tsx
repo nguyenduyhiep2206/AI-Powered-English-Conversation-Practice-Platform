@@ -83,7 +83,7 @@ export default function RegisterPage() {
         return;
       }
 
-      router.push("/onboarding");
+      router.replace("/start-onboarding");
     } catch (err) {
       setError("Unable to connect to the server");
     } finally {
@@ -94,7 +94,7 @@ export default function RegisterPage() {
   return (
     <div className="dark min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen md:grid-cols-2">
-        <div className="relative hidden md:flex flex-col justify-between border-r border-border bg-sidebar p-10">
+        <div className="relative hidden md:flex flex-col justify-between border-r border-border bg-sidebar px-6 py-4">
           <div className="flex items-center gap-2">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
               <span className="font-display text-xl leading-none">E</span>

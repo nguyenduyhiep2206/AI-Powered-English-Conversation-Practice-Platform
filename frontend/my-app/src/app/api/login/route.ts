@@ -10,7 +10,7 @@ export async function POST(request: NextRequest) {
       password: body.password,
     };
 
-    const res = await fetch(`${API_URL}/login`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/login`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

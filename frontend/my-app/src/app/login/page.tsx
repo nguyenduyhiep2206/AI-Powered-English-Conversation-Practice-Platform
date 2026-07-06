@@ -55,7 +55,7 @@ export default function LoginPage() {
       }
 
       // Login successful -> redirect
-      router.push("/register");
+      router.replace("/start-onboarding");
       router.refresh();
     } catch (err) {
       setError("Unable to connect to the server");
@@ -68,7 +68,7 @@ export default function LoginPage() {
     <div className="dark min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen md:grid-cols-2">
         {/* Brand panel */}
-        <div className="relative hidden md:flex flex-col justify-between border-r border-border bg-sidebar p-10">
+        <div className="relative hidden md:flex flex-col justify-between border-r border-border bg-sidebar px-6 py-4">
           <div className="flex items-center gap-2">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-primary-foreground">
               <span className="font-display text-xl leading-none">E</span>

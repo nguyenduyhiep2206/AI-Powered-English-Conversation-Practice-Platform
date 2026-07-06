@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json(); // { name, username, email, password }
 
-    const res = await fetch(`${API_URL}/register`, {
+    const res = await fetch(`${API_URL}/api/v1/auth/register`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
