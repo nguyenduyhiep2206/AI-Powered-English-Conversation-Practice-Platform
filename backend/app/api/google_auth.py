@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Response, status
 from sqlalchemy import select
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 @router.post("/google", response_model=Token)
-async def google_login( payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db), r: redis.Redis = Depends(get_redis)):
+async def google_login(response: Response, payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db), r: redis.Redis = Depends(get_redis)):
     # Verify token with Google -> ensure the token is genuine and not tampered with
     try:
         idinfo = await run_in_threadpool(
@@ -84,8 +84,16 @@ async def google_login( payload: GoogleLoginRequest, db: AsyncSession = Depends(
         refresh_token,
     )
 
+    response.set_cookie(
+        key="refresh_token",
+        value=refresh_token,
+        httponly=True,
+        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        samesite="lax",
+        secure=not settings.DEBUG,
+    )
+
     return {
         "access_token": access_token,
-        "refresh_token": refresh_token,
         "token_type": "bearer",
     }

@@ -3,14 +3,10 @@ from typing import Optional
 
 class Token(BaseModel):
     access_token: str
-    refresh_token: Optional[str] = None
     token_type: str
 
 class Token_data(BaseModel):
     user_id: Optional[str] = None
-
-class RefreshRequest(BaseModel):
-    refresh_token: str
 
 class LoginRequest(BaseModel):
     identifier: str
@@ -18,3 +14,20 @@ class LoginRequest(BaseModel):
 
 class GoogleLoginRequest(BaseModel):
     credential: str # ID token received from Google Sign-In
+
+
+class MeData(BaseModel):
+    id: int
+    username: str
+    email: str
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    is_active: bool
+    auth_provider: str
+    roles: list[str]
+    permissions: list[str]
+
+
+class MeResponse(BaseModel):
+    success: bool
+    data: MeData

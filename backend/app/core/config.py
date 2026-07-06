@@ -27,5 +27,10 @@ class Settings(BaseSettings):
     REDIS_PORT: int
     REDIS_DB: int = 0
 
+    PERMISSION_CACHE_TTL_SECONDS: int
+
+    # CORS
+    FRONTEND_URL: str
+
 
 settings = Settings()

@@ -1,10 +1,13 @@
 from sqlalchemy import select
 from app.core.database import get_db
+from app.core.redis import get_redis
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.user import UserDB
+from redis import asyncio as redis
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.user_schema import User, UpdateUser, UserResponse
-from app.api.auth import get_current_active_user
+from app.api.deps import get_current_active_user, require_permission
+from app.services.rbac_service import assign_role_to_user
 
 
 router = APIRouter()
@@ -15,11 +18,28 @@ async def read_user_me(current_user: UserDB = Depends(get_current_active_user)):
     return current_user
 
 
-@router.get("/users/all", response_model=list[UserResponse])
-async def read_all_user(db: AsyncSession = Depends(get_db), current_user: UserDB = Depends(get_current_active_user)):
+@router.get("/users/all", response_model=list[UserResponse], dependencies=[Depends(require_permission("report:view_all"))])
+async def read_all_user(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(UserDB))
     users = result.scalars().all()
     return users
+
+
+@router.post("/users/{user_id}/roles/{role_name}", dependencies=[Depends(require_permission("report:view_all"))],)
+async def assign_user_role(user_id: int, role_name: str, db: AsyncSession = Depends(get_db), r: redis.Redis = Depends(get_redis)):
+    try:
+        await assign_role_to_user(db=db, r=r, user_id=user_id, role_name=role_name)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    return {
+        "success": True,
+        "data": {
+            "user_id": user_id,
+            "role_name": role_name,
+            "message": "Role assigned and permission cache invalidated",
+        },
+    }
     
     
 @router.put("/users/me", response_model=UserResponse)

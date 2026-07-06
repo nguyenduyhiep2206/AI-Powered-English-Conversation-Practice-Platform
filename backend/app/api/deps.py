@@ -11,6 +11,7 @@ from app.core.security import security
 from app.models.user import UserDB
 from app.schemas.auth_schema import Token_data
 from app.services.auth_service import _get_user_by_id
+from app.services.rbac_service import user_has_permission
 
 def _build_credentials_exception() -> HTTPException:
     return HTTPException(
@@ -76,3 +77,22 @@ class RoleChecker:
             return current_user
 
         raise HTTPException(status_code=403, detail="Operation not permitted")
+
+
+def require_permission(code: str):
+    async def permission_dependency(
+        current_user: UserDB = Depends(get_current_active_user),
+        db: AsyncSession = Depends(get_db),
+        r: redis.Redis = Depends(get_redis),
+    ) -> UserDB:
+        is_allowed = await user_has_permission(
+            db=db,
+            r=r,
+            user_id=int(current_user.id),
+            permission_code=code,
+        )
+        if not is_allowed:
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
+        return current_user
+
+    return permission_dependency
