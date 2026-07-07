@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import get_db
 from app.core.redis import get_redis
+from app.utils.auth_cookies import set_refresh_token_cookie
 from app.utils.jwt_handler import create_access_token, create_refresh_token
 from app.models.user import UserDB
 from app.schemas.auth_schema import GoogleLoginRequest, Token
@@ -84,14 +85,7 @@ async def google_login(response: Response, payload: GoogleLoginRequest, db: Asyn
         refresh_token,
     )
 
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
-        samesite="lax",
-        secure=not settings.DEBUG,
-    )
+    set_refresh_token_cookie(response, refresh_token)
 
     return {
         "access_token": access_token,

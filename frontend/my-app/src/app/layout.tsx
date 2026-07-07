@@ -1,5 +1,6 @@
 // app/layout.tsx ← ĐÚNG
 import type { Metadata } from "next";
+import { AuthSessionRefresh } from "@/components/AuthSessionRefresh";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -14,7 +15,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <AuthSessionRefresh />
+        {children}
+      </body>
     </html>
   );
 }

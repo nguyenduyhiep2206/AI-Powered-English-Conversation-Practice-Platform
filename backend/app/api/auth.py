@@ -15,6 +15,7 @@ from app.models.auth import RoleDB
 from app.models.user import UserDB
 from app.schemas.auth_schema import LoginRequest, MeResponse, Token
 from app.schemas.user_schema import UserCreate
+from app.utils.auth_cookies import clear_refresh_token_cookie, set_refresh_token_cookie
 from app.utils.jwt_handler import create_access_token, create_refresh_token
 from app.utils.password_hash import get_password_hash
 from app.api.deps import get_current_active_user
@@ -43,15 +44,7 @@ async def login(response: Response, payload: LoginRequest, db: AsyncSession = De
     refresh_token = create_refresh_token(data={"sub": str(user.id)}, expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS))
     
     await r.setex(name=f"refresh_token:{user.id}", time=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600, value=refresh_token)
-
-    response.set_cookie(
-        key="refresh_token",
-        value=refresh_token,
-        httponly=True,
-        max_age=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
-        samesite="lax",
-        secure=not settings.DEBUG,
-    )
+    set_refresh_token_cookie(response, refresh_token)
 
     return {"access_token": access_token, "token_type": "bearer"}
 
@@ -97,7 +90,7 @@ async def logout(response: Response, current_user: UserDB = Depends(get_current_
     try:
         await r.setex(name=f"blocklist:{token}", time=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60, value="logout")
         await r.delete(f"refresh_token:{current_user.id}")
-        response.delete_cookie(key="refresh_token")
+        clear_refresh_token_cookie(response)
         return {"message": "Successfully logged out"}
     except Exception:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
@@ -132,6 +125,7 @@ async def me(
 
 @router.post("/token/refresh", response_model=Token)
 async def refresh_token(
+    response: Response,
     r: redis.Redis = Depends(get_redis),
     token: Optional[str] = Cookie(None, alias="refresh_token"),
 ):
@@ -155,7 +149,21 @@ async def refresh_token(
         raise credentials_exception
 
     await invalidate_user_permissions_cache(user_id=int(user_id), r=r)
-    
-    new_access_token = create_access_token(data={"sub": user_id}, expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES))
-    
+
+    new_access_token = create_access_token(
+        data={"sub": user_id},
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    new_refresh_token = create_refresh_token(
+        data={"sub": user_id},
+        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+
+    await r.setex(
+        name=f"refresh_token:{user_id}",
+        time=settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
+        value=new_refresh_token,
+    )
+    set_refresh_token_cookie(response, new_refresh_token)
+
     return {"access_token": new_access_token, "token_type": "bearer"}

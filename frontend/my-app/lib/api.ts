@@ -1,7 +1,7 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
-const ACCESS_TOKEN_MAX_AGE_SECONDS =
-  (Number(process.env.NEXT_PUBLIC_ACCESS_TOKEN_EXPIRE_MINUTES) || 30) * 60;
+const REFRESH_TOKEN_MAX_AGE_SECONDS =
+  (Number(process.env.NEXT_PUBLIC_REFRESH_TOKEN_EXPIRE_DAYS) || 7) * 24 * 3600;
 
 function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error || typeof error !== "object") return fallback;
@@ -76,10 +76,10 @@ export async function authFetch(
   return res;
 }
 
-/** Set access token cookie on the frontend domain (for middleware route guards). */
+/** Keep cookie until refresh token expires so middleware can detect a restorable session. */
 export function setTokenCookie(accessToken: string): void {
   if (typeof document === "undefined") return;
-  document.cookie = `token=${accessToken}; path=/; max-age=${ACCESS_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
+  document.cookie = `token=${accessToken}; path=/; max-age=${REFRESH_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
 }
 
 export function clearTokenCookie(): void {

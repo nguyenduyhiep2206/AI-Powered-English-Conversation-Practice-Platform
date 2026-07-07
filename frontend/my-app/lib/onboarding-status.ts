@@ -1,13 +1,31 @@
-export type OnboardingStatus = "not_started" | "in_progress" | "completed" | "skipped";
+import { authFetch } from "@/lib/api";
 
-const KEY = "ef:onboarding-status";
+export type OnboardingStep = "survey" | "placement" | "completed";
 
-export function getOnboardingStatus(): OnboardingStatus {
-  if (typeof window === "undefined") return "not_started";
-  return (localStorage.getItem(KEY) as OnboardingStatus | null) ?? "not_started";
-}
+export type OnboardingStatusPayload = {
+  survey_done: boolean;
+  placement_done: boolean;
+  onboarding_complete: boolean;
+  current_step: OnboardingStep;
+  occupation?: string | null;
+  goal?: string | null;
+  weak_point?: string | null;
+  daily_time_min?: number | null;
+  current_level?: string | null;
+  placement_score?: number | null;
+};
 
-export function setOnboardingStatus(status: OnboardingStatus) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(KEY, status);
+export type OnboardingStatusResponse = {
+  success: boolean;
+  data: OnboardingStatusPayload;
+};
+
+/** Client: fetch onboarding status from backend (requires auth cookie). */
+export async function fetchOnboardingStatus(): Promise<OnboardingStatusPayload> {
+  const res = await authFetch("/api/v1/onboarding/status");
+  if (!res.ok) {
+    throw new Error("Failed to load onboarding status");
+  }
+  const body = (await res.json()) as OnboardingStatusResponse;
+  return body.data;
 }
