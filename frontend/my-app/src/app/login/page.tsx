@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import GoogleSignInButton from "@/components/ui/GoogleSignInButton";
+import { login } from "@/lib/api";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -41,24 +42,11 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      const res = await fetch("/api/login", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.message || "Email or password is incorrect");
-        return;
-      }
-
-      // Login successful -> redirect
+      await login(email, password);
       router.replace("/start-onboarding");
       router.refresh();
     } catch (err) {
-      setError("Unable to connect to the server");
+      setError(err instanceof Error ? err.message : "Unable to connect to the server");
     } finally {
       setLoading(false);
     }

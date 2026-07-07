@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import LogoutButton from "@/components/ui/LogoutButton";
 import { getOnboardingStatus, type OnboardingStatus } from "@/lib/onboarding-status";
 
 export default function StartOnboardingPage() {
@@ -66,9 +67,16 @@ export default function StartOnboardingPage() {
             </div>
             <span className="font-semibold tracking-tight text-white">EnglishFlow</span>
           </Link>
-          <Link href="/dashboard" className="text-sm text-muted-foreground hover:text-foreground">
-            Skip for now
-          </Link>
+          <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/40 p-1 backdrop-blur-sm">
+            <Link
+              href="/dashboard"
+              className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
+            >
+              Skip for now
+            </Link>
+            <div className="mx-0.5 h-4 w-px bg-border/70" aria-hidden />
+            <LogoutButton />
+          </div>
         </div>
       </header>
 

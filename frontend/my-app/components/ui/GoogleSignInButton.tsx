@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { googleLogin } from "@/lib/api";
 
 declare global {
   interface Window {
@@ -66,17 +67,7 @@ export default function GoogleSignInButton() {
 
     async function handleCredentialResponse(response: { credential: string }) {
       try {
-        const res = await fetch("/api/login/google", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ credential: response.credential }),
-        });
-
-        if (!res.ok) {
-          console.error("Sign in with Google failed");
-          return;
-        }
-
+        await googleLogin(response.credential);
         router.replace("/start-onboarding");
         router.refresh();
       } catch (err) {

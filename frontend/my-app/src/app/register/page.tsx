@@ -9,6 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, ArrowRight, Check, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { register } from "@/lib/api";
 
 function strength(pw: string) {
   let s = 0;
@@ -70,22 +71,11 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ full_name: name, username, email, password: pw }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setError(data.message || "Registration failed");
-        return;
-      }
-
+      await register({ full_name: name, username, email, password: pw });
       router.replace("/start-onboarding");
+      router.refresh();
     } catch (err) {
-      setError("Unable to connect to the server");
+      setError(err instanceof Error ? err.message : "Unable to connect to the server");
     } finally {
       setLoading(false);
     }
