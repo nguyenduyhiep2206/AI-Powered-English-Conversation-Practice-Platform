@@ -25,6 +25,10 @@ from app.models.auth import (
 
 from app.models.profile import UserProfileDB
 
+from app.models.survey import SurveyQuestionDB
+
+from app.models.book import BookDB
+
 from app.models.scenario import (
     ScenarioDB,
     RoadmapStepDB,
@@ -56,7 +60,7 @@ __all__ = [
     "UserDB", "RoleDB", "PermissionDB", "RefreshTokenDB",
     "user_roles_table", "role_permissions_table",
     # Profile & Onboarding
-    "UserProfileDB",
+    "UserProfileDB", "SurveyQuestionDB", "BookDB",
     # Scenario & Roadmap
     "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
     # Chat

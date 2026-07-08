@@ -58,3 +58,6 @@ asyncpg
 google-auth==2.41.1
 google-auth-oauthlib==1.2.3
 google-api-python-client==2.176.0
+pypdf==5.4.0
+pymongo==4.12.0
+cloudinary==1.44.0

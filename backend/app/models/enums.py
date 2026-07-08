@@ -40,6 +40,16 @@ goal_enum       = SAEnum(GoalEnum, name="goal_enum", create_type=True)
 weak_point_enum = SAEnum(WeakPointEnum, name="weak_point_enum", create_type=True)
 
 
+class SurveyQuestionTypeEnum(str, enum.Enum):
+    single_choice = "single_choice"
+    text = "text"
+
+
+survey_question_type_enum = SAEnum(
+    SurveyQuestionTypeEnum, name="survey_question_type_enum", create_type=True
+)
+
+
 # Scenario
 class ScenarioCategoryEnum(str, enum.Enum):
     job_interview   = "job_interview"
@@ -141,3 +151,14 @@ class NotificationTypeEnum(str, enum.Enum):
 
 
 notification_type_enum = SAEnum(NotificationTypeEnum, name="notification_type_enum", create_type=True)
+
+
+# Book (admin PDF uploads)
+class BookStatusEnum(str, enum.Enum):
+    uploaded = "uploaded"
+    processing = "processing"
+    ready = "ready"
+    failed = "failed"
+
+
+book_status_enum = SAEnum(BookStatusEnum, name="book_status_enum", create_type=True)

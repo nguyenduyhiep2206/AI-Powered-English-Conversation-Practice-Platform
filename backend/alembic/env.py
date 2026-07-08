@@ -18,7 +18,12 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-config.set_main_option("sqlalchemy.url", settings.SQLALCHEMY_DATABASE_URL)
+def get_sync_database_url(url: str) -> str:
+    """Alembic needs a sync driver; app uses asyncpg."""
+    return url.replace("postgresql+asyncpg://", "postgresql+psycopg2://", 1)
+
+
+config.set_main_option("sqlalchemy.url", get_sync_database_url(settings.SQLALCHEMY_DATABASE_URL))
 
 # add your model's MetaData object here
 # for 'autogenerate' support

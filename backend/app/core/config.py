@@ -32,5 +32,18 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str
 
+    # Book uploads (stored on Cloudinary)
+    MAX_BOOK_UPLOAD_MB: int = 50
+
+    # Cloudinary
+    CLOUDINARY_CLOUD_NAME: str | None = None
+    CLOUDINARY_API_KEY: str | None = None
+    CLOUDINARY_API_SECRET: str | None = None
+    CLOUDINARY_BOOK_FOLDER: str = "books"
+
+    # MongoDB (optional until indexing pipeline is enabled)
+    MONGODB_URL: str | None = None
+    MONGODB_DB_NAME: str = "englishflow"
+
 
 settings = Settings()
