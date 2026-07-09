@@ -3,7 +3,7 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import BookStatusEnum, CEFRLevel
+from app.models.enums import BookStatusEnum, BookTypeEnum, CEFRLevel
 
 
 class BookAdmin(BaseModel):
@@ -11,6 +11,8 @@ class BookAdmin(BaseModel):
     title: str
     description: Optional[str] = None
     cefr_level: Optional[CEFRLevel] = None
+    book_type: BookTypeEnum
+    detection_method: Optional[str] = None
     file_path: str
     file_public_id: Optional[str] = None
     file_size: int
@@ -51,3 +53,4 @@ class BookUploadForm(BaseModel):
     title: str = Field(..., min_length=1, max_length=255)
     description: Optional[str] = Field(None, max_length=2000)
     cefr_level: Optional[CEFRLevel] = None
+    book_type: BookTypeEnum

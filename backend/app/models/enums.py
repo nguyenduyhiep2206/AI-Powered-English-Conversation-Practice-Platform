@@ -154,11 +154,20 @@ notification_type_enum = SAEnum(NotificationTypeEnum, name="notification_type_en
 
 
 # Book (admin PDF uploads)
+class BookTypeEnum(str, enum.Enum):
+    grammar_textbook = "grammar_textbook"
+    reading_practice = "reading_practice"
+    test_bank = "test_bank"
+    freeform = "freeform"
+
+
 class BookStatusEnum(str, enum.Enum):
     uploaded = "uploaded"
+    needs_review = "needs_review"
     processing = "processing"
     ready = "ready"
     failed = "failed"
 
 
+book_type_enum = SAEnum(BookTypeEnum, name="book_type_enum", create_type=True)
 book_status_enum = SAEnum(BookStatusEnum, name="book_status_enum", create_type=True)

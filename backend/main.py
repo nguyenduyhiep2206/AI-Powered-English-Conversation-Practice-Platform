@@ -1,9 +1,21 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
-from app.api import auth, user, google_auth
-from app.core.config import settings
 
-app = FastAPI()
+from app.api import auth, user, google_auth, onboarding, admin_survey, admin_books
+from app.core.config import settings
+from app.core.mongodb import connect_mongo, disconnect_mongo
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await connect_mongo()
+    yield
+    await disconnect_mongo()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -16,6 +28,9 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(google_auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(user.router, prefix="/api/v1", tags=["users"])
+app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboarding"])
+app.include_router(admin_survey.router, prefix="/api/v1/admin/survey", tags=["admin-survey"])
+app.include_router(admin_books.router, prefix="/api/v1/admin/books", tags=["admin-books"])
 
 
 @app.get("/ping", status_code=status.HTTP_200_OK)
