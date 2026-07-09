@@ -9,7 +9,8 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
 import GoogleSignInButton from "@/components/ui/GoogleSignInButton";
-import { login } from "@/lib/api";
+import { login, getMe } from "@/lib/api";
+import { resolvePostLoginPath, type MeResponse } from "@/lib/auth";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -43,7 +44,8 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.replace("/start-onboarding");
+      const me = (await getMe()) as MeResponse;
+      router.replace(resolvePostLoginPath(me.data));
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unable to connect to the server");
@@ -116,9 +118,6 @@ export default function LoginPage() {
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
                   <Label htmlFor="password">Password</Label>
-                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">
-                    Forgot password?
-                  </Link>
                 </div>
                 <div className="relative">
                   <Input
@@ -142,10 +141,15 @@ export default function LoginPage() {
                   <p className="text-xs text-destructive">{fieldErrors.password}</p>
                 )}
               </div>
-
-              <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                <Checkbox /> Remember me
-              </label>
+              <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                    <Checkbox /> Remember me
+                  </label>
+                  <Link href="/forgot-password" className="text-xs text-primary hover:underline">
+                    Forgot password?
+                  </Link>
+                </div>
+              
 
               <Button type="submit" className="w-full h-10 rounded-2xl" disabled={loading}>
                 {loading ? (

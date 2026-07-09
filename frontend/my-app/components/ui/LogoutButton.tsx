@@ -9,9 +9,9 @@ type LogoutButtonProps = {
 };
 
 export default function LogoutButton({ className }: LogoutButtonProps) {
-  function handleLogout(e: React.MouseEvent<HTMLButtonElement>) {
+  async function handleLogout(e: React.MouseEvent<HTMLButtonElement>) {
     e.preventDefault();
-    logout();
+    await logout();
   }
 
   return (

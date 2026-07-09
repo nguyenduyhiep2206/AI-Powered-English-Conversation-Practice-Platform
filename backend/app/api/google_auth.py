@@ -1,26 +1,30 @@
-from fastapi import APIRouter, Depends, HTTPException, Response, status
-from sqlalchemy import select
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from datetime import timedelta
-from redis import asyncio as redis
-from starlette.concurrency import run_in_threadpool
 import logging
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from starlette.concurrency import run_in_threadpool
+
 from app.core.config import settings
 from app.core.database import get_db
-from app.core.redis import get_redis
-from app.utils.auth_cookies import set_refresh_token_cookie
-from app.utils.jwt_handler import create_access_token, create_refresh_token
 from app.models.user import UserDB
 from app.schemas.auth_schema import GoogleLoginRequest, Token
+from app.services.refresh_token_service import issue_session_tokens
+from app.utils.auth_cookies import set_refresh_token_cookie
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
+
 @router.post("/google", response_model=Token)
-async def google_login(response: Response, payload: GoogleLoginRequest, db: AsyncSession = Depends(get_db), r: redis.Redis = Depends(get_redis)):
-    # Verify token with Google -> ensure the token is genuine and not tampered with
+async def google_login(
+    request: Request,
+    response: Response,
+    payload: GoogleLoginRequest,
+    db: AsyncSession = Depends(get_db),
+):
     try:
         idinfo = await run_in_threadpool(
             id_token.verify_oauth2_token,
@@ -45,7 +49,6 @@ async def google_login(response: Response, payload: GoogleLoginRequest, db: Asyn
             detail="Google email not verified",
         )
 
-    # Find user by email, if not found, create a new one (auto-register)
     result = await db.execute(select(UserDB).where(UserDB.email == email))
     user = result.scalar_one_or_none()
 
@@ -69,22 +72,7 @@ async def google_login(response: Response, payload: GoogleLoginRequest, db: Asyn
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Account is locked")
 
-    # Issue system JWT — same as regular login flow
-    access_token = create_access_token(
-        data={"sub": str(user.id)},
-        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
-    )
-    refresh_token = create_refresh_token(
-        data={"sub": str(user.id)},
-        expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
-    )
-
-    await r.setex(
-        f"refresh_token:{user.id}",
-        settings.REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600,
-        refresh_token,
-    )
-
+    access_token, refresh_token = await issue_session_tokens(db, int(user.id), request)
     set_refresh_token_cookie(response, refresh_token)
 
     return {

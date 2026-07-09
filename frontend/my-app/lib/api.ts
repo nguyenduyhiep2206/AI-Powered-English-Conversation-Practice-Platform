@@ -3,7 +3,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL;
 const REFRESH_TOKEN_MAX_AGE_SECONDS =
   (Number(process.env.NEXT_PUBLIC_REFRESH_TOKEN_EXPIRE_DAYS) || 7) * 24 * 3600;
 
-function extractErrorMessage(error: unknown, fallback: string): string {
+export function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error || typeof error !== "object") return fallback;
   const detail = (error as { detail?: unknown }).detail;
   if (typeof detail === "string") return detail;
@@ -18,11 +18,19 @@ function extractErrorMessage(error: unknown, fallback: string): string {
   return fallback;
 }
 
-function getTokenFromCookie(): string | null {
+export function getTokenFromCookie(): string | null {
   if (typeof document === "undefined") return null;
   const match = document.cookie.match(/(?:^|; )token=([^;]*)/);
-  return match ? match[1] : null;
+  if (!match?.[1]) return null;
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return match[1];
+  }
 }
+
+// This is a promise that is used to store the refresh token in flight.
+let refreshInFlight: Promise<{ access_token: string; token_type: string }> | null = null;
 
 async function apiFetch(path: string, options: RequestInit = {}): Promise<Response> {
   if (!API_URL) {
@@ -31,13 +39,16 @@ async function apiFetch(path: string, options: RequestInit = {}): Promise<Respon
     );
   }
 
+  const headers = new Headers(options.headers);
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  if (!headers.has("Content-Type") && !isFormData) {
+    headers.set("Content-Type", "application/json");
+  }
+
   return fetch(`${API_URL}${path}`, {
     ...options,
     credentials: "include",
-    headers: {
-      "Content-Type": "application/json",
-      ...options.headers,
-    },
+    headers,
   });
 }
 
@@ -61,7 +72,13 @@ export async function authFetch(
 
   if (res.status === 401 && !retried) {
     try {
-      await refreshAccessToken();
+      const refreshed = await refreshAccessToken();
+      const retryHeaders = new Headers(options.headers);
+      if (!retryHeaders.has("Content-Type")) {
+        retryHeaders.set("Content-Type", "application/json");
+      }
+      retryHeaders.set("Authorization", `Bearer ${refreshed.access_token}`);
+      return apiFetch(path, { ...options, headers: retryHeaders });
     } catch {
       clearTokenCookie();
       if (typeof window !== "undefined") {
@@ -69,8 +86,38 @@ export async function authFetch(
       }
       throw new Error("Session expired");
     }
+  }
 
-    return authFetch(path, options, true);
+  return res;
+}
+
+/** Authenticated multipart upload (do not set Content-Type — browser sets boundary). */
+export async function authFetchMultipart(
+  path: string,
+  formData: FormData,
+  retried = false
+): Promise<Response> {
+  const token = getTokenFromCookie();
+  const headers = new Headers();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
+
+  const res = await apiFetch(path, { method: "POST", body: formData, headers });
+
+  if (res.status === 401 && !retried) {
+    try {
+      const refreshed = await refreshAccessToken();
+      const retryHeaders = new Headers();
+      retryHeaders.set("Authorization", `Bearer ${refreshed.access_token}`);
+      return apiFetch(path, { method: "POST", body: formData, headers: retryHeaders });
+    } catch {
+      clearTokenCookie();
+      if (typeof window !== "undefined") {
+        window.location.href = "/login";
+      }
+      throw new Error("Session expired");
+    }
   }
 
   return res;
@@ -78,8 +125,8 @@ export async function authFetch(
 
 /** Keep cookie until refresh token expires so middleware can detect a restorable session. */
 export function setTokenCookie(accessToken: string): void {
-  if (typeof document === "undefined") return;
-  document.cookie = `token=${accessToken}; path=/; max-age=${REFRESH_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
+  if (typeof document === "undefined" || !accessToken) return;
+  document.cookie = `token=${encodeURIComponent(accessToken)}; path=/; max-age=${REFRESH_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
 }
 
 export function clearTokenCookie(): void {
@@ -143,16 +190,29 @@ export async function register(payload: {
 }
 
 export async function refreshAccessToken() {
-  const res = await apiFetch("/api/v1/auth/token/refresh", { method: "POST" });
+  if (refreshInFlight) return refreshInFlight;
 
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, "Session expired"));
+  refreshInFlight = (async () => {
+    const res = await apiFetch("/api/v1/auth/token/refresh", { method: "POST" });
+
+    if (!res.ok) {
+      const error = await res.json().catch(() => ({}));
+      throw new Error(extractErrorMessage(error, "Session expired"));
+    }
+
+    const data = (await res.json()) as { access_token: string; token_type: string };
+    if (!data.access_token) {
+      throw new Error("Session expired");
+    }
+    setTokenCookie(data.access_token);
+    return data;
+  })();
+
+  try {
+    return await refreshInFlight;
+  } finally {
+    refreshInFlight = null;
   }
-
-  const data = await res.json();
-  setTokenCookie(data.access_token);
-  return data;
 }
 
 export async function getMe() {
@@ -166,7 +226,14 @@ export async function getMe() {
   return res.json();
 }
 
-/** Delegates to GET /logout (server clears httpOnly cookie + calls backend). */
-export function logout(): void {
-  window.location.href = "/logout";
+/** Revoke current session on backend (refresh cookie sent via credentials), then clear local cookie. */
+export async function logout(): Promise<void> {
+  try {
+    await authFetch("/api/v1/auth/logout", { method: "POST" });
+  } catch {
+    // Still clear local session if backend is unreachable or token already expired.
+  } finally {
+    clearTokenCookie();
+    window.location.href = "/login";
+  }
 }
