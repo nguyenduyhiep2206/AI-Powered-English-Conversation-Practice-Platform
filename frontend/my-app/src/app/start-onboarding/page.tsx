@@ -16,27 +16,32 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import LogoutButton from "@/components/ui/LogoutButton";
-import { getOnboardingStatus, type OnboardingStatus } from "@/lib/onboarding-status";
+import { fetchOnboardingStatus, type OnboardingStep } from "@/lib/onboarding-status";
 
 export default function StartOnboardingPage() {
   const router = useRouter();
-  const [status, setStatus] = useState<OnboardingStatus>("not_started");
+  const [currentStep, setCurrentStep] = useState<OnboardingStep>("survey");
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
-    // GET /api/v1/onboarding/status — if survey_done = true, skip straight to dashboard
-    const s = getOnboardingStatus();
-    if (s === "completed") {
-      router.replace("/dashboard");
-      return;
-    }
-    setStatus(s);
-    setReady(true);
+    fetchOnboardingStatus()
+      .then((data) => {
+        if (data.onboarding_complete) {
+          router.replace("/dashboard");
+          return;
+        }
+        setCurrentStep(data.current_step);
+        setReady(true);
+      })
+      .catch((err) => {
+        console.error("Failed to load onboarding status:", err);
+        setReady(true);
+      });
   }, [router]);
 
   if (!ready) return null;
 
-  const isContinue = status === "in_progress";
+  const isContinue = currentStep === "placement";
 
   // Matches spec §2: Onboarding = Survey (4 fields) + Placement Test (10 questions) → level + roadmap
   const steps = [
