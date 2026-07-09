@@ -2,7 +2,8 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { googleLogin } from "@/lib/api";
+import { googleLogin, getMe } from "@/lib/api";
+import { resolvePostLoginPath, type MeResponse } from "@/lib/auth";
 
 declare global {
   interface Window {
@@ -30,7 +31,11 @@ interface GoogleButtonOptions {
   shape?: "rectangular" | "pill" | "circle" | "square";
 }
 
-export default function GoogleSignInButton() {
+type GoogleSignInButtonProps = {
+  onError?: (message: string) => void;
+};
+
+export default function GoogleSignInButton({ onError }: GoogleSignInButtonProps) {
   const router = useRouter();
   const buttonRef = useRef<HTMLDivElement>(null);
 
@@ -68,13 +73,17 @@ export default function GoogleSignInButton() {
     async function handleCredentialResponse(response: { credential: string }) {
       try {
         await googleLogin(response.credential);
-        router.replace("/start-onboarding");
+        const me = (await getMe()) as MeResponse;
+        router.replace(resolvePostLoginPath(me.data));
         router.refresh();
       } catch (err) {
+        const message =
+          err instanceof Error ? err.message : "Sign in with Google failed";
+        onError?.(message);
         console.error("Error connecting when signing in with Google", err);
       }
     }
-  }, [router]);
+  }, [router, onError]);
 
   return <div ref={buttonRef} />;
 }

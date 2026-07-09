@@ -2,15 +2,10 @@
 
 import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
-import { clearTokenCookie, refreshAccessToken } from "@/lib/api";
+import { getTokenFromCookie, refreshAccessToken, clearTokenCookie } from "@/lib/api";
 import { isJwtExpired } from "@/lib/jwt";
 
-const PROTECTED_PREFIXES = ["/dashboard", "/start-onboarding"];
-
-function getTokenFromCookie(): string | null {
-  const match = document.cookie.match(/(?:^|; )token=([^;]*)/);
-  return match ? match[1] : null;
-}
+const PROTECTED_PREFIXES = ["/admin", "/dashboard", "/start-onboarding"];
 
 export function AuthSessionRefresh() {
   const pathname = usePathname();

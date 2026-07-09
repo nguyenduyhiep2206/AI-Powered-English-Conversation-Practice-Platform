@@ -1,7 +1,12 @@
+import { isJwtExpired } from "@/lib/jwt";
+
 const API_URL = process.env.NEXT_PUBLIC_API_URL;
 
 const REFRESH_TOKEN_MAX_AGE_SECONDS =
   (Number(process.env.NEXT_PUBLIC_REFRESH_TOKEN_EXPIRE_DAYS) || 7) * 24 * 3600;
+
+export const SESSION_ALREADY_ACTIVE_MESSAGE =
+  "Another account is already signed in on this browser. Please sign out first.";
 
 export function extractErrorMessage(error: unknown, fallback: string): string {
   if (!error || typeof error !== "object") return fallback;
@@ -26,6 +31,13 @@ export function getTokenFromCookie(): string | null {
     return decodeURIComponent(match[1]);
   } catch {
     return match[1];
+  }
+}
+
+function assertBrowserSessionAvailable(): void {
+  const token = getTokenFromCookie();
+  if (token && !isJwtExpired(token)) {
+    throw new Error(SESSION_ALREADY_ACTIVE_MESSAGE);
   }
 }
 
@@ -137,6 +149,8 @@ export function clearTokenCookie(): void {
 }
 
 export async function login(email: string, password: string) {
+  assertBrowserSessionAvailable();
+
   const res = await apiFetch("/api/v1/auth/login", {
     method: "POST",
     body: JSON.stringify({ identifier: email, password }),
@@ -153,6 +167,8 @@ export async function login(email: string, password: string) {
 }
 
 export async function googleLogin(credential: string) {
+  assertBrowserSessionAvailable();
+
   const res = await apiFetch("/api/v1/auth/google", {
     method: "POST",
     body: JSON.stringify({ credential }),

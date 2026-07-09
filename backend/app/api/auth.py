@@ -19,7 +19,13 @@ from app.schemas.auth_schema import LoginRequest, MeResponse, Token
 from app.schemas.user_schema import UserCreate
 from app.services.auth_service import authenticate_user, get_user
 from app.services.rbac_service import get_user_roles_and_permissions, invalidate_user_permissions_cache
-from app.services.refresh_token_service import RefreshTokenError, issue_session_tokens, revoke_refresh_token, rotate_refresh_token
+from app.services.refresh_token_service import (
+    RefreshTokenError,
+    ensure_browser_session_available,
+    issue_session_tokens,
+    revoke_refresh_token,
+    rotate_refresh_token,
+)
 from app.utils.auth_cookies import clear_refresh_token_cookie, set_refresh_token_cookie
 from app.utils.password_hash import get_password_hash
 
@@ -32,6 +38,7 @@ async def login(
     response: Response,
     payload: LoginRequest,
     db: AsyncSession = Depends(get_db),
+    existing_refresh_token: Optional[str] = Cookie(None, alias="refresh_token"),
 ):
     user = await authenticate_user(db, payload.identifier, payload.password)
     if not user:
@@ -43,6 +50,8 @@ async def login(
 
     if user.is_active is False:
         raise HTTPException(status_code=400, detail="Inactive user")
+
+    await ensure_browser_session_available(db, existing_refresh_token)
 
     access_token, refresh_token = await issue_session_tokens(db, int(user.id), request)
     set_refresh_token_cookie(response, refresh_token)

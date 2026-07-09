@@ -169,7 +169,7 @@ export default function LoginPage() {
             </div>
 
             <div className="my-2">
-              <GoogleSignInButton />
+              <GoogleSignInButton onError={setError} />
             </div>
             <p className="text-center text-sm text-muted-foreground">
               Don't have an account?{" "}

@@ -1,6 +1,8 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from typing import Optional
+
+from fastapi import APIRouter, Cookie, Depends, HTTPException, Request, Response, status
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token
 from sqlalchemy import select
@@ -11,7 +13,7 @@ from app.core.config import settings
 from app.core.database import get_db
 from app.models.user import UserDB
 from app.schemas.auth_schema import GoogleLoginRequest, Token
-from app.services.refresh_token_service import issue_session_tokens
+from app.services.refresh_token_service import ensure_browser_session_available, issue_session_tokens
 from app.utils.auth_cookies import set_refresh_token_cookie
 
 logger = logging.getLogger(__name__)
@@ -24,6 +26,7 @@ async def google_login(
     response: Response,
     payload: GoogleLoginRequest,
     db: AsyncSession = Depends(get_db),
+    existing_refresh_token: Optional[str] = Cookie(None, alias="refresh_token"),
 ):
     try:
         idinfo = await run_in_threadpool(
@@ -71,6 +74,8 @@ async def google_login(
 
     if not user.is_active:
         raise HTTPException(status_code=400, detail="Account is locked")
+
+    await ensure_browser_session_available(db, existing_refresh_token)
 
     access_token, refresh_token = await issue_session_tokens(db, int(user.id), request)
     set_refresh_token_cookie(response, refresh_token)

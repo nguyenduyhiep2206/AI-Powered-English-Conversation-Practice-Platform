@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import Request
+from fastapi import HTTPException, Request, status
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,11 @@ from app.utils.jwt_handler import create_access_token, create_refresh_token
 
 class RefreshTokenError(Exception):
     pass
+
+
+SESSION_ALREADY_ACTIVE_DETAIL = (
+    "Another account is already signed in on this browser. Please sign out first."
+)
 
 
 def _client_meta(request: Request | None) -> tuple[str | None, str | None]:
@@ -145,3 +150,33 @@ async def revoke_refresh_token(db: AsyncSession, token: str) -> None:
 
     stored.revoked = True
     await db.commit()
+
+
+async def get_active_session_user_id(
+    db: AsyncSession,
+    refresh_token: str | None,
+) -> int | None:
+    """Return the user id for an active browser session, if any."""
+    if not refresh_token:
+        return None
+    try:
+        payload = _decode_refresh_payload(refresh_token)
+    except RefreshTokenError:
+        return None
+
+    stored = await _get_active_token(db, payload["jti"])
+    if stored is None:
+        return None
+    return int(payload["sub"])
+
+
+async def ensure_browser_session_available(
+    db: AsyncSession,
+    refresh_token: str | None,
+) -> None:
+    """Reject login when this browser already has an active session (first login wins)."""
+    if await get_active_session_user_id(db, refresh_token) is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=SESSION_ALREADY_ACTIVE_DETAIL,
+        )
