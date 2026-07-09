@@ -1,4 +1,4 @@
-import { authFetch } from "@/lib/api";
+import { authFetch, extractErrorMessage } from "@/lib/api";
 
 export type OnboardingStep = "survey" | "placement" | "completed";
 
@@ -24,7 +24,8 @@ export type OnboardingStatusResponse = {
 export async function fetchOnboardingStatus(): Promise<OnboardingStatusPayload> {
   const res = await authFetch("/api/v1/onboarding/status");
   if (!res.ok) {
-    throw new Error("Failed to load onboarding status");
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load onboarding status"));
   }
   const body = (await res.json()) as OnboardingStatusResponse;
   return body.data;
