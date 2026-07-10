@@ -35,3 +35,9 @@ class BookDB(Base):
     )
 
     uploader = relationship("UserDB", foreign_keys=[uploaded_by])
+    structure_preview = relationship(
+        "BookStructurePreviewDB",
+        back_populates="book",
+        cascade="all, delete-orphan",
+        order_by="BookStructurePreviewDB.unit_index",
+    )

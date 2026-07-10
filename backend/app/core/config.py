@@ -32,14 +32,18 @@ class Settings(BaseSettings):
     # CORS
     FRONTEND_URL: str
 
-    # Book uploads (stored on Cloudinary)
+    # Book uploads (stored on Supabase Storage)
     MAX_BOOK_UPLOAD_MB: int = 50
 
-    # Cloudinary
-    CLOUDINARY_CLOUD_NAME: str | None = None
-    CLOUDINARY_API_KEY: str | None = None
-    CLOUDINARY_API_SECRET: str | None = None
-    CLOUDINARY_BOOK_FOLDER: str = "books"
+    # Supabase Storage
+    SUPABASE_URL: str | None = None
+    SUPABASE_SERVICE_ROLE_KEY: str | None = None
+    SUPABASE_SECRET_KEY: str | None = None  # new dashboard "secret" key (sb_secret_...)
+    SUPABASE_BOOK_BUCKET: str = "books"
+    SUPABASE_BOOK_BUCKET_PUBLIC: bool = False
+
+    def supabase_api_key(self) -> str | None:
+        return self.SUPABASE_SERVICE_ROLE_KEY or self.SUPABASE_SECRET_KEY
 
     # MongoDB (optional until indexing pipeline is enabled)
     MONGODB_URL: str | None = None

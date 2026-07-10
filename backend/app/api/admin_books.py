@@ -13,14 +13,28 @@ from app.schemas.book_schema import (
     BookDeleteResponse,
     BookListResponse,
     BookResponse,
+    StructurePreviewData,
+    StructurePreviewResponse,
+    StructureUnitPreview,
 )
 from app.services.book_service import delete_book, get_book, list_books, upload_book
+from app.services.book_structure_service import detect_book_structure, get_structure_preview
 
 router = APIRouter()
 
 
 def _to_admin(book) -> BookAdmin:
     return BookAdmin.model_validate(book)
+
+
+def _to_structure_preview(summary) -> StructurePreviewData:
+    return StructurePreviewData(
+        book_id=summary.book_id,
+        detection_method=summary.detection_method,
+        confidence=summary.confidence,
+        status=summary.status,
+        units=[StructureUnitPreview.model_validate(unit) for unit in summary.units],
+    )
 
 
 @router.get(
@@ -84,3 +98,23 @@ async def admin_delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
             message="Book deleted successfully",
         )
     )
+
+
+@router.post(
+    "/{book_id}/detect-structure",
+    response_model=StructurePreviewResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_detect_book_structure(book_id: int, db: AsyncSession = Depends(get_db)):
+    summary = await detect_book_structure(db, book_id)
+    return StructurePreviewResponse(data=_to_structure_preview(summary))
+
+
+@router.get(
+    "/{book_id}/structure-preview",
+    response_model=StructurePreviewResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_get_structure_preview(book_id: int, db: AsyncSession = Depends(get_db)):
+    summary = await get_structure_preview(db, book_id)
+    return StructurePreviewResponse(data=_to_structure_preview(summary))

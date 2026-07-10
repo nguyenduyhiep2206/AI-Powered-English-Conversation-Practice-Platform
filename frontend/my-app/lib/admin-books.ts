@@ -16,7 +16,7 @@ export type Book = {
   book_type: BookType;
   detection_method?: string | null;
   file_path: string;
-  file_public_id?: string | null;
+  file_public_id?: string | null; // Supabase storage object path
   file_size: number;
   page_count?: number | null;
   status: BookStatus;
@@ -100,3 +100,45 @@ export const BOOK_TYPE_LABELS: Record<BookType, string> = {
   test_bank: "Test bank",
   freeform: "Freeform",
 };
+
+export type StructureUnitPreview = {
+  unit_index: number;
+  title: string;
+  page_start: number;
+  page_end: number;
+  detection_method: string;
+  confidence: number;
+  depth_or_source?: string | null;
+};
+
+export type StructurePreview = {
+  book_id: number;
+  detection_method?: string | null;
+  confidence?: number | null;
+  status: BookStatus;
+  units: StructureUnitPreview[];
+};
+
+type StructurePreviewResponse = { success: boolean; data: StructurePreview };
+
+export async function detectBookStructure(bookId: number): Promise<StructurePreview> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/detect-structure`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to detect book structure"));
+  }
+  const body = (await res.json()) as StructurePreviewResponse;
+  return body.data;
+}
+
+export async function fetchBookStructurePreview(bookId: number): Promise<StructurePreview> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/structure-preview`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load structure preview"));
+  }
+  const body = (await res.json()) as StructurePreviewResponse;
+  return body.data;
+}

@@ -54,3 +54,28 @@ class BookUploadForm(BaseModel):
     description: Optional[str] = Field(None, max_length=2000)
     cefr_level: Optional[CEFRLevel] = None
     book_type: BookTypeEnum
+
+
+class StructureUnitPreview(BaseModel):
+    unit_index: int
+    title: str
+    page_start: int
+    page_end: int
+    detection_method: str
+    confidence: float
+    depth_or_source: Optional[str] = None
+
+    model_config = {"from_attributes": True}
+
+
+class StructurePreviewData(BaseModel):
+    book_id: int
+    detection_method: Optional[str] = None
+    confidence: Optional[float] = None
+    status: BookStatusEnum
+    units: list[StructureUnitPreview]
+
+
+class StructurePreviewResponse(BaseModel):
+    success: bool = True
+    data: StructurePreviewData

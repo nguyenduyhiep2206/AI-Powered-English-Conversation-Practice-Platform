@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.book import BookDB
 from app.models.enums import BookStatusEnum, BookTypeEnum, CEFRLevel
-from app.services import cloudinary_service
+from app.services import supabase_storage_service
 
 PDF_CONTENT_TYPE = "application/pdf"
 MAX_BYTES = settings.MAX_BOOK_UPLOAD_MB * 1024 * 1024
@@ -69,10 +69,11 @@ async def upload_book(
     book_type: BookTypeEnum,
     uploaded_by: int,
 ) -> BookDB:
-    if not cloudinary_service.is_configured():
+    if not supabase_storage_service.is_configured():
+        detail = supabase_storage_service.configuration_error() or "Supabase Storage is not configured"
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Cloudinary is not configured on the server",
+            detail=detail,
         )
 
     if file.content_type not in (PDF_CONTENT_TYPE, "application/octet-stream"):
@@ -117,18 +118,18 @@ async def upload_book(
     db.add(book)
     await db.flush()
 
-    public_id = f"{book.id}_{uuid.uuid4().hex}_{_safe_filename(original_name)}"
+    storage_path = f"{book.id}_{uuid.uuid4().hex}_{_safe_filename(original_name)}.pdf"
     try:
-        secure_url, stored_public_id = cloudinary_service.upload_pdf(content, public_id)
+        file_url, stored_path = supabase_storage_service.upload_pdf(content, storage_path)
     except Exception as exc:
         await db.rollback()
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
-            detail=f"Failed to upload to Cloudinary: {exc}",
+            detail=f"Failed to upload to Supabase Storage: {exc}",
         )
 
-    book.file_path = secure_url
-    book.file_public_id = stored_public_id
+    book.file_path = file_url
+    book.file_public_id = stored_path
 
     await db.commit()
     await db.refresh(book)
@@ -145,9 +146,9 @@ async def delete_book(db: AsyncSession, book_id: int) -> tuple[BookDB, int]:
 
     if book.file_public_id:
         try:
-            cloudinary_service.delete_pdf(book.file_public_id)
+            supabase_storage_service.delete_pdf(book.file_public_id)
         except Exception:
-            # Best-effort: still remove the DB record even if Cloudinary fails.
+            # Best-effort: still remove the DB record even if Supabase delete fails.
             pass
 
     await db.delete(book)

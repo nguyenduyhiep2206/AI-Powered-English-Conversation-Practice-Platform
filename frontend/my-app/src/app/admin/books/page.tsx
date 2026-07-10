@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Loader2, Trash2, Upload } from "lucide-react";
+import { BookOpen, Loader2, ScanSearch, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -10,12 +10,15 @@ import {
   BOOK_STATUS_LABELS,
   BOOK_TYPE_LABELS,
   deleteAdminBook,
+  detectBookStructure,
   fetchAdminBooks,
+  fetchBookStructurePreview,
   formatFileSize,
   uploadAdminBook,
   type Book,
   type BookType,
   type CefrLevel,
+  type StructurePreview,
 } from "@/lib/admin-books";
 
 const CEFR_LEVELS: CefrLevel[] = ["A1", "A2", "B1", "B2", "C1"];
@@ -39,6 +42,10 @@ export default function AdminBooksPage() {
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [detectingId, setDetectingId] = useState<number | null>(null);
+  const [previewBookId, setPreviewBookId] = useState<number | null>(null);
+  const [preview, setPreview] = useState<StructurePreview | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const [title, setTitle] = useState("");
@@ -102,10 +109,49 @@ export default function AdminBooksPage() {
     try {
       await deleteAdminBook(bookId);
       setBooks((prev) => prev.filter((book) => book.id !== bookId));
+      if (previewBookId === bookId) {
+        setPreviewBookId(null);
+        setPreview(null);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Delete failed");
     } finally {
       setDeletingId(null);
+    }
+  }
+
+  async function handleDetect(bookId: number) {
+    setDetectingId(bookId);
+    setError(null);
+    try {
+      const result = await detectBookStructure(bookId);
+      setPreviewBookId(bookId);
+      setPreview(result);
+      await loadBooks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Structure detection failed");
+    } finally {
+      setDetectingId(null);
+    }
+  }
+
+  async function handleShowPreview(bookId: number) {
+    if (previewBookId === bookId && preview) {
+      setPreviewBookId(null);
+      setPreview(null);
+      return;
+    }
+
+    setPreviewLoading(true);
+    setError(null);
+    try {
+      const result = await fetchBookStructurePreview(bookId);
+      setPreviewBookId(bookId);
+      setPreview(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to load preview");
+    } finally {
+      setPreviewLoading(false);
     }
   }
 
@@ -244,6 +290,7 @@ export default function AdminBooksPage() {
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Pages</th>
                     <th className="px-5 py-3 font-medium">Size</th>
+                    <th className="px-5 py-3 font-medium">Detection</th>
                     <th className="px-5 py-3 font-medium">Chunks</th>
                     <th className="px-5 py-3 font-medium" />
                   </tr>
@@ -276,22 +323,51 @@ export default function AdminBooksPage() {
                       <td className="px-5 py-3 text-muted-foreground">
                         {formatFileSize(book.file_size)}
                       </td>
+                      <td className="px-5 py-3 text-muted-foreground">
+                        {book.detection_method ?? "—"}
+                      </td>
                       <td className="px-5 py-3 text-muted-foreground">{book.chunk_count}</td>
                       <td className="px-5 py-3 text-right">
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="text-destructive hover:bg-destructive/10 hover:text-destructive"
-                          disabled={deletingId === book.id}
-                          onClick={() => handleDelete(book.id)}
-                        >
-                          {deletingId === book.id ? (
-                            <Loader2 className="h-4 w-4 animate-spin" />
-                          ) : (
-                            <Trash2 className="h-4 w-4" />
-                          )}
-                        </Button>
+                        <div className="flex items-center justify-end gap-1">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="Detect structure"
+                            disabled={detectingId === book.id || previewLoading}
+                            onClick={() => handleDetect(book.id)}
+                          >
+                            {detectingId === book.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <ScanSearch className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            title="View structure preview"
+                            disabled={previewLoading}
+                            onClick={() => handleShowPreview(book.id)}
+                          >
+                            Preview
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            disabled={deletingId === book.id}
+                            onClick={() => handleDelete(book.id)}
+                          >
+                            {deletingId === book.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              <Trash2 className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -300,6 +376,58 @@ export default function AdminBooksPage() {
             </div>
           )}
         </section>
+
+        {preview && previewBookId !== null && (
+          <section className="ef-card rounded-xl border border-border bg-card/60 p-5">
+            <div className="mb-4 flex flex-wrap items-center gap-2">
+              <h2 className="text-sm font-semibold">Structure preview</h2>
+              {preview.detection_method && (
+                <Badge variant="outline">{preview.detection_method}</Badge>
+              )}
+              {preview.confidence != null && (
+                <Badge variant="secondary">
+                  Confidence {(preview.confidence * 100).toFixed(0)}%
+                </Badge>
+              )}
+              <Badge variant={STATUS_VARIANT[preview.status]}>
+                {BOOK_STATUS_LABELS[preview.status]}
+              </Badge>
+            </div>
+
+            {preview.units.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                No structure units saved yet. Run detect on this book first.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[640px] text-left text-sm">
+                  <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+                    <tr>
+                      <th className="px-3 py-2 font-medium">#</th>
+                      <th className="px-3 py-2 font-medium">Title</th>
+                      <th className="px-3 py-2 font-medium">Pages</th>
+                      <th className="px-3 py-2 font-medium">Source</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {preview.units.map((unit) => (
+                      <tr key={unit.unit_index} className="border-b border-border/70 last:border-0">
+                        <td className="px-3 py-2 text-muted-foreground">{unit.unit_index + 1}</td>
+                        <td className="px-3 py-2 font-medium">{unit.title}</td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {unit.page_start}–{unit.page_end}
+                        </td>
+                        <td className="px-3 py-2 text-muted-foreground">
+                          {unit.depth_or_source ?? "—"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </section>
+        )}
       </main>
     </>
   );
