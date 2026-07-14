@@ -1,45 +1,45 @@
-# Placement Test from Quiz Bank Implementation Plan
+# Kế hoạch triển khai: Placement test từ quiz bank
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **Dành cho agent/kỹ sư thực hiện:** BẮT BUỘC dùng skill `superpowers:subagent-driven-development` (khuyên dùng) hoặc `superpowers:executing-plans` để làm từng task. Các bước dùng checkbox (`- [ ]`) để theo dõi tiến độ.
 
-**Goal:** After survey, learners take a 10-question placement test drawn from `quiz_questions` with `status=published`, map score→CEFR, seed mastery, and finish onboarding — without auto-assembling a roadmap; admins can publish drafts from Admin Books.
+**Mục tiêu:** Sau survey, học viên làm placement 10 câu lấy từ `quiz_questions` `status=published`, map điểm→CEFR, seed mastery, hoàn tất onboarding — **không** tự assemble roadmap; admin publish draft trên Admin Books.
 
-**Architecture:** Pure helpers in `placement_service` (score map + pick 2/level with skill diversity) are unit-tested without DB. Async methods load published rows joined to `learning_skills`, then update `user_profiles` and call existing `apply_answer`. Onboarding routes expose Functional Spec paths. Admin FE extends Task 10 `BookQuizPanel` with publish; learner FE adds `/onboarding/placement`.
+**Kiến trúc:** Helper thuần trong `placement_service` (bảng điểm + chọn 2 câu/level, tránh trùng skill) unit-test không cần DB. Hàm async load hàng published join `learning_skills`, cập nhật `user_profiles` rồi gọi `apply_answer`. Onboarding routes theo Functional Spec. FE admin mở rộng Task 10 `BookQuizPanel` (publish); FE HV thêm `/onboarding/placement`.
 
-**Tech Stack:** FastAPI, SQLAlchemy async, pytest, Pydantic, Next.js (`authFetch`), existing `mastery_service.grade_mcq` / `apply_answer`.
+**Công nghệ:** FastAPI, SQLAlchemy async, pytest, Pydantic, Next.js (`authFetch`), `mastery_service.grade_mcq` / `apply_answer`.
 
 **Spec:** `docs/superpowers/specs/2026-07-15-placement-from-quiz-bank-design.md`
 
 ---
 
-## File map
+## Bản đồ file
 
-| File | Role |
-|------|------|
-| `backend/app/services/placement_service.py` | `score_to_level`, `select_from_candidates`, `load_published_candidates`, `get_placement_questions`, `submit_placement` |
-| `backend/tests/test_placement_service.py` | Unit tests for map + selector (+ gates with lightweight fakes if needed) |
-| `backend/app/schemas/onboarding_schema.py` | Placement question/answer/result models |
+| File | Vai trò |
+|------|---------|
+| `backend/app/services/placement_service.py` | `score_to_level`, `select_from_candidates`, `load_published_candidates`, `get_placement_questions_for_user`, `submit_placement` |
+| `backend/tests/test_placement_service.py` | Unit test map điểm + selector |
+| `backend/app/schemas/onboarding_schema.py` | Schema câu hỏi / nộp / kết quả placement |
 | `backend/app/api/onboarding.py` | `GET /questions`, `POST /placement` |
-| `frontend/my-app/lib/admin-quiz.ts` | `listBookQuestions`, `publishQuestions` (+ existing sync/generate) |
-| `frontend/my-app/components/admin/BookQuizPanel.tsx` | Draft list + Publish selected |
-| `frontend/my-app/lib/placement.ts` | Client for GET questions / POST placement |
-| `frontend/my-app/src/app/onboarding/placement/page.tsx` | Placement UI + result |
-| `frontend/my-app/src/app/onboarding/page.tsx` | Redirect after survey → `/onboarding/placement` |
-| `frontend/my-app/src/app/start-onboarding/page.tsx` | Continue CTA → placement when `current_step === "placement"` |
+| `frontend/my-app/lib/admin-quiz.ts` | `listBookQuestions`, `publishQuestions` (+ sync/generate sẵn có) |
+| `frontend/my-app/components/admin/BookQuizPanel.tsx` | List draft + Publish selected |
+| `frontend/my-app/lib/placement.ts` | Client GET questions / POST placement |
+| `frontend/my-app/src/app/onboarding/placement/page.tsx` | UI làm bài + màn kết quả |
+| `frontend/my-app/src/app/onboarding/page.tsx` | Redirect sau survey → `/onboarding/placement` |
+| `frontend/my-app/src/app/start-onboarding/page.tsx` | CTA tiếp tục → placement khi `current_step === "placement"` |
 
-**Prerequisite (uncommitted Task 10):** If `BookQuizPanel` / `admin-quiz.ts` / books `page.tsx` wire are still untracked, commit or land them **before or as part of Task 4** so Publish UI has a home. Do not invent a second quiz panel.
+**Tiên quyết (Task 10 chưa commit):** Nếu `BookQuizPanel` / `admin-quiz.ts` / `books/page.tsx` vẫn untracked, commit hoặc gộp vào **Task 4** để Publish UI có chỗ gắn. Không tạo panel quiz thứ hai.
 
-**No new Alembic migration** — reuse `user_profiles.placement_score`, `current_level`, `quiz_questions.status`.
+**Không tạo migration Alembic mới** — tái dùng `user_profiles.placement_score`, `current_level`, `quiz_questions.status`.
 
 ---
 
-### Task 1: Score map + candidate picker (pure, TDD)
+### Task 1: Bảng điểm + picker ứng viên (thuần, TDD)
 
 **Files:**
-- Create: `backend/tests/test_placement_service.py`
-- Create: `backend/app/services/placement_service.py`
+- Tạo: `backend/tests/test_placement_service.py`
+- Tạo: `backend/app/services/placement_service.py`
 
-- [ ] **Step 1: Write failing tests**
+- [ ] **Bước 1: Viết test (kỳ vọng FAIL)**
 
 ```python
 # backend/tests/test_placement_service.py
@@ -132,19 +132,19 @@ def test_uu_tien_mcq_va_tranh_trung_skill_trong_level():
     assert len({p.skill_id for p in a1}) == 2
 ```
 
-- [ ] **Step 2: Run tests — expect FAIL**
+- [ ] **Bước 2: Chạy test — kỳ vọng FAIL**
 
 ```bash
 cd backend && python -m pytest tests/test_placement_service.py -v
 ```
 
-Expected: `ModuleNotFoundError` or `ImportError` for `placement_service`.
+Kỳ vọng: `ModuleNotFoundError` hoặc `ImportError` cho `placement_service`.
 
-- [ ] **Step 3: Minimal implementation**
+- [ ] **Bước 3: Implement tối thiểu**
 
 ```python
 # backend/app/services/placement_service.py
-"""Placement test: sample published quiz bank → score → CEFR; seed mastery. No roadmap assemble."""
+"""Placement: sample bank published → điểm → CEFR; seed mastery. Không assemble lộ trình."""
 
 from __future__ import annotations
 
@@ -194,7 +194,7 @@ def score_to_level(score: int) -> CEFRLevel:
 
 
 def _type_rank(question_type: str) -> int:
-    # lower = better
+    # nhỏ hơn = ưu tiên hơn
     if question_type == "mcq":
         return 0
     if question_type == "cloze":
@@ -221,7 +221,7 @@ def select_from_candidates(
         rng.shuffle(pool)
         chosen: list[PlacementCandidate] = []
         used_skills: set[int] = set()
-        # Prefer unique skill_id
+        # Ưu tiên skill_id khác nhau
         for c in pool:
             if len(chosen) >= PER_LEVEL:
                 break
@@ -246,18 +246,18 @@ def select_from_candidates(
     return picked
 ```
 
-- [ ] **Step 4: Run tests — expect PASS**
+- [ ] **Bước 4: Chạy test — kỳ vọng PASS**
 
 ```bash
 cd backend && python -m pytest tests/test_placement_service.py -v
 ```
 
-- [ ] **Step 5: Commit**
+- [ ] **Bước 5: Commit**
 
 ```bash
 git add backend/app/services/placement_service.py backend/tests/test_placement_service.py
 git commit -m "$(cat <<'EOF'
-feat: add placement score map and published-bank picker
+feat: bảng điểm placement và picker từ bank published
 
 EOF
 )"
@@ -265,17 +265,17 @@ EOF
 
 ---
 
-### Task 2: Load published candidates + get/submit placement (DB)
+### Task 2: Load published + get/submit placement (DB)
 
 **Files:**
-- Modify: `backend/app/services/placement_service.py`
-- Modify: `backend/tests/test_placement_service.py` (add pure grading helper tests only; keep DB optional)
-- Modify: `backend/app/services/mastery_service.py` — **only if needed**: export/reuse `grade_mcq` as `grade_answer` alias (prefer importing `grade_mcq` for all types in placement to avoid new module)
+- Sửa: `backend/app/services/placement_service.py`
+- Sửa: `backend/tests/test_placement_service.py` (chỉ thêm test helper thuần; không bắt buộc test DB)
+- Sửa `mastery_service.py` **chỉ khi cần** — ưu tiên import `grade_mcq` cho mọi loại câu trong placement
 
-- [ ] **Step 1: Add tests for public DTO helper + grading batch**
+- [ ] **Bước 1: Thêm test DTO công khai + chấm điểm**
 
 ```python
-# append to backend/tests/test_placement_service.py
+# append vào backend/tests/test_placement_service.py
 from app.services.placement_service import grade_placement_answer, placement_public_dict
 
 
@@ -301,15 +301,15 @@ def test_placement_public_dict_khong_co_answer():
     assert d["cefr_level"] == "B1"
 ```
 
-- [ ] **Step 2: Run — expect FAIL** (`grade_placement_answer` missing)
+- [ ] **Bước 2: Chạy — kỳ vọng FAIL** (`grade_placement_answer` chưa có)
 
 ```bash
 cd backend && python -m pytest tests/test_placement_service.py::test_grade_placement_answer_dung_grade_mcq tests/test_placement_service.py::test_placement_public_dict_khong_co_answer -v
 ```
 
-- [ ] **Step 3: Implement load + get + submit**
+- [ ] **Bước 3: Implement load + get + submit**
 
-Append to `placement_service.py`:
+Nối thêm vào `placement_service.py`:
 
 ```python
 from sqlalchemy import select
@@ -388,7 +388,7 @@ async def submit_placement(
     user_id: int,
     answers: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    """answers: [{question_id, answer}, ...] — exactly PLACEMENT_SIZE published ids."""
+    """answers: [{question_id, answer}, ...] — đúng PLACEMENT_SIZE id published."""
     profile = (
         await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
     ).scalar_one_or_none()
@@ -443,22 +443,22 @@ async def submit_placement(
     }
 ```
 
-Map exceptions in API layer: `PermissionError` → 400, `RuntimeError` → 409, `ValueError` with `INSUFFICIENT_BANK_MSG` → 503, other `ValueError` → 400.
+Map exception ở API: `PermissionError` → 400, `RuntimeError` → 409, `ValueError` trùng `INSUFFICIENT_BANK_MSG` → 503, `ValueError` khác → 400.
 
-- [ ] **Step 4: Run pure tests again**
+- [ ] **Bước 4: Chạy lại toàn bộ unit test thuần**
 
 ```bash
 cd backend && python -m pytest tests/test_placement_service.py -v
 ```
 
-Expected: PASS.
+Kỳ vọng: PASS.
 
-- [ ] **Step 5: Commit**
+- [ ] **Bước 5: Commit**
 
 ```bash
 git add backend/app/services/placement_service.py backend/tests/test_placement_service.py
 git commit -m "$(cat <<'EOF'
-feat: load published bank and submit placement profile + mastery
+feat: load bank published và nộp placement (profile + mastery)
 
 EOF
 )"
@@ -466,15 +466,15 @@ EOF
 
 ---
 
-### Task 3: Onboarding schemas + API routes
+### Task 3: Schema onboarding + API routes
 
 **Files:**
-- Modify: `backend/app/schemas/onboarding_schema.py`
-- Modify: `backend/app/api/onboarding.py`
+- Sửa: `backend/app/schemas/onboarding_schema.py`
+- Sửa: `backend/app/api/onboarding.py`
 
-- [ ] **Step 1: Extend schemas**
+- [ ] **Bước 1: Mở rộng schema**
 
-Append to `backend/app/schemas/onboarding_schema.py`:
+Append vào `backend/app/schemas/onboarding_schema.py`:
 
 ```python
 from pydantic import BaseModel, Field
@@ -522,9 +522,9 @@ class PlacementSubmitResponse(BaseModel):
     data: PlacementResultData
 ```
 
-- [ ] **Step 2: Wire routes in `onboarding.py`**
+- [ ] **Bước 2: Gắn route trong `onboarding.py`**
 
-Add imports and endpoints (keep existing survey/status):
+Thêm import + endpoint (giữ survey/status hiện có):
 
 ```python
 from fastapi import APIRouter, Depends, HTTPException
@@ -588,20 +588,20 @@ async def placement_submit(
     return PlacementSubmitResponse(data=PlacementResultData(**result))
 ```
 
-**Path note:** Functional Spec lists `GET /api/v1/onboarding/questions` (not `/survey/questions`). Router already mounted at `/api/v1/onboarding` → these become `/questions` and `/placement`. Do **not** shadow survey routes.
+**Lưu ý path:** Functional Spec dùng `GET /api/v1/onboarding/questions` (không phải `/survey/questions`). Router đã mount `/api/v1/onboarding` → thành `/questions` và `/placement`. **Không** đè route survey.
 
-- [ ] **Step 3: Smoke import**
+- [ ] **Bước 3: Smoke import**
 
 ```bash
 cd backend && python -c "from app.api import onboarding; from app.services import placement_service; print('ok')"
 ```
 
-- [ ] **Step 4: Commit**
+- [ ] **Bước 4: Commit**
 
 ```bash
 git add backend/app/schemas/onboarding_schema.py backend/app/api/onboarding.py
 git commit -m "$(cat <<'EOF'
-feat: expose onboarding placement questions and submit APIs
+feat: API onboarding lấy đề và nộp placement
 
 EOF
 )"
@@ -609,14 +609,14 @@ EOF
 
 ---
 
-### Task 4: Admin publish client + BookQuizPanel UI
+### Task 4: Client admin publish + UI BookQuizPanel
 
 **Files:**
-- Modify: `frontend/my-app/lib/admin-quiz.ts`
-- Modify: `frontend/my-app/components/admin/BookQuizPanel.tsx`
-- Ensure: `frontend/my-app/src/app/admin/books/page.tsx` already renders `BookQuizPanel` when `preview.status === "ready"` (Task 10)
+- Sửa: `frontend/my-app/lib/admin-quiz.ts`
+- Sửa: `frontend/my-app/components/admin/BookQuizPanel.tsx`
+- Đảm bảo: `frontend/my-app/src/app/admin/books/page.tsx` đã render `BookQuizPanel` khi `preview.status === "ready"` (Task 10)
 
-- [ ] **Step 1: Extend `admin-quiz.ts`**
+- [ ] **Bước 1: Mở rộng `admin-quiz.ts`**
 
 ```typescript
 export async function listBookQuestions(
@@ -647,9 +647,9 @@ export async function publishQuestions(questionIds: number[]): Promise<number> {
 }
 ```
 
-- [ ] **Step 2: Publish section in `BookQuizPanel`**
+- [ ] **Bước 2: Section Publish trong `BookQuizPanel`**
 
-After generate status message, add state + UI:
+Sau khối generate, thêm state + UI:
 
 ```tsx
 // imports
@@ -674,8 +674,8 @@ async function refreshDrafts() {
   }
 }
 
-// After successful generateSkillQuiz / syncBookSkills, call void refreshDrafts();
-// Also call refreshDrafts once when panel mounts (useEffect on bookId).
+// Sau generateSkillQuiz / syncBookSkills thành công: void refreshDrafts();
+// useEffect theo bookId: gọi refreshDrafts khi mount / đổi sách.
 
 async function handlePublish() {
   if (selectedIds.size === 0) return;
@@ -693,7 +693,7 @@ async function handlePublish() {
 }
 ```
 
-UI block (below generate table):
+Khối UI (dưới bảng generate):
 
 ```tsx
 <div className="mt-6 border-t border-border pt-4">
@@ -742,16 +742,16 @@ UI block (below generate table):
 </div>
 ```
 
-- [ ] **Step 3: Manual check**
+- [ ] **Bước 3: Kiểm tra thủ công**
 
-With API up: open ready book preview → Sync → Generate → Drafts appear → Publish selected → `status_filter=published` has rows (Swagger or Network tab).
+API đang chạy: mở preview sách `ready` → Sync → Generate → thấy Drafts → Publish selected → `status_filter=published` có dòng (Swagger / Network).
 
-- [ ] **Step 4: Commit** (include any still-uncommitted Task 10 quiz panel files)
+- [ ] **Bước 4: Commit** (gộp luôn file Task 10 quiz panel nếu còn chưa commit)
 
 ```bash
 git add frontend/my-app/lib/admin-quiz.ts frontend/my-app/components/admin/BookQuizPanel.tsx frontend/my-app/src/app/admin/books/page.tsx
 git commit -m "$(cat <<'EOF'
-feat: admin UI to publish draft quiz questions for placement bank
+feat: UI admin publish câu draft vào bank placement
 
 EOF
 )"
@@ -759,15 +759,15 @@ EOF
 
 ---
 
-### Task 5: Learner placement client + page
+### Task 5: Client + trang placement học viên
 
 **Files:**
-- Create: `frontend/my-app/lib/placement.ts`
-- Create: `frontend/my-app/src/app/onboarding/placement/page.tsx`
-- Modify: `frontend/my-app/src/app/onboarding/page.tsx` (redirect after survey)
-- Modify: `frontend/my-app/src/app/start-onboarding/page.tsx` (CTA href)
+- Tạo: `frontend/my-app/lib/placement.ts`
+- Tạo: `frontend/my-app/src/app/onboarding/placement/page.tsx`
+- Sửa: `frontend/my-app/src/app/onboarding/page.tsx` (redirect sau survey)
+- Sửa: `frontend/my-app/src/app/start-onboarding/page.tsx` (CTA href)
 
-- [ ] **Step 1: Client `lib/placement.ts`**
+- [ ] **Bước 1: Client `lib/placement.ts`**
 
 ```typescript
 import { authFetch, extractErrorMessage } from "@/lib/api";
@@ -818,20 +818,20 @@ export async function submitPlacement(
 }
 ```
 
-- [ ] **Step 2: Page `onboarding/placement/page.tsx`**
+- [ ] **Bước 2: Trang `onboarding/placement/page.tsx`**
 
-Implement a `"use client"` page that:
+Trang `"use client"` cần:
 
-1. `fetchOnboardingStatus` on mount — if `!survey_done` → `/onboarding`; if `placement_done` → `/dashboard`.
-2. Load `fetchPlacementQuestions()`; keep `answers: Record<number, string>`.
-3. Show index `current + 1 / questions.length`; for `mcq` render option buttons; else text `Input`.
-4. Next/Back; on last question enable Submit.
-5. `submitPlacement(Object.entries(answers).map(...))` — require all 10 answered.
-6. Result view: score, `current_level`, copy: “You can create your learning roadmap when you are ready.” Link to `/dashboard` (do **not** call assemble).
+1. Mount: `fetchOnboardingStatus` — `!survey_done` → `/onboarding`; `placement_done` → `/dashboard`.
+2. Load `fetchPlacementQuestions()`; `answers: Record<number, string>`.
+3. Hiện `current + 1 / questions.length`; `mcq` → nút option; khác → `Input`.
+4. Next/Back; câu cuối bật Submit.
+5. `submitPlacement(...)` — bắt buộc đủ 10 câu.
+6. Màn kết quả: điểm, `current_level`, copy: “Bạn có thể tạo lộ trình học khi sẵn sàng.” Link `/dashboard` (**không** gọi assemble).
 
-Match visual language of survey page (`ef-card`, dark layout, `LogoutButton`). Keep file focused — one page component is enough for MVP.
+Giữ cùng ngôn ngữ UI survey (`ef-card`, dark, `LogoutButton`). MVP: một page component là đủ.
 
-Skeleton outline:
+Khung:
 
 ```tsx
 "use client";
@@ -839,21 +839,21 @@ Skeleton outline:
 
 export default function PlacementPage() {
   // states: questions, index, answers, loading, submitting, error, result
-  // effects: status gate + load questions
-  // if result: show score/level/CTA
-  // else: show stem + options/input + nav
+  // effects: gate status + load questions
+  // if result: hiện điểm/level/CTA
+  // else: stem + options/input + nav
 }
 ```
 
-- [ ] **Step 3: Redirects**
+- [ ] **Bước 3: Redirect**
 
-In `onboarding/page.tsx` after successful `submitSurvey`:
+Trong `onboarding/page.tsx` sau `submitSurvey` thành công:
 
 ```typescript
 router.replace("/onboarding/placement");
 ```
 
-In `start-onboarding/page.tsx` CTA:
+Trong `start-onboarding/page.tsx` CTA:
 
 ```tsx
 <Link href={isContinue ? "/onboarding/placement" : "/onboarding"}>
@@ -862,14 +862,14 @@ In `start-onboarding/page.tsx` CTA:
 </Link>
 ```
 
-- [ ] **Step 4: Manual E2E**
+- [ ] **Bước 4: E2E thủ công**
 
-1. Publish ≥2 questions per CEFR level A1–C1 (or enough for selector).
-2. New user: survey → placement → 10 questions → submit → see level.
+1. Publish ≥2 câu mỗi level A1–C1 (đủ cho selector).
+2. User mới: survey → placement → 10 câu → submit → thấy level.
 3. `GET /onboarding/status` → `onboarding_complete: true`.
-4. Confirm no new roadmap weeks until separate assemble.
+4. Chưa có tuần roadmap cho đến khi assemble riêng.
 
-- [ ] **Step 5: Commit**
+- [ ] **Bước 5: Commit**
 
 ```bash
 git add frontend/my-app/lib/placement.ts \
@@ -877,7 +877,7 @@ git add frontend/my-app/lib/placement.ts \
   frontend/my-app/src/app/onboarding/page.tsx \
   frontend/my-app/src/app/start-onboarding/page.tsx
 git commit -m "$(cat <<'EOF'
-feat: learner placement test UI after survey from quiz bank
+feat: UI placement học viên sau survey từ quiz bank
 
 EOF
 )"
@@ -885,56 +885,56 @@ EOF
 
 ---
 
-### Task 6: Verification checklist (no new code)
+### Task 6: Checklist xác minh (không viết code mới)
 
-- [ ] **Step 1: Backend unit suite**
+- [ ] **Bước 1: Suite unit backend**
 
 ```bash
 cd backend && python -m pytest tests/test_placement_service.py tests/test_mastery_service.py -v
 ```
 
-Expected: all PASS.
+Kỳ vọng: all PASS.
 
-- [ ] **Step 2: Spec acceptance**
+- [ ] **Bước 2: Acceptance theo spec**
 
-| Check | Pass? |
-|-------|-------|
-| GET `/onboarding/questions` returns 10, no `answer` | |
-| Insufficient bank → 503 + clear message | |
-| POST placement sets `placement_score` + `current_level` | |
-| Mastery rows updated; no `roadmap_steps` created | |
-| Second GET/POST after done → 409 | |
-| Admin publish removes drafts from draft list | |
-| Survey → placement FE → result → dashboard | |
+| Kiểm tra | Pass? |
+|----------|-------|
+| GET `/onboarding/questions` trả 10 câu, không có `answer` | |
+| Bank thiếu → 503 + message rõ | |
+| POST placement ghi `placement_score` + `current_level` | |
+| Mastery cập nhật; **không** tạo `roadmap_steps` | |
+| GET/POST lần 2 sau khi xong → 409 | |
+| Admin publish làm mất draft khỏi list draft | |
+| Survey → FE placement → kết quả → dashboard | |
 
-- [ ] **Step 3: Final commit only if checklist left doc notes** — otherwise stop; no empty commit.
+- [ ] **Bước 3:** Chỉ commit nếu còn chỉnh doc/ghi chú checklist — không tạo empty commit.
 
 ---
 
-## Spec coverage (self-review)
+## Đối chiếu spec (tự rà)
 
-| Spec section | Task |
-|--------------|------|
-| Published-only bank + 2/level + fail-fast | Task 1–2 |
-| Score table 0–10 → CEFR | Task 1 |
-| GET `/questions` / POST `/placement` contracts | Task 3 |
-| Profile + mastery; no assemble | Task 2 |
-| Gates 400/409/503 | Task 2–3 |
+| Mục spec | Task |
+|----------|------|
+| Bank chỉ published + 2/level + fail-fast | Task 1–2 |
+| Bảng điểm 0–10 → CEFR | Task 1 |
+| Contract GET `/questions` / POST `/placement` | Task 3 |
+| Profile + mastery; không assemble | Task 2 |
+| Gate 400/409/503 | Task 2–3 |
 | Admin list draft + publish | Task 4 |
-| Learner FE + redirects | Task 5 |
-| Acceptance / no retake / no Redis | Task 6 + non-goals |
+| FE HV + redirect | Task 5 |
+| Acceptance / không retake / không Redis | Task 6 + non-goals |
 
-**Out of scope (do not implement in this plan):** adaptive IRT, placement session token, Redis cache, retake, assemble CTA wiring, fuzzy cloze grading.
+**Ngoài scope (không làm trong plan này):** adaptive IRT, placement session token, Redis cache, retake, nút assemble lộ trình, fuzzy chấm cloze.
 
 ---
 
-## Execution handoff
+## Bàn giao thực thi
 
-Plan saved to `docs/superpowers/plans/2026-07-15-placement-from-quiz-bank.md`.
+Plan lưu tại `docs/superpowers/plans/2026-07-15-placement-from-quiz-bank.md`.
 
-**Two execution options:**
+**Hai cách chạy:**
 
-1. **Subagent-Driven (recommended)** — fresh subagent per task, review between tasks  
-2. **Inline Execution** — same session with executing-plans + checkpoints  
+1. **Subagent-Driven (khuyên dùng)** — mỗi task một subagent mới, review giữa các task  
+2. **Inline Execution** — làm tuần tự trong session với checkpoint  
 
-Which approach?
+Bạn chọn cách nào?
