@@ -9,11 +9,14 @@ import { Label } from "@/components/ui/label";
 import {
   BOOK_STATUS_LABELS,
   BOOK_TYPE_LABELS,
+  confirmAndIndexBook,
   deleteAdminBook,
   detectBookStructure,
   fetchAdminBooks,
   fetchBookStructurePreview,
   formatFileSize,
+  reindexBookUnit,
+  retryBookEmbeddings,
   uploadAdminBook,
   type Book,
   type BookType,
@@ -43,6 +46,9 @@ export default function AdminBooksPage() {
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState<number | null>(null);
   const [detectingId, setDetectingId] = useState<number | null>(null);
+  const [indexingId, setIndexingId] = useState<number | null>(null);
+  const [reindexingUnitId, setReindexingUnitId] = useState<number | null>(null);
+  const [retryingEmbedId, setRetryingEmbedId] = useState<number | null>(null);
   const [previewBookId, setPreviewBookId] = useState<number | null>(null);
   const [preview, setPreview] = useState<StructurePreview | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -152,6 +158,48 @@ export default function AdminBooksPage() {
       setError(err instanceof Error ? err.message : "Failed to load preview");
     } finally {
       setPreviewLoading(false);
+    }
+  }
+
+  async function handleConfirmAndIndex(bookId: number) {
+    if (!window.confirm("Confirm structure and start indexing?")) return;
+    setIndexingId(bookId);
+    setError(null);
+    try {
+      await confirmAndIndexBook(bookId);
+      await loadBooks();
+      const result = await fetchBookStructurePreview(bookId);
+      setPreview(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Indexing failed to start");
+    } finally {
+      setIndexingId(null);
+    }
+  }
+
+  async function handleReindexUnit(bookId: number, unitId: number) {
+    setReindexingUnitId(unitId);
+    setError(null);
+    try {
+      await reindexBookUnit(bookId, unitId);
+      await loadBooks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Reindex unit failed");
+    } finally {
+      setReindexingUnitId(null);
+    }
+  }
+
+  async function handleRetryEmbeddings(bookId: number) {
+    setRetryingEmbedId(bookId);
+    setError(null);
+    try {
+      await retryBookEmbeddings(bookId);
+      await loadBooks();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Retry embeddings failed");
+    } finally {
+      setRetryingEmbedId(null);
     }
   }
 
@@ -353,6 +401,22 @@ export default function AdminBooksPage() {
                           >
                             Preview
                           </Button>
+                          {(book.status === "ready" || book.status === "failed") && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              title="Retry pending Voyage embeddings"
+                              disabled={retryingEmbedId === book.id}
+                              onClick={() => handleRetryEmbeddings(book.id)}
+                            >
+                              {retryingEmbedId === book.id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Retry embed"
+                              )}
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
@@ -392,6 +456,21 @@ export default function AdminBooksPage() {
               <Badge variant={STATUS_VARIANT[preview.status]}>
                 {BOOK_STATUS_LABELS[preview.status]}
               </Badge>
+              {preview.units.length > 0 && (
+                <Button
+                  type="button"
+                  size="sm"
+                  className="ml-auto"
+                  disabled={indexingId === previewBookId}
+                  onClick={() => handleConfirmAndIndex(previewBookId)}
+                >
+                  {indexingId === previewBookId ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Confirm & index"
+                  )}
+                </Button>
+              )}
             </div>
 
             {preview.units.length === 0 ? (
@@ -407,11 +486,12 @@ export default function AdminBooksPage() {
                       <th className="px-3 py-2 font-medium">Title</th>
                       <th className="px-3 py-2 font-medium">Pages</th>
                       <th className="px-3 py-2 font-medium">Source</th>
+                      <th className="px-3 py-2 font-medium" />
                     </tr>
                   </thead>
                   <tbody>
                     {preview.units.map((unit) => (
-                      <tr key={unit.unit_index} className="border-b border-border/70 last:border-0">
+                      <tr key={unit.id ?? unit.unit_index} className="border-b border-border/70 last:border-0">
                         <td className="px-3 py-2 text-muted-foreground">{unit.unit_index + 1}</td>
                         <td className="px-3 py-2 font-medium">{unit.title}</td>
                         <td className="px-3 py-2 text-muted-foreground">
@@ -419,6 +499,21 @@ export default function AdminBooksPage() {
                         </td>
                         <td className="px-3 py-2 text-muted-foreground">
                           {unit.depth_or_source ?? "—"}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            disabled={reindexingUnitId === unit.id}
+                            onClick={() => handleReindexUnit(previewBookId, unit.id)}
+                          >
+                            {reindexingUnitId === unit.id ? (
+                              <Loader2 className="h-4 w-4 animate-spin" />
+                            ) : (
+                              "Reindex"
+                            )}
+                          </Button>
                         </td>
                       </tr>
                     ))}

@@ -139,10 +139,9 @@ async def upload_book(
 async def delete_book(db: AsyncSession, book_id: int) -> tuple[BookDB, int]:
     book = await _get_book_or_404(db, book_id)
 
-    # Phase 2: delete indexed chunks from MongoDB when RAG indexing is enabled.
-    # from app.services.book_chunk_service import delete_book_chunks
-    # deleted_chunks = delete_book_chunks(int(book.id))
-    deleted_chunks = 0
+    from app.services.book_chunk_service import delete_book_chunks
+
+    deleted_chunks = delete_book_chunks(int(book.id))
 
     if book.file_public_id:
         try:

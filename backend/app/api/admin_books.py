@@ -1,11 +1,11 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, Form, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_permission
 from app.core.database import get_db
-from app.models.enums import BookTypeEnum, CEFRLevel
+from app.models.enums import BookStatusEnum, BookTypeEnum, CEFRLevel
 from app.models.user import UserDB
 from app.schemas.book_schema import (
     BookAdmin,
@@ -16,6 +16,12 @@ from app.schemas.book_schema import (
     StructurePreviewData,
     StructurePreviewResponse,
     StructureUnitPreview,
+)
+from app.services.book_indexing_service import (
+    confirm_and_start_indexing,
+    index_book,
+    reindex_unit,
+    retry_embeddings,
 )
 from app.services.book_service import delete_book, get_book, list_books, upload_book
 from app.services.book_structure_service import detect_book_structure, get_structure_preview
@@ -118,3 +124,59 @@ async def admin_detect_book_structure(book_id: int, db: AsyncSession = Depends(g
 async def admin_get_structure_preview(book_id: int, db: AsyncSession = Depends(get_db)):
     summary = await get_structure_preview(db, book_id)
     return StructurePreviewResponse(data=_to_structure_preview(summary))
+
+
+@router.post(
+    "/{book_id}/confirm-and-index",
+    response_model=BookResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_confirm_and_index(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm structure preview and start two-phase indexing in the background.
+
+    Phase 1: chunk text → Mongo (no Voyage). Phase 2: embed pending chunks.
+    TODO: for large books, move off FastAPI BackgroundTasks to Celery/ARQ.
+    """
+    book = await confirm_and_start_indexing(db, book_id)
+    background_tasks.add_task(index_book, book_id)
+    return BookResponse(data=_to_admin(book))
+
+
+@router.post(
+    "/{book_id}/reindex-unit/{unit_id}",
+    response_model=BookResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_reindex_unit(
+    book_id: int,
+    unit_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Re-chunk a single unit (phase 1), then best-effort embed (phase 2)."""
+    book = await get_book(db, book_id)
+    book.status = BookStatusEnum.processing
+    await db.commit()
+    await db.refresh(book)
+    background_tasks.add_task(reindex_unit, book_id, unit_id)
+    return BookResponse(data=_to_admin(book))
+
+
+@router.post(
+    "/{book_id}/retry-embeddings",
+    response_model=BookResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_retry_embeddings(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    """Resume Voyage embeddings for pending/failed chunks without re-chunking PDF."""
+    book = await get_book(db, book_id)
+    background_tasks.add_task(retry_embeddings, book_id)
+    return BookResponse(data=_to_admin(book))

@@ -118,10 +118,17 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
     await db.commit()
     await db.refresh(book)
 
+    refreshed = await db.execute(
+        select(BookStructurePreviewDB)
+        .where(BookStructurePreviewDB.book_id == book_id)
+        .order_by(BookStructurePreviewDB.unit_index)
+    )
+    saved_units = list(refreshed.scalars().all())
+
     return StructurePreviewSummary(
         book_id=int(book.id),
         detection_method=book.detection_method,
         confidence=detection.confidence,
         status=book.status,
-        units=preview_rows,
+        units=saved_units,
     )

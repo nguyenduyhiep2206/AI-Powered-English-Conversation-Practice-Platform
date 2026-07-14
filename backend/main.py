@@ -11,6 +11,12 @@ from app.core.mongodb import connect_mongo, disconnect_mongo
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await connect_mongo()
+    try:
+        from app.services.book_chunk_service import ensure_book_chunks_indexes_async
+
+        await ensure_book_chunks_indexes_async()
+    except Exception:
+        pass
     yield
     await disconnect_mongo()
 

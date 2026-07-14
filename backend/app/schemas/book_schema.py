@@ -57,6 +57,7 @@ class BookUploadForm(BaseModel):
 
 
 class StructureUnitPreview(BaseModel):
+    id: int
     unit_index: int
     title: str
     page_start: int

@@ -102,6 +102,7 @@ export const BOOK_TYPE_LABELS: Record<BookType, string> = {
 };
 
 export type StructureUnitPreview = {
+  id: number;
   unit_index: number;
   title: string;
   page_start: number;
@@ -140,5 +141,41 @@ export async function fetchBookStructurePreview(bookId: number): Promise<Structu
     throw new Error(extractErrorMessage(error, "Failed to load structure preview"));
   }
   const body = (await res.json()) as StructurePreviewResponse;
+  return body.data;
+}
+
+export async function confirmAndIndexBook(bookId: number): Promise<Book> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/confirm-and-index`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to start indexing"));
+  }
+  const body = (await res.json()) as BookResponse;
+  return body.data;
+}
+
+export async function reindexBookUnit(bookId: number, unitId: number): Promise<Book> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/reindex-unit/${unitId}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to reindex unit"));
+  }
+  const body = (await res.json()) as BookResponse;
+  return body.data;
+}
+
+export async function retryBookEmbeddings(bookId: number): Promise<Book> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/retry-embeddings`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to retry embeddings"));
+  }
+  const body = (await res.json()) as BookResponse;
   return body.data;
 }

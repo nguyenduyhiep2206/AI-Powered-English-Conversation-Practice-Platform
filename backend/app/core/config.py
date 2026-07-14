@@ -49,5 +49,11 @@ class Settings(BaseSettings):
     MONGODB_URL: str | None = None
     MONGODB_DB_NAME: str = "englishflow"
 
+    # Voyage AI embeddings (book indexing) — phase 2 after text chunks are saved
+    VOYAGE_API_KEY: str | None = None
+    VOYAGE_EMBEDDING_MODEL: str = "voyage-4-lite"
+    VOYAGE_EMBED_BATCH_SIZE: int = 32
+    VOYAGE_EMBED_BATCH_DELAY_SECONDS: float = 1.0
+
 
 settings = Settings()
