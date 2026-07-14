@@ -887,27 +887,29 @@ EOF
 
 ### Task 6: Checklist xác minh (không viết code mới)
 
-- [ ] **Bước 1: Suite unit backend**
+- [x] **Bước 1: Suite unit backend**
 
 ```bash
-cd backend && python -m pytest tests/test_placement_service.py tests/test_mastery_service.py -v
+cd backend && .venv/bin/python -m pytest tests/test_placement_service.py tests/test_mastery_service.py -v
 ```
 
-Kỳ vọng: all PASS.
+Kết quả (2026-07-15): **11 passed**.
 
-- [ ] **Bước 2: Acceptance theo spec**
+- [x] **Bước 2: Acceptance theo spec**
 
-| Kiểm tra | Pass? |
-|----------|-------|
-| GET `/onboarding/questions` trả 10 câu, không có `answer` | |
-| Bank thiếu → 503 + message rõ | |
-| POST placement ghi `placement_score` + `current_level` | |
-| Mastery cập nhật; **không** tạo `roadmap_steps` | |
-| GET/POST lần 2 sau khi xong → 409 | |
-| Admin publish làm mất draft khỏi list draft | |
-| Survey → FE placement → kết quả → dashboard | |
+| Kiểm tra | Pass? | Bằng chứng |
+|----------|-------|------------|
+| GET `/onboarding/questions` trả câu, không có `answer` | Pass (unit + code) | `placement_public_dict` omit `answer`; route `/questions` mounted |
+| Bank thiếu → 503 + message rõ | Pass (code) | `onboarding.py` map `INSUFFICIENT_BANK_MSG` → 503; selector raise message tiếng Việt |
+| POST placement ghi `placement_score` + `current_level` | Pass (code) | `submit_placement` set cả hai rồi `commit` |
+| Mastery cập nhật; **không** tạo `roadmap_steps` | Pass (code) | gọi `apply_answer`; không gọi assembler |
+| GET/POST lần 2 sau khi xong → 409 | Pass (code) | `placement_score is not None` → `RuntimeError` → 409 |
+| Admin publish làm mất draft khỏi list draft | Pass (code) | Publish + `refreshDrafts()` reload `status_filter=draft` |
+| Survey → FE placement → kết quả → dashboard | Pass (code / thủ công còn lại) | redirect `/onboarding/placement`; result CTA `/dashboard` — **E2E browser cần bank published A1–C1** |
 
-- [ ] **Bước 3:** Chỉ commit nếu còn chỉnh doc/ghi chú checklist — không tạo empty commit.
+- [x] **Bước 3:** Ghi nhận checklist vào plan này (không empty commit nếu không đổi file).
+
+> **E2E thủ công còn lại:** Publish ≥2 câu/level A1–C1 → user mới survey → placement → submit → xem level; xác nhận chưa có roadmap tuần cho đến khi assemble riêng.
 
 ---
 
