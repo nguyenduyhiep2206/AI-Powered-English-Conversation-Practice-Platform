@@ -55,5 +55,11 @@ class Settings(BaseSettings):
     VOYAGE_EMBED_BATCH_SIZE: int = 32
     VOYAGE_EMBED_BATCH_DELAY_SECONDS: float = 1.0
 
+    # Quiz generation context (text only; no embeddings required)
+    QUIZ_CONTEXT_MAX_CHARS: int = 5000
+    OPENAI_API_KEY: str | None = None
+    OPENAI_MODEL: str = "gpt-4o-mini"
+    OPENAI_BASE_URL: str | None = None
+
 
 settings = Settings()

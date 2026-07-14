@@ -1,9 +1,9 @@
-"""MongoDB book_chunks persistence for RAG indexing."""
+"""MongoDB book_chunks persistence for RAG indexing and quiz context packing."""
 
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Literal
 
 from app.core.config import settings
 from app.core.mongodb import get_mongo_db
@@ -15,6 +15,7 @@ EMBED_STATUS_PENDING = "pending"
 EMBED_STATUS_EMBEDDED = "embedded"
 EMBED_STATUS_FAILED = "failed"
 
+PackMode = Literal["prefix", "stride"]
 
 
 def _sync_collection():
@@ -201,6 +202,78 @@ def count_pending_embed_chunks(book_id: int) -> int:
         )
     finally:
         client.close()
+
+
+def pack_unit_context(
+    chunks: list[dict[str, Any]],
+    max_chars: int = 5000,
+    mode: PackMode = "prefix",
+) -> tuple[str, list[str]]:
+    """Pack unit chunk text for quiz generation (embedding not included)."""
+    if not chunks:
+        return "", []
+
+    ordered = sorted(chunks, key=lambda c: int(c.get("chunk_index", 0)))
+
+    if mode == "stride" and len(ordered) > 3:
+        mid = len(ordered) // 2
+        priority_indexes = {0, mid, len(ordered) - 1}
+        prioritized = [ordered[i] for i in sorted(priority_indexes)]
+        rest = [c for i, c in enumerate(ordered) if i not in priority_indexes]
+        ordered = prioritized + rest
+
+    parts: list[str] = []
+    ids: list[str] = []
+    total = 0
+    for c in ordered:
+        text = (c.get("text") or "").strip()
+        if not text:
+            continue
+        sep = 2 if parts else 0
+        if parts and total + sep + len(text) > max_chars:
+            break
+        if not parts and len(text) > max_chars:
+            text = text[:max_chars]
+        parts.append(text)
+        ids.append(str(c.get("_id", c.get("chunk_index"))))
+        total += sep + len(text)
+    return "\n\n".join(parts), ids
+
+
+def get_unit_chunks(book_id: int, unit_id: int) -> list[dict[str, Any]]:
+    """Load chunk text for one unit (no embedding field)."""
+    if not settings.MONGODB_URL:
+        raise RuntimeError("MONGODB_URL is not configured")
+    client, collection = _sync_collection()
+    try:
+        cursor = collection.find(
+            {"book_id": int(book_id), "unit_id": int(unit_id)},
+            {"text": 1, "chunk_index": 1, "unit_title": 1, "page_start": 1, "page_end": 1},
+        ).sort("chunk_index", 1)
+        return list(cursor)
+    finally:
+        client.close()
+
+
+def get_unit_context(
+    book_id: int,
+    unit_id: int,
+    max_chars: int | None = None,
+    mode: PackMode = "prefix",
+) -> dict[str, Any]:
+    """Pack unit chunk text for quiz generation (embedding not included)."""
+    budget = max_chars if max_chars is not None else settings.QUIZ_CONTEXT_MAX_CHARS
+    chunks = get_unit_chunks(book_id, unit_id)
+    text, chunk_ids = pack_unit_context(chunks, max_chars=budget, mode=mode)
+    unit_title = chunks[0].get("unit_title") if chunks else None
+    return {
+        "book_id": book_id,
+        "unit_id": unit_id,
+        "unit_title": unit_title,
+        "text": text,
+        "chunk_ids": chunk_ids,
+        "chunk_count": len(chunks),
+    }
 
 
 async def ensure_book_chunks_indexes_async() -> None:
