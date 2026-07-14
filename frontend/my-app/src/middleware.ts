@@ -77,5 +77,6 @@ export const config = {
     "/register",
     "/start-onboarding",
     "/onboarding",
+    "/onboarding/:path*",
   ],
 };
