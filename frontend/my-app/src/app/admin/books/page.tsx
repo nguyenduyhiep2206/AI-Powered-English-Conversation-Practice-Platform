@@ -6,6 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { BookQuizPanel } from "@/components/admin/BookQuizPanel";
 import {
   BOOK_STATUS_LABELS,
   BOOK_TYPE_LABELS,
@@ -522,6 +523,14 @@ export default function AdminBooksPage() {
               </div>
             )}
           </section>
+        )}
+
+        {preview && previewBookId !== null && preview.status === "ready" && (
+          <BookQuizPanel
+            bookId={previewBookId}
+            units={preview.units.map((unit) => ({ id: unit.id, title: unit.title }))}
+            onError={setError}
+          />
         )}
       </main>
     </>

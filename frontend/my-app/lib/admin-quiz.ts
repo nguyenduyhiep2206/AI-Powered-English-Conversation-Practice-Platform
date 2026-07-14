@@ -1,0 +1,61 @@
+import { authFetch, extractErrorMessage } from "@/lib/api";
+
+export type SkillSourceRow = {
+  id: number;
+  skill_id: number;
+  unit_id: number;
+  unit_title: string;
+  section_title?: string | null;
+  is_excluded: boolean;
+  is_primary: boolean;
+};
+
+export type SyncSkillsResult = {
+  book_id: number;
+  source_count: number;
+  excluded: number;
+  sources: SkillSourceRow[];
+};
+
+export type QuizQuestionRow = {
+  id: number;
+  skill_id: number;
+  book_id: number;
+  unit_id: number;
+  question_type: string;
+  stem: string;
+  options?: string[] | null;
+  answer: string;
+  explanation?: string | null;
+  difficulty: string;
+  status: string;
+  generation_batch_id?: string | null;
+};
+
+export async function syncBookSkills(bookId: number): Promise<SyncSkillsResult> {
+  const res = await authFetch(`/api/v1/admin/quiz/books/${bookId}/sync-skills`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to sync skills"));
+  }
+  const body = (await res.json()) as { data: SyncSkillsResult };
+  return body.data;
+}
+
+export async function generateSkillQuiz(
+  skillId: number,
+  count = 8,
+): Promise<QuizQuestionRow[]> {
+  const res = await authFetch(`/api/v1/admin/quiz/skills/${skillId}/generate`, {
+    method: "POST",
+    body: JSON.stringify({ count }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to generate quiz"));
+  }
+  const body = (await res.json()) as { data: QuizQuestionRow[] };
+  return body.data;
+}
