@@ -171,3 +171,32 @@ class BookStatusEnum(str, enum.Enum):
 
 book_type_enum = SAEnum(BookTypeEnum, name="book_type_enum", create_type=True)
 book_status_enum = SAEnum(BookStatusEnum, name="book_status_enum", create_type=True)
+
+
+# Level-first quiz / skill graph
+class QuizQuestionTypeEnum(str, enum.Enum):
+    mcq = "mcq"
+    cloze = "cloze"
+    fix_grammar = "fix_grammar"
+
+
+class QuizQuestionStatusEnum(str, enum.Enum):
+    draft = "draft"
+    published = "published"
+    rejected = "rejected"
+
+
+class SkillTypeEnum(str, enum.Enum):
+    grammar = "grammar"
+    vocabulary = "vocabulary"
+    reading = "reading"
+    functional = "functional"
+
+
+quiz_question_type_enum = SAEnum(
+    QuizQuestionTypeEnum, name="quiz_question_type_enum", create_type=True
+)
+quiz_question_status_enum = SAEnum(
+    QuizQuestionStatusEnum, name="quiz_question_status_enum", create_type=True
+)
+skill_type_enum = SAEnum(SkillTypeEnum, name="skill_type_enum", create_type=True)
