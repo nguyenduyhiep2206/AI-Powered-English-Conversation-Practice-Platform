@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, status
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import auth, user, google_auth, onboarding, admin_survey, admin_books, admin_quiz
+from app.api import auth, user, google_auth, onboarding, admin_survey, admin_books, admin_quiz, quiz
 from app.core.config import settings
 from app.core.mongodb import connect_mongo, disconnect_mongo
 
@@ -38,6 +38,7 @@ app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboar
 app.include_router(admin_survey.router, prefix="/api/v1/admin/survey", tags=["admin-survey"])
 app.include_router(admin_books.router, prefix="/api/v1/admin/books", tags=["admin-books"])
 app.include_router(admin_quiz.router, prefix="/api/v1/admin/quiz", tags=["admin-quiz"])
+app.include_router(quiz.router, prefix="/api/v1/quiz", tags=["quiz"])
 
 
 @app.get("/ping", status_code=status.HTTP_200_OK)
