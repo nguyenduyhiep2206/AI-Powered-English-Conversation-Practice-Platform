@@ -35,7 +35,7 @@ export default function OnboardingSurveyPage() {
           return;
         }
         if (status.survey_done) {
-          router.replace("/start-onboarding");
+          router.replace("/onboarding/placement");
           return;
         }
 
@@ -43,7 +43,7 @@ export default function OnboardingSurveyPage() {
         setQuestions(qs);
       } catch (err) {
         if (err instanceof Error && err.message === "SURVEY_ALREADY_DONE") {
-          router.replace("/start-onboarding");
+          router.replace("/onboarding/placement");
           return;
         }
         setError(err instanceof Error ? err.message : "Failed to load survey");
@@ -82,7 +82,7 @@ export default function OnboardingSurveyPage() {
     setSubmitting(true);
     try {
       await submitSurvey(payload);
-      router.replace("/start-onboarding");
+      router.replace("/onboarding/placement");
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit survey");

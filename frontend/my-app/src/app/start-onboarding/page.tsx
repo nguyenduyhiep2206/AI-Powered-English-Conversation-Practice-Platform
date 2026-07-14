@@ -144,8 +144,8 @@ export default function StartOnboardingPage() {
 
           <div className="flex flex-col-reverse justify-center items-center gap-3 border-t border-border px-6 py-6 md:flex-row md:px-10">
             <Button asChild size="lg" className="w-full md:w-auto">
-              <Link href="/onboarding">
-                {isContinue ? "Continue Onboarding" : "Start Onboarding"}
+              <Link href={isContinue ? "/onboarding/placement" : "/onboarding"}>
+                {isContinue ? "Continue Placement Test" : "Start Onboarding"}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
