@@ -4,6 +4,8 @@ from app.models.enums import CEFRLevel
 from app.services.placement_service import (
     PLACEMENT_SIZE,
     PlacementCandidate,
+    grade_placement_answer,
+    placement_public_dict,
     score_to_level,
     select_from_candidates,
 )
@@ -85,3 +87,25 @@ def test_prefers_mcq_and_avoids_duplicate_skill_within_level():
     assert len(a1) == 2
     assert all(p.question_type == "mcq" for p in a1)
     assert len({p.skill_id for p in a1}) == 2
+
+
+def test_grade_placement_answer_uses_case_insensitive_match():
+    assert grade_placement_answer("Has gone", "has gone") is True
+    assert grade_placement_answer("x", "y") is False
+
+
+def test_placement_public_dict_omits_answer():
+    c = PlacementCandidate(
+        id=9,
+        skill_id=1,
+        cefr_level=CEFRLevel.B1,
+        question_type="mcq",
+        stem="Stem",
+        options=["a", "b", "c", "d"],
+        difficulty="easy",
+        answer="SECRET",
+    )
+    d = placement_public_dict(c)
+    assert "answer" not in d
+    assert d["id"] == 9
+    assert d["cefr_level"] == "B1"
