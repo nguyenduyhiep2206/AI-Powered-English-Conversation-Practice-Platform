@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   generateSkillQuiz,
+  listBookQuestions,
+  publishQuestions,
   syncBookSkills,
+  type QuizQuestionRow,
   type SkillSourceRow,
 } from "@/lib/admin-quiz";
 
@@ -28,12 +31,32 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
   const [syncing, setSyncing] = useState(false);
   const [generatingSkillId, setGeneratingSkillId] = useState<number | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  const [drafts, setDrafts] = useState<QuizQuestionRow[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const [loadingDrafts, setLoadingDrafts] = useState(false);
+  const [publishing, setPublishing] = useState(false);
+
+  const refreshDrafts = useCallback(async () => {
+    setLoadingDrafts(true);
+    try {
+      const rows = await listBookQuestions(bookId, "draft");
+      setDrafts(rows);
+      setSelectedIds(new Set());
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to load drafts");
+    } finally {
+      setLoadingDrafts(false);
+    }
+  }, [bookId, onError]);
 
   useEffect(() => {
     setSourcesByUnitId({});
     setStatusMessage(null);
     setGeneratingSkillId(null);
-  }, [bookId]);
+    setDrafts([]);
+    setSelectedIds(new Set());
+    void refreshDrafts();
+  }, [bookId, refreshDrafts]);
 
   const syncSummary = useMemo(() => {
     const sources = Object.values(sourcesByUnitId);
@@ -51,7 +74,6 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
       const next: Record<number, SkillSourceRow> = {};
       for (const source of result.sources) {
         const existing = next[source.unit_id];
-        // Prefer primary non-excluded source when a unit maps to multiple rows.
         if (
           !existing ||
           (source.is_primary && !source.is_excluded) ||
@@ -64,6 +86,7 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
       setStatusMessage(
         `Synced ${result.source_count} skill source(s); ${result.excluded} excluded.`,
       );
+      await refreshDrafts();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to sync skills");
     } finally {
@@ -80,11 +103,36 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
       setStatusMessage(
         `Created ${questions.length} draft question(s) for “${unitTitle}”.`,
       );
+      await refreshDrafts();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to generate quiz");
     } finally {
       setGeneratingSkillId(null);
     }
+  }
+
+  async function handlePublish() {
+    if (selectedIds.size === 0) return;
+    setPublishing(true);
+    onError(null);
+    try {
+      const n = await publishQuestions([...selectedIds]);
+      setStatusMessage(`Published ${n} question(s).`);
+      await refreshDrafts();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to publish");
+    } finally {
+      setPublishing(false);
+    }
+  }
+
+  function toggleSelected(id: number, checked: boolean) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
   }
 
   return (
@@ -185,6 +233,61 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
           </table>
         </div>
       )}
+
+      <div className="mt-6 border-t border-border pt-4">
+        <div className="mb-3 flex flex-wrap items-center gap-2">
+          <h3 className="text-sm font-semibold">Draft questions</h3>
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={loadingDrafts}
+            onClick={() => void refreshDrafts()}
+          >
+            {loadingDrafts ? <Loader2 className="h-4 w-4 animate-spin" /> : "Refresh"}
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            className="ml-auto"
+            disabled={publishing || selectedIds.size === 0}
+            onClick={() => void handlePublish()}
+          >
+            {publishing ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              `Publish selected (${selectedIds.size})`
+            )}
+          </Button>
+        </div>
+        {drafts.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No drafts. Generate quiz for a skill first.
+          </p>
+        ) : (
+          <ul className="max-h-64 space-y-2 overflow-y-auto text-sm">
+            {drafts.map((q) => (
+              <li
+                key={q.id}
+                className="flex items-start gap-2 rounded-md border border-border/70 px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={selectedIds.has(q.id)}
+                  onChange={(e) => toggleSelected(q.id, e.target.checked)}
+                />
+                <div>
+                  <p className="font-medium">
+                    #{q.id} · skill {q.skill_id} · {q.question_type}
+                  </p>
+                  <p className="line-clamp-2 text-muted-foreground">{q.stem}</p>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </section>
   );
 }

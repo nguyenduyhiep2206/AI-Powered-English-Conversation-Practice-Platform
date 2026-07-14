@@ -59,3 +59,30 @@ export async function generateSkillQuiz(
   const body = (await res.json()) as { data: QuizQuestionRow[] };
   return body.data;
 }
+
+export async function listBookQuestions(
+  bookId: number,
+  statusFilter?: "draft" | "published",
+): Promise<QuizQuestionRow[]> {
+  const q = statusFilter ? `?status_filter=${statusFilter}` : "";
+  const res = await authFetch(`/api/v1/admin/quiz/books/${bookId}/questions${q}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load questions"));
+  }
+  const body = (await res.json()) as { data: QuizQuestionRow[] };
+  return body.data;
+}
+
+export async function publishQuestions(questionIds: number[]): Promise<number> {
+  const res = await authFetch(`/api/v1/admin/quiz/questions/publish`, {
+    method: "POST",
+    body: JSON.stringify({ question_ids: questionIds }),
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to publish questions"));
+  }
+  const body = (await res.json()) as { data: { published: number } };
+  return body.data.published;
+}
