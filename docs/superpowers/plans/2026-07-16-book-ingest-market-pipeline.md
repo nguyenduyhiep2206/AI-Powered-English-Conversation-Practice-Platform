@@ -303,22 +303,27 @@ EOF
 
 ### Task 4: Checklist thủ công + ghi chú plan
 
-- [ ] **Bước 1: E2E**
+- [x] **Bước 1: E2E** (code/static + unit; browser full PDF còn admin tự xác nhận)
 
-1. Upload PDF → list hiện “Detecting structure…”  
-2. Không bấm Detect; đợi → “Review structure” + preview có units  
-3. Confirm & index → “Indexing…” → “Ready” + `chunk_count` > 0  
-4. Retry detect vẫn chạy được trên sách cũ  
-5. Confirm trước khi detect xong → API 400 “No structure preview…” (hành vi cũ, OK)
+| Bước | Pass? | Bằng chứng |
+|------|-------|-----------|
+| Upload → “Detecting structure…” | Pass (code) | label `uploaded`; upload schedule `detect_book_structure_job` |
+| Không bấm Detect; đợi → Review + preview | Pass (code) | poll → `needs_review` mở preview; detect luôn `needs_review` |
+| Confirm → Indexing → Ready + chunks | Pass (code đã có) | `confirm-and-index` + `index_book` background (không đổi Task 4) |
+| Retry detect trên sách cũ | Pass (code) | nút Retry detect + `POST .../detect-structure` |
+| Confirm trước detect xong → 400 | Pass (code đã có) | `confirm_and_start_indexing` yêu cầu có units |
 
-- [ ] **Bước 2: Unit regression**
+> **Browser còn lại:** Upload 1 PDF thật trên `/admin/books` và xác nhận poll + Confirm → Ready.
+
+- [x] **Bước 2: Unit regression**
 
 ```bash
 cd backend && .venv/bin/python -m pytest tests/test_book_structure_status.py -v
 ```
 
-- [ ] **Bước 3:** Đánh dấu checklist trong file plan này khi xong (commit docs nếu có sửa).
+Kết quả (2026-07-16): **1 passed**. Container smoke: upload route + `detect_book_structure_job` import OK.
 
+- [x] **Bước 3:** Checklist ghi vào plan này.
 ---
 
 ## Ngoài scope / follow-up
