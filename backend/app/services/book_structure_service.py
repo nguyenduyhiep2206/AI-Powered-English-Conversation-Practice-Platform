@@ -1,3 +1,4 @@
+import logging
 import tempfile
 from dataclasses import dataclass
 
@@ -6,12 +7,15 @@ from fastapi import HTTPException, status
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.database import AsyncSessionLocal
 from app.models.book import BookDB
 from app.models.book_structure_preview import BookStructurePreviewDB
 from app.models.enums import BookStatusEnum
 from app.services.book_structure.detector_chain import StructureDetectorChain
 from app.services import supabase_storage_service
 from app.services.book_service import get_book
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -132,3 +136,22 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
         status=book.status,
         units=saved_units,
     )
+
+
+async def detect_book_structure_job(book_id: int) -> None:
+    """Background entry: open own DB session (same pattern as index_book)."""
+    try:
+        async with AsyncSessionLocal() as db:
+            await detect_book_structure(db, book_id)
+    except HTTPException as exc:
+        logger.warning("Structure detect rejected for book_id=%s: %s", book_id, exc.detail)
+    except Exception:
+        logger.exception("Background structure detect failed for book_id=%s", book_id)
+        try:
+            async with AsyncSessionLocal() as db:
+                book = await get_book(db, book_id)
+                if book.status == BookStatusEnum.uploaded:
+                    book.status = BookStatusEnum.needs_review
+                    await db.commit()
+        except Exception:
+            logger.exception("Failed to mark book_id=%s after detect error", book_id)

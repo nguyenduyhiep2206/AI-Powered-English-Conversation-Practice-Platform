@@ -24,7 +24,11 @@ from app.services.book_indexing_service import (
     retry_embeddings,
 )
 from app.services.book_service import delete_book, get_book, list_books, upload_book
-from app.services.book_structure_service import detect_book_structure, get_structure_preview
+from app.services.book_structure_service import (
+    detect_book_structure,
+    detect_book_structure_job,
+    get_structure_preview,
+)
 
 router = APIRouter()
 
@@ -70,6 +74,7 @@ async def admin_get_book(book_id: int, db: AsyncSession = Depends(get_db)):
     dependencies=[Depends(require_permission("book:manage"))],
 )
 async def admin_upload_book(
+    background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     title: str = Form(...),
     description: Optional[str] = Form(None),
@@ -87,6 +92,7 @@ async def admin_upload_book(
         book_type=book_type,
         uploaded_by=int(current_user.id),
     )
+    background_tasks.add_task(detect_book_structure_job, int(book.id))
     return BookResponse(data=_to_admin(book))
 
 
