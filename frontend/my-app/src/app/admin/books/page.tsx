@@ -13,6 +13,7 @@ import {
   confirmAndIndexBook,
   deleteAdminBook,
   detectBookStructure,
+  fetchAdminBook,
   fetchAdminBooks,
   fetchBookStructurePreview,
   formatFileSize,
@@ -77,6 +78,26 @@ export default function AdminBooksPage() {
     loadBooks();
   }, [loadBooks]);
 
+  async function pollUntilDetectSettled(bookId: number) {
+    for (let i = 0; i < 30; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      try {
+        const book = await fetchAdminBook(bookId);
+        setBooks((prev) => prev.map((b) => (b.id === bookId ? book : b)));
+        if (book.status !== "uploaded") {
+          if (book.status === "needs_review") {
+            const nextPreview = await fetchBookStructurePreview(bookId);
+            setPreviewBookId(bookId);
+            setPreview(nextPreview);
+          }
+          return;
+        }
+      } catch {
+        /* keep polling while detect runs in background */
+      }
+    }
+  }
+
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault();
     if (!file || !title.trim()) {
@@ -87,7 +108,7 @@ export default function AdminBooksPage() {
     setUploading(true);
     setError(null);
     try {
-      await uploadAdminBook({
+      const book = await uploadAdminBook({
         file,
         title: title.trim(),
         book_type: bookType,
@@ -101,6 +122,7 @@ export default function AdminBooksPage() {
       const input = document.getElementById("book-file") as HTMLInputElement | null;
       if (input) input.value = "";
       await loadBooks();
+      void pollUntilDetectSettled(book.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
     } finally {
@@ -212,7 +234,8 @@ export default function AdminBooksPage() {
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Books</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload PDF books for AI indexing and personalized tests.
+          Upload a PDF — structure is detected automatically. Review units, then confirm
+          to chunk &amp; embed.
         </p>
       </header>
 
@@ -382,8 +405,13 @@ export default function AdminBooksPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            title="Detect structure"
-                            disabled={detectingId === book.id || previewLoading}
+                            title="Retry structure detect"
+                            disabled={
+                              detectingId === book.id ||
+                              previewLoading ||
+                              book.status === "uploaded" ||
+                              book.status === "processing"
+                            }
                             onClick={() => handleDetect(book.id)}
                           >
                             {detectingId === book.id ? (
@@ -391,6 +419,7 @@ export default function AdminBooksPage() {
                             ) : (
                               <ScanSearch className="h-4 w-4" />
                             )}
+                            <span className="ml-1 hidden sm:inline">Retry detect</span>
                           </Button>
                           <Button
                             type="button"
@@ -462,10 +491,14 @@ export default function AdminBooksPage() {
                   type="button"
                   size="sm"
                   className="ml-auto"
-                  disabled={indexingId === previewBookId}
+                  disabled={
+                    indexingId === previewBookId ||
+                    preview.status === "processing" ||
+                    preview.status === "uploaded"
+                  }
                   onClick={() => handleConfirmAndIndex(previewBookId)}
                 >
-                  {indexingId === previewBookId ? (
+                  {indexingId === previewBookId || preview.status === "processing" ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     "Confirm & index"
@@ -474,9 +507,17 @@ export default function AdminBooksPage() {
               )}
             </div>
 
+            {preview.status === "processing" && (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Indexing in background (chunk + embed)…
+              </p>
+            )}
+
             {preview.units.length === 0 ? (
               <p className="text-sm text-muted-foreground">
-                No structure units saved yet. Run detect on this book first.
+                {preview.status === "uploaded"
+                  ? "Detecting structure in the background…"
+                  : "No structure units yet. Use Retry detect if detection failed."}
               </p>
             ) : (
               <div className="overflow-x-auto">

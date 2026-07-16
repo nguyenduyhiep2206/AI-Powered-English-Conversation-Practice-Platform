@@ -87,9 +87,9 @@ export function formatFileSize(bytes: number): string {
 }
 
 export const BOOK_STATUS_LABELS: Record<BookStatus, string> = {
-  uploaded: "Uploaded",
-  needs_review: "Needs review",
-  processing: "Processing",
+  uploaded: "Detecting structure…",
+  needs_review: "Review structure",
+  processing: "Indexing…",
   ready: "Ready",
   failed: "Failed",
 };
