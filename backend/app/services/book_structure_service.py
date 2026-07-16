@@ -13,8 +13,6 @@ from app.services.book_structure.detector_chain import StructureDetectorChain
 from app.services import supabase_storage_service
 from app.services.book_service import get_book
 
-CONFIDENCE_REVIEW_THRESHOLD = 0.7
-
 
 @dataclass
 class StructurePreviewSummary:
@@ -23,6 +21,12 @@ class StructurePreviewSummary:
     confidence: float | None
     status: BookStatusEnum
     units: list[BookStructurePreviewDB]
+
+
+def status_after_successful_detect(confidence: float) -> BookStatusEnum:
+    """After units are saved, always require human review before chunking."""
+    _ = confidence
+    return BookStatusEnum.needs_review
 
 
 async def _download_pdf_bytes(book: BookDB) -> bytes:
@@ -109,11 +113,7 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
     db.add_all(preview_rows)
 
     book.detection_method = detection.method
-    book.status = (
-        BookStatusEnum.needs_review
-        if detection.confidence < CONFIDENCE_REVIEW_THRESHOLD
-        else BookStatusEnum.uploaded
-    )
+    book.status = status_after_successful_detect(detection.confidence)
 
     await db.commit()
     await db.refresh(book)
