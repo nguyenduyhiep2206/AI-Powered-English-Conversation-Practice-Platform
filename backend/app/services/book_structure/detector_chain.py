@@ -14,6 +14,15 @@ class StructureDetectorChain:
             FontStyleDetector(),
         ]
 
+    def detect_all(self, pdf_path: str) -> list[DetectionResult]:
+        """Run every detector and return all non-empty results (no early exit)."""
+        results: list[DetectionResult] = []
+        for detector in self.detectors:
+            result = detector.detect(pdf_path)
+            if result is not None and result.units:
+                results.append(result)
+        return results
+
     def detect(self, pdf_path: str) -> DetectionResult | None:
         best_below_threshold: DetectionResult | None = None
 

@@ -117,9 +117,15 @@ async def admin_delete_book(book_id: int, db: AsyncSession = Depends(get_db)):
     response_model=StructurePreviewResponse,
     dependencies=[Depends(require_permission("book:manage"))],
 )
-async def admin_detect_book_structure(book_id: int, db: AsyncSession = Depends(get_db)):
-    summary = await detect_book_structure(db, book_id)
-    return StructurePreviewResponse(data=_to_structure_preview(summary))
+async def admin_detect_book_structure(
+    book_id: int,
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db),
+):
+    outcome = await detect_book_structure(db, book_id)
+    if outcome.should_index:
+        background_tasks.add_task(index_book, book_id)
+    return StructurePreviewResponse(data=_to_structure_preview(outcome.summary))
 
 
 @router.get(

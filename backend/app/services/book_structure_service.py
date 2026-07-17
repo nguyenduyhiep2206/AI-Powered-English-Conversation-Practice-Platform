@@ -4,14 +4,19 @@ from dataclasses import dataclass
 
 import httpx
 from fastapi import HTTPException, status
+from pypdf import PdfReader
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.core.database import AsyncSessionLocal
 from app.models.book import BookDB
 from app.models.book_structure_preview import BookStructurePreviewDB
 from app.models.enums import BookStatusEnum
+from app.services.book_structure.ai_merge_service import merge_structure_with_ai, skim_pdf_headings
+from app.services.book_structure.base import DetectionResult
 from app.services.book_structure.detector_chain import StructureDetectorChain
+from app.services.book_structure.structure_gate import validate_structure
 from app.services import supabase_storage_service
 from app.services.book_service import get_book
 
@@ -27,10 +32,28 @@ class StructurePreviewSummary:
     units: list[BookStructurePreviewDB]
 
 
+@dataclass
+class StructureDetectOutcome:
+    summary: StructurePreviewSummary
+    should_index: bool
+
+
 def status_after_successful_detect(confidence: float) -> BookStatusEnum:
-    """After units are saved, always require human review before chunking."""
+    """Legacy helper — prefer status_after_structure_decision for new flow."""
     _ = confidence
     return BookStatusEnum.needs_review
+
+
+def status_after_structure_decision(*, gate_ok: bool, auto_index_enabled: bool) -> BookStatusEnum:
+    if auto_index_enabled and gate_ok:
+        return BookStatusEnum.processing
+    return BookStatusEnum.needs_review
+
+
+def pick_best_candidate(candidates: list[DetectionResult]) -> DetectionResult | None:
+    if not candidates:
+        return None
+    return max(candidates, key=lambda r: (len(r.units), r.confidence))
 
 
 async def _download_pdf_bytes(book: BookDB) -> bytes:
@@ -76,7 +99,38 @@ async def get_structure_preview(db: AsyncSession, book_id: int) -> StructurePrev
     )
 
 
-async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePreviewSummary:
+def _resolve_detection(pdf_path: str) -> tuple[DetectionResult | None, bool, list[str]]:
+    """Return (detection, auto_index_enabled, page_texts_for_gate)."""
+    chain = StructureDetectorChain()
+    candidates = chain.detect_all(pdf_path)
+    total_pages = len(PdfReader(pdf_path).pages)
+    page_texts = skim_pdf_headings(pdf_path)
+
+    use_ai = bool(settings.STRUCTURE_AI_MERGE_ENABLED and settings.OPENAI_API_KEY)
+    detection: DetectionResult | None = None
+
+    if use_ai:
+        if candidates:
+            try:
+                detection = merge_structure_with_ai(
+                    pdf_path, candidates, total_pages=total_pages
+                )
+            except Exception:
+                logger.exception("AI structure merge failed; falling back to best candidate")
+                detection = pick_best_candidate(candidates)
+        else:
+            try:
+                detection = merge_structure_with_ai(pdf_path, [], total_pages=total_pages)
+            except Exception:
+                logger.exception("AI structure merge failed with no heuristic candidates")
+                detection = None
+    else:
+        detection = pick_best_candidate(candidates) or chain.detect(pdf_path)
+
+    return detection, use_ai, page_texts
+
+
+async def detect_book_structure(db: AsyncSession, book_id: int) -> StructureDetectOutcome:
     book = await get_book(db, book_id)
     if not book.file_path:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Book has no file URL")
@@ -86,7 +140,8 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
     with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
         tmp.write(pdf_bytes)
         tmp.flush()
-        detection = StructureDetectorChain().detect(tmp.name)
+        detection, auto_index_enabled, page_texts = _resolve_detection(tmp.name)
+        total_pages = len(PdfReader(tmp.name).pages)
 
     if detection is None or not detection.units:
         book.detection_method = None
@@ -97,6 +152,21 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="Could not detect book structure from this PDF",
+        )
+
+    # Pad page_texts to total_pages for gate
+    while len(page_texts) < total_pages:
+        page_texts.append("")
+
+    gate_ok, gate_reasons = validate_structure(
+        detection.units, total_pages=total_pages, page_texts=page_texts
+    )
+    if not gate_ok:
+        logger.warning(
+            "Structure gate failed for book_id=%s method=%s: %s",
+            book_id,
+            detection.method,
+            "; ".join(gate_reasons),
         )
 
     await db.execute(delete(BookStructurePreviewDB).where(BookStructurePreviewDB.book_id == book_id))
@@ -117,7 +187,10 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
     db.add_all(preview_rows)
 
     book.detection_method = detection.method
-    book.status = status_after_successful_detect(detection.confidence)
+    book.status = status_after_structure_decision(
+        gate_ok=gate_ok, auto_index_enabled=auto_index_enabled
+    )
+    should_index = book.status == BookStatusEnum.processing
 
     await db.commit()
     await db.refresh(book)
@@ -129,22 +202,26 @@ async def detect_book_structure(db: AsyncSession, book_id: int) -> StructurePrev
     )
     saved_units = list(refreshed.scalars().all())
 
-    return StructurePreviewSummary(
+    summary = StructurePreviewSummary(
         book_id=int(book.id),
         detection_method=book.detection_method,
         confidence=detection.confidence,
         status=book.status,
         units=saved_units,
     )
+    return StructureDetectOutcome(summary=summary, should_index=should_index)
 
 
 async def detect_book_structure_job(book_id: int) -> None:
-    """Background entry: open own DB session (same pattern as index_book)."""
+    """Background entry: detect (+ optional AI merge/gate); auto-index when gate passes."""
+    should_index = False
     try:
         async with AsyncSessionLocal() as db:
-            await detect_book_structure(db, book_id)
+            outcome = await detect_book_structure(db, book_id)
+            should_index = outcome.should_index
     except HTTPException as exc:
         logger.warning("Structure detect rejected for book_id=%s: %s", book_id, exc.detail)
+        return
     except Exception:
         logger.exception("Background structure detect failed for book_id=%s", book_id)
         try:
@@ -155,3 +232,12 @@ async def detect_book_structure_job(book_id: int) -> None:
                     await db.commit()
         except Exception:
             logger.exception("Failed to mark book_id=%s after detect error", book_id)
+        return
+
+    if should_index:
+        from app.services.book_indexing_service import index_book
+
+        try:
+            await index_book(book_id)
+        except Exception:
+            logger.exception("Auto-index failed for book_id=%s after structure gate pass", book_id)

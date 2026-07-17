@@ -79,21 +79,28 @@ export default function AdminBooksPage() {
   }, [loadBooks]);
 
   async function pollUntilDetectSettled(bookId: number) {
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 45; i++) {
       await new Promise((r) => setTimeout(r, 2000));
       try {
         const book = await fetchAdminBook(bookId);
         setBooks((prev) => prev.map((b) => (b.id === bookId ? book : b)));
-        if (book.status !== "uploaded") {
-          if (book.status === "needs_review") {
-            const nextPreview = await fetchBookStructurePreview(bookId);
-            setPreviewBookId(bookId);
-            setPreview(nextPreview);
-          }
-          return;
+        if (book.status === "uploaded") {
+          continue;
         }
+        try {
+          const nextPreview = await fetchBookStructurePreview(bookId);
+          setPreviewBookId(bookId);
+          setPreview(nextPreview);
+        } catch {
+          /* preview may not exist yet on hard fail */
+        }
+        if (book.status === "processing") {
+          // Keep polling until ready/failed so the UI leaves "Indexing…"
+          continue;
+        }
+        return;
       } catch {
-        /* keep polling while detect runs in background */
+        /* keep polling while detect/index runs in background */
       }
     }
   }
@@ -234,8 +241,8 @@ export default function AdminBooksPage() {
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Books</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Upload a PDF — structure is detected automatically. Review units, then confirm
-          to chunk &amp; embed.
+          Upload a PDF — structure is detected (heuristics + AI), verified, then indexed
+          automatically.
         </p>
       </header>
 
@@ -486,19 +493,15 @@ export default function AdminBooksPage() {
               <Badge variant={STATUS_VARIANT[preview.status]}>
                 {BOOK_STATUS_LABELS[preview.status]}
               </Badge>
-              {preview.units.length > 0 && (
+              {preview.units.length > 0 && preview.status === "needs_review" && (
                 <Button
                   type="button"
                   size="sm"
                   className="ml-auto"
-                  disabled={
-                    indexingId === previewBookId ||
-                    preview.status === "processing" ||
-                    preview.status === "uploaded"
-                  }
+                  disabled={indexingId === previewBookId}
                   onClick={() => handleConfirmAndIndex(previewBookId)}
                 >
-                  {indexingId === previewBookId || preview.status === "processing" ? (
+                  {indexingId === previewBookId ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     "Confirm & index"
@@ -513,10 +516,17 @@ export default function AdminBooksPage() {
               </p>
             )}
 
+            {preview.status === "needs_review" && (
+              <p className="mb-3 text-sm text-muted-foreground">
+                Automatic verification did not pass. Retry detect, or Confirm &amp; index
+                to proceed with the units below.
+              </p>
+            )}
+
             {preview.units.length === 0 ? (
               <p className="text-sm text-muted-foreground">
                 {preview.status === "uploaded"
-                  ? "Detecting structure in the background…"
+                  ? "Detecting & merging structure in the background…"
                   : "No structure units yet. Use Retry detect if detection failed."}
               </p>
             ) : (

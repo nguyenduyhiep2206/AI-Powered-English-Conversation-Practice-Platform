@@ -22,3 +22,18 @@ def test_chain_falls_through_junk_toc_to_numbered_caps(junk_toc_with_numbered_ca
   assert len(result.units) == 3
   assert "OLD MAN" in result.units[0].title.upper()
   assert all("Images" not in unit.title for unit in result.units)
+
+
+def test_detect_all_returns_every_non_none_result(junk_toc_with_numbered_caps_pdf):
+  chain = StructureDetectorChain()
+  results = chain.detect_all(str(junk_toc_with_numbered_caps_pdf))
+  methods = {r.method for r in results}
+  # Toc rejects junk → None; Regex finds numbered caps
+  assert "regex" in methods
+  assert all(r.units for r in results)
+
+
+def test_detect_still_early_returns_for_backward_compat(toc_pdf):
+  result = StructureDetectorChain().detect(str(toc_pdf))
+  assert result is not None
+  assert result.method == "toc"
