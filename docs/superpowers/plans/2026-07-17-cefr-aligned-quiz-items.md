@@ -152,10 +152,10 @@ Commit: `feat: store optional passage stimulus on quiz questions`
 
 Mở rộng `validate_generated_questions(items, *, excerpt, blueprint)`:
 
-- [ ] Giữ rule MCQ cũ
-- [ ] Nếu `requires_passage`: `passage` non-empty và `_passage_grounded(passage, excerpt)` (normalize + substring hoặc ratio ≥ 0.55 trên cửa sổ)
-- [ ] Soft check độ dài passage theo level (warn log hoặc reject nếu quá lệch — MVP: reject nếu < min/2 hoặc > max*2)
-- [ ] Reject item thiếu passage khi blueprint yêu cầu
+- [x] Giữ rule MCQ cũ
+- [x] Nếu `requires_passage`: `passage` non-empty và `_passage_grounded(passage, excerpt)` (normalize + substring hoặc ratio ≥ 0.55 trên cửa sổ)
+- [x] Soft check độ dài passage theo level (warn log hoặc reject nếu quá lệch — MVP: reject nếu < min/2 hoặc > max*2)
+- [x] Reject item thiếu passage khi blueprint yêu cầu
 
 Tests trong `test_quiz_generation_service.py`.
 
@@ -165,10 +165,10 @@ Commit: `feat: validate CEFR quiz items against excerpt grounding`
 
 ### Task 4: Rewrite generation prompt + wire service
 
-- [ ] `SYSTEM_PROMPT` CEFR item writer: bám can-do, cấm câu grammar trừu tượng không passage, cấm bịa fact ngoài excerpt
-- [ ] `build_generation_prompt(...)` nhận descriptors + blueprint JSON (số câu từng loại)
-- [ ] `generate_quiz_for_skill`: load book `book_type`, skill `skill_type` / `cefr_level`; chọn context budget theo level; gọi validate mới; lưu `passage`
-- [ ] Context mode: reading → ưu tiên `stride` hoặc prefix lớn hơn (`QUIZ_CONTEXT_MAX_CHARS` có thể tăng theo level, cap 8k)
+- [x] `SYSTEM_PROMPT` CEFR item writer: bám can-do, cấm câu grammar trừu tượng không passage, cấm bịa fact ngoài excerpt
+- [x] `build_generation_prompt(...)` nhận descriptors + blueprint JSON (số câu từng loại)
+- [x] `generate_quiz_for_skill`: load book `book_type`, skill `skill_type` / `cefr_level`; chọn context budget theo level; gọi validate mới; lưu `passage`
+- [x] Context mode: reading → ưu tiên `stride` hoặc prefix lớn hơn (`QUIZ_CONTEXT_MAX_CHARS` có thể tăng theo level, cap 8k)
 
 Commit: `feat: CEFR-aware quiz generation with passage stimuli`
 
@@ -176,9 +176,9 @@ Commit: `feat: CEFR-aware quiz generation with passage stimuli`
 
 ### Task 5: FE — hiện passage
 
-- [ ] `BookQuizPanel`: mỗi draft hiện khối passage (muted) trên stem
-- [ ] Placement page: hiện passage trước câu hỏi (typography rõ, không card-spam)
-- [ ] Types TS cập nhật
+- [x] `BookQuizPanel`: mỗi draft hiện khối passage (muted) trên stem
+- [x] Placement page: hiện passage trước câu hỏi (typography rõ, không card-spam)
+- [x] Types TS cập nhật
 
 Commit: `feat: show quiz passage stimulus in admin and placement UI`
 

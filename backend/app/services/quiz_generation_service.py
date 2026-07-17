@@ -10,26 +10,69 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
+from app.models.book import BookDB
 from app.models.book_skill_source import BookSkillSourceDB
-from app.models.enums import CEFRLevel, QuizQuestionStatusEnum, QuizQuestionTypeEnum
+from app.models.enums import (
+    BookTypeEnum,
+    CEFRLevel,
+    QuizQuestionStatusEnum,
+    QuizQuestionTypeEnum,
+    SkillTypeEnum,
+)
 from app.models.learning_skill import LearningSkillDB
 from app.models.quiz_question import QuizQuestionDB
-from app.services.book_chunk_service import get_unit_context
-from app.services.cefr_descriptors import passage_length_range
+from app.services.book_chunk_service import PackMode, get_unit_context
+from app.services.cefr_descriptors import (
+    blueprint_as_prompt_lines,
+    blueprint_for,
+    get_can_do,
+    passage_length_range,
+)
 from app.services.llm_client import chat_json
 
-SYSTEM_PROMPT = """You are an expert English assessment writer for CEFR-aligned courses.
-Generate exam questions ONLY from the provided textbook excerpt.
-Do not invent rules unsupported by the excerpt.
-Do not copy answer keys if present; write new stems.
+SYSTEM_PROMPT = """You are an expert CEFR assessment item writer for English language courses.
+Write items ONLY from the provided textbook EXCERPT.
+Every item that requires a passage MUST include a "passage" field copied or lightly trimmed
+from the EXCERPT (same wording). Do not invent facts, characters, or grammar rules absent
+from the excerpt. Do not write abstract grammar questions without a book passage/exemplar.
+Do not copy answer keys; write new stems about the passage.
 Return JSON: {"questions":[...]} with fields:
-type (mcq|cloze|fix_grammar), stem, options (4 strings for mcq else null),
-answer, explanation, skill, difficulty (easy|medium|hard).
+type (mcq|cloze|fix_grammar), passage (string, required when blueprint says so),
+stem, options (exactly 4 strings for mcq else null), answer, explanation,
+skill, difficulty (easy|medium|hard), cefr_focus (string).
 For mcq, answer must exactly match one option.
+Follow the item blueprint order and cefr_focus exactly.
 """
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 PASSAGE_GROUNDING_RATIO = 0.55
+CONTEXT_CHAR_CAP = 8000
+
+
+def context_budget_for_level(cefr_level: CEFRLevel | str | None) -> int:
+    """Larger context for higher levels, capped at 8k."""
+    base = settings.QUIZ_CONTEXT_MAX_CHARS
+    level = cefr_level.value if hasattr(cefr_level, "value") else cefr_level
+    bump = {
+        "A1": 0,
+        "A2": 500,
+        "B1": 1500,
+        "B2": 2500,
+        "C1": 3000,
+    }.get(str(level or "B1"), 1500)
+    return min(CONTEXT_CHAR_CAP, base + bump)
+
+
+def context_mode_for(
+    book_type: BookTypeEnum | str | None,
+    skill_type: SkillTypeEnum | str | None,
+) -> PackMode:
+    bt = book_type.value if hasattr(book_type, "value") else book_type
+    st = skill_type.value if hasattr(skill_type, "value") else skill_type
+    if bt == BookTypeEnum.reading_practice.value or st == SkillTypeEnum.reading.value:
+        return "stride"
+    return "prefix"
 
 
 def build_generation_prompt(
@@ -37,14 +80,30 @@ def build_generation_prompt(
     cefr_level: str | None,
     context: str,
     count: int,
+    *,
+    can_do: str | None = None,
+    blueprint: list[dict[str, Any]] | None = None,
+    skill_type: str | None = None,
+    book_type: str | None = None,
 ) -> str:
-    return (
-        f"Unit: {unit_title}\n"
-        f"CEFR: {cefr_level or 'B1'}\n"
-        f"Generate exactly {count} questions.\n"
-        f"Prefer mcq; include at most 1 cloze.\n\n"
-        f"EXCERPT:\n{context}\n"
-    )
+    level = cefr_level or "B1"
+    min_chars, max_chars = passage_length_range(level)
+    parts = [
+        f"Unit: {unit_title}",
+        f"CEFR level: {level}",
+        f"Skill type: {skill_type or 'grammar'}",
+        f"Book type: {book_type or 'freeform'}",
+        f"Can-do target: {can_do or get_can_do(level, skill_type or 'grammar')}",
+        f"Passage length for each item: about {min_chars}-{max_chars} characters "
+        f"(stay within that band).",
+        f"Generate exactly {count} questions matching the blueprint below.",
+    ]
+    if blueprint:
+        parts.append(blueprint_as_prompt_lines(blueprint))
+    else:
+        parts.append("Prefer mcq; include at most 1 cloze.")
+    parts.append(f"\nEXCERPT:\n{context}\n")
+    return "\n".join(parts)
 
 
 def _normalize_text(text: str) -> str:
@@ -159,7 +218,7 @@ async def generate_quiz_for_skill(
     skill_id: int,
     count: int = 8,
 ) -> list[QuizQuestionDB]:
-    """Sinh quiz cho skill chuẩn: primary source unit → context → LLM → draft rows."""
+    """Sinh quiz CEFR-aware: blueprint + passage grounding → draft rows."""
     skill = (
         await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
     ).scalar_one_or_none()
@@ -185,21 +244,58 @@ async def generate_quiz_for_skill(
     if primary.is_excluded:
         raise ValueError("Primary source bị exclude — không sinh quiz")
 
-    ctx = get_unit_context(int(primary.book_id), int(primary.unit_id), mode="prefix")
+    book = (
+        await db.execute(select(BookDB).where(BookDB.id == primary.book_id))
+    ).scalar_one_or_none()
+    if book is None:
+        raise ValueError("Không tìm thấy sách nguồn")
+
+    cefr = skill.cefr_level
+    skill_type = skill.skill_type or SkillTypeEnum.grammar
+    book_type = book.book_type or BookTypeEnum.freeform
+
+    blueprint = blueprint_for(book_type, skill_type, count)
+    can_do = get_can_do(cefr, skill_type)
+    mode = context_mode_for(book_type, skill_type)
+    budget = context_budget_for_level(cefr)
+
+    ctx = get_unit_context(
+        int(primary.book_id),
+        int(primary.unit_id),
+        max_chars=budget,
+        mode=mode,
+    )
     if not ctx["text"]:
         raise ValueError("Unit nguồn không có text chunk")
 
-    cefr = skill.cefr_level.value if hasattr(skill.cefr_level, "value") else str(skill.cefr_level)
+    cefr_s = cefr.value if hasattr(cefr, "value") else str(cefr)
+    skill_type_s = skill_type.value if hasattr(skill_type, "value") else str(skill_type)
+    book_type_s = book_type.value if hasattr(book_type, "value") else str(book_type)
     unit_title = primary.unit_title or skill.title
+
     payload = chat_json(
         SYSTEM_PROMPT,
-        build_generation_prompt(unit_title, cefr, ctx["text"], count),
+        build_generation_prompt(
+            unit_title,
+            cefr_s,
+            ctx["text"],
+            count,
+            can_do=can_do,
+            blueprint=blueprint,
+            skill_type=skill_type_s,
+            book_type=book_type_s,
+        ),
     )
     raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
     if not isinstance(raw_questions, list):
         raise ValueError("LLM không trả về danh sách questions")
 
-    validated = validate_generated_questions(raw_questions)
+    validated = validate_generated_questions(
+        raw_questions,
+        excerpt=ctx["text"],
+        blueprint=blueprint,
+        cefr_level=cefr,
+    )
     if not validated:
         raise ValueError("Không có câu hỏi hợp lệ sau validate")
 

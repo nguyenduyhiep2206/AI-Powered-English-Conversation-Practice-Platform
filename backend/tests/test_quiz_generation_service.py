@@ -55,6 +55,37 @@ def test_prompt_co_ten_unit_va_so_cau():
     assert "We use the present perfect" in prompt
 
 
+def test_prompt_includes_can_do_and_blueprint():
+    from app.services.cefr_descriptors import blueprint_for
+    from app.models.enums import BookTypeEnum, SkillTypeEnum
+
+    bp = blueprint_for(BookTypeEnum.reading_practice, SkillTypeEnum.reading, 3)
+    prompt = build_generation_prompt(
+        unit_title="Max the Cat",
+        cefr_level="A2",
+        context="Max the cat sat on the mat.",
+        count=3,
+        can_do="CEFR A2 reading: understand short simple texts",
+        blueprint=bp,
+        skill_type="reading",
+        book_type="reading_practice",
+    )
+    assert "Can-do target:" in prompt
+    assert "Item blueprint" in prompt
+    assert "requires_passage=True" in prompt
+    assert "reading_practice" in prompt
+
+
+def test_context_budget_and_mode():
+    from app.services.quiz_generation_service import context_budget_for_level, context_mode_for
+    from app.models.enums import BookTypeEnum, CEFRLevel, SkillTypeEnum
+
+    assert context_budget_for_level(CEFRLevel.C1) >= context_budget_for_level(CEFRLevel.A1)
+    assert context_budget_for_level(CEFRLevel.C1) <= 8000
+    assert context_mode_for(BookTypeEnum.reading_practice, SkillTypeEnum.grammar) == "stride"
+    assert context_mode_for(BookTypeEnum.grammar_textbook, SkillTypeEnum.grammar) == "prefix"
+
+
 def test_passage_grounded_substring():
     excerpt = "The old man waits at the post office every morning."
     assert passage_grounded("old man waits at the post office", excerpt) is True

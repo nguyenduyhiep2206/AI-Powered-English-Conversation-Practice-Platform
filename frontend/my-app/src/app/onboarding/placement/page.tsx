@@ -152,6 +152,16 @@ export default function PlacementPage() {
                   <Badge variant="outline">{current.cefr_level}</Badge>
                   <Badge variant="outline">{current.question_type}</Badge>
                 </div>
+                {current.passage ? (
+                  <div className="mb-5 border-l-2 border-primary/40 pl-4">
+                    <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+                      Passage
+                    </p>
+                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
+                      {current.passage}
+                    </p>
+                  </div>
+                ) : null}
                 <p className="text-base font-medium leading-relaxed">{current.stem}</p>
 
                 {current.question_type === "mcq" && current.options?.length ? (

@@ -281,7 +281,12 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
                   <p className="font-medium">
                     #{q.id} · skill {q.skill_id} · {q.question_type}
                   </p>
-                  <p className="line-clamp-2 text-muted-foreground">{q.stem}</p>
+                  {q.passage ? (
+                    <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs text-muted-foreground/90">
+                      {q.passage}
+                    </p>
+                  ) : null}
+                  <p className="mt-1 line-clamp-2 text-muted-foreground">{q.stem}</p>
                 </div>
               </li>
             ))}
