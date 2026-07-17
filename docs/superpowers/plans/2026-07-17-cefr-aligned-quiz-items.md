@@ -139,10 +139,10 @@ Commit message gợi ý: `feat: add CEFR can-do descriptors and quiz blueprints`
 
 ### Task 2: Schema `passage` + API schemas
 
-- [ ] Column `passage = Column(TEXT, nullable=True)` trên `quiz_questions`
-- [ ] Alembic migration
-- [ ] `QuizQuestionOut` / admin list / onboarding question DTO có `passage: str | null`
-- [ ] Learner GET **không** trả `answer`; **có** trả `passage`
+- [x] Column `passage = Column(TEXT, nullable=True)` trên `quiz_questions`
+- [x] Alembic migration
+- [x] `QuizQuestionOut` / admin list / onboarding question DTO có `passage: str | null`
+- [x] Learner GET **không** trả `answer`; **có** trả `passage`
 
 Commit: `feat: store optional passage stimulus on quiz questions`
 

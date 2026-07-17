@@ -6,6 +6,7 @@ export type PlacementQuestion = {
   cefr_level: string;
   question_type: string;
   stem: string;
+  passage?: string | null;
   options?: string[] | null;
   difficulty: string;
 };

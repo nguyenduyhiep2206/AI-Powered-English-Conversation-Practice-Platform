@@ -35,6 +35,7 @@ class QuizQuestionDB(Base):
     )
     question_type = Column(quiz_question_type_enum, nullable=False)
     stem = Column(TEXT, nullable=False)
+    passage = Column(TEXT, nullable=True)
     options = Column(JSON, nullable=True)
     answer = Column(String(500), nullable=False)
     explanation = Column(TEXT, nullable=True)

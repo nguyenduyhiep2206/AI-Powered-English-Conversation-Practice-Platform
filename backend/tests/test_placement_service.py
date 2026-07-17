@@ -104,8 +104,10 @@ def test_placement_public_dict_omits_answer():
         options=["a", "b", "c", "d"],
         difficulty="easy",
         answer="SECRET",
+        passage="Once upon a time…",
     )
     d = placement_public_dict(c)
     assert "answer" not in d
     assert d["id"] == 9
     assert d["cefr_level"] == "B1"
+    assert d["passage"] == "Once upon a time…"

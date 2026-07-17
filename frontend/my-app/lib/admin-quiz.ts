@@ -24,6 +24,7 @@ export type QuizQuestionRow = {
   unit_id: number;
   question_type: string;
   stem: string;
+  passage?: string | null;
   options?: string[] | null;
   answer: string;
   explanation?: string | null;

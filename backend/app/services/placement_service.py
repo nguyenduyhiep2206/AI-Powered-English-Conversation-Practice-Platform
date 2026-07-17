@@ -43,6 +43,7 @@ class PlacementCandidate:
     options: list[str] | None
     difficulty: str
     answer: str
+    passage: str | None = None
 
 
 def score_to_level(score: int) -> CEFRLevel:
@@ -127,6 +128,7 @@ def placement_public_dict(c: PlacementCandidate) -> dict[str, Any]:
         "cefr_level": c.cefr_level.value if hasattr(c.cefr_level, "value") else str(c.cefr_level),
         "question_type": c.question_type,
         "stem": c.stem,
+        "passage": c.passage,
         "options": c.options,
         "difficulty": c.difficulty,
     }
@@ -156,6 +158,7 @@ async def load_published_candidates(db: AsyncSession) -> list[PlacementCandidate
                 options=list(question.options) if question.options else None,
                 difficulty=question.difficulty or "medium",
                 answer=question.answer,
+                passage=question.passage,
             )
         )
     return out

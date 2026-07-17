@@ -51,6 +51,7 @@ async def list_published_questions(
                 if hasattr(r.question_type, "value")
                 else r.question_type,
                 "stem": r.stem,
+                "passage": r.passage,
                 "options": r.options,
                 "difficulty": r.difficulty,
             }

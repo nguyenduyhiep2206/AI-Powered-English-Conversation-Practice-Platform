@@ -16,6 +16,7 @@ class QuizQuestionOut(BaseModel):
     unit_id: int
     question_type: QuizQuestionTypeEnum
     stem: str
+    passage: Optional[str] = None
     options: Optional[list[str]] = None
     answer: str
     explanation: Optional[str] = None

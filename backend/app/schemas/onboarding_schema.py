@@ -32,6 +32,7 @@ class PlacementQuestionOut(BaseModel):
     cefr_level: str
     question_type: str
     stem: str
+    passage: str | None = None
     options: list[str] | None = None
     difficulty: str
 
