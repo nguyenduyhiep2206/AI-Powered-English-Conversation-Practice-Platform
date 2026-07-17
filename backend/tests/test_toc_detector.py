@@ -33,3 +33,7 @@ def test_toc_detector_prefers_chapter_headings_over_front_matter(chapter_outline
   assert len(result.units) >= 4
   assert all(unit.title.startswith("Chapter ") for unit in result.units)
   assert result.units[0].page_start == 6
+
+
+def test_toc_detector_rejects_accessibility_outline_junk(accessibility_outline_pdf):
+  assert TocDetector().detect(str(accessibility_outline_pdf)) is None

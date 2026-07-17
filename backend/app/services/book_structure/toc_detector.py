@@ -20,12 +20,21 @@ FRONT_MATTER_RE = re.compile(
     re.IGNORECASE,
 )
 
+# OER / publisher accessibility bookmarks — not real chapter TOC.
+JUNK_OUTLINE_RE = re.compile(
+    r"(accessibility|file formats? available|organization of content|"
+    r"^images$|^links$|font size|known issues|potential barriers|"
+    r"structure bookmarks|alt text|screen reader)",
+    re.IGNORECASE,
+)
+
 MIN_HEADINGS_PER_DEPTH = 2
 MIN_UNITS_FOR_HIGH_CONFIDENCE = 3
 TOC_CONFIDENCE = 0.95
 # Prefer depths whose average unit span is in a "chapter-sized" range.
 MIN_REASONABLE_AVG_SPAN = 2.0
 MAX_REASONABLE_AVG_SPAN = 80.0
+MAX_JUNK_RATIO = 0.5
 
 
 def _flatten_outline(outline: Any, reader: PdfReader, depth: int = 0) -> list[dict[str, Any]]:
@@ -42,6 +51,9 @@ def _flatten_outline(outline: Any, reader: PdfReader, depth: int = 0) -> list[di
         try:
             page_index = reader.get_destination_page_number(entry)
         except Exception:
+            continue
+
+        if page_index is None:
             continue
 
         items.append({"title": str(title).strip(), "page_index": page_index, "depth": depth})
@@ -61,6 +73,16 @@ def _is_content_title(title: str) -> bool:
 
 def _is_front_matter(title: str) -> bool:
     return bool(FRONT_MATTER_RE.match(title.strip()))
+
+
+def _is_junk_outline_title(title: str) -> bool:
+    return bool(JUNK_OUTLINE_RE.search(title.strip()))
+
+
+def _junk_ratio(items: list[dict[str, Any]]) -> float:
+    if not items:
+        return 1.0
+    return sum(1 for item in items if _is_junk_outline_title(item["title"])) / len(items)
 
 
 def _avg_page_span(items: list[dict[str, Any]], total_pages: int) -> float:
@@ -86,6 +108,8 @@ def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int 
     # 1) Prefer depths with many content-like titles (Chapter N / N.M / Unit N).
     content_scores: dict[int, int] = {}
     for depth, items in by_depth.items():
+        if _junk_ratio(items) >= MAX_JUNK_RATIO:
+            continue
         score = sum(1 for item in items if _is_content_title(item["title"]))
         if score >= MIN_HEADINGS_PER_DEPTH:
             content_scores[depth] = score
@@ -99,6 +123,8 @@ def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int 
     for depth, items in by_depth.items():
         if len(items) < MIN_UNITS_FOR_HIGH_CONFIDENCE:
             continue
+        if _junk_ratio(items) >= MAX_JUNK_RATIO:
+            continue
         avg_span = _avg_page_span(items, total_pages)
         if not (MIN_REASONABLE_AVG_SPAN <= avg_span <= MAX_REASONABLE_AVG_SPAN):
             continue
@@ -111,15 +137,44 @@ def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int 
         candidates.sort()
         return candidates[0][3]
 
-    # 3) Last resort: shallowest depth with enough items (legacy behavior).
-    eligible = [d for d, items in by_depth.items() if len(items) >= MIN_UNITS_FOR_HIGH_CONFIDENCE]
+    # 3) Last resort: shallowest depth with enough non-junk items.
+    eligible = [
+        d
+        for d, items in by_depth.items()
+        if len(items) >= MIN_UNITS_FOR_HIGH_CONFIDENCE and _junk_ratio(items) < MAX_JUNK_RATIO
+    ]
     if not eligible:
         return None
     return min(eligible)
 
 
+def _outline_looks_like_content(
+    units: list[DetectedUnit],
+    flat_items: list[dict[str, Any]],
+    total_pages: int,
+) -> bool:
+    content_hits = sum(1 for item in flat_items if _is_content_title(item["title"]))
+    if content_hits >= MIN_HEADINGS_PER_DEPTH:
+        return True
+
+    junk_units = sum(1 for unit in units if _is_junk_outline_title(unit.title))
+    if junk_units >= max(2, (len(units) + 1) // 2):
+        return False
+
+    # Bookmarks clustered only in front-matter region are not a chapter TOC.
+    if units and max(unit.page_start for unit in units) <= max(5, total_pages // 8):
+        return False
+
+    return True
+
+
 def _to_units(flat_items: list[dict[str, Any]], depth: int, total_pages: int) -> list[DetectedUnit]:
     selected = [item for item in flat_items if item["depth"] == depth]
+    # Drop accessibility / junk bookmarks when enough other titles remain.
+    without_junk = [item for item in selected if not _is_junk_outline_title(item["title"])]
+    if len(without_junk) >= MIN_HEADINGS_PER_DEPTH:
+        selected = without_junk
+
     # If this depth mixes front-matter and chapters, keep content titles when enough remain.
     content_only = [item for item in selected if _is_content_title(item["title"])]
     if len(content_only) >= MIN_HEADINGS_PER_DEPTH:
@@ -167,6 +222,9 @@ class TocDetector(StructureDetector):
 
         units = _to_units(flat_items, best_depth, total_pages)
         if len(units) < MIN_HEADINGS_PER_DEPTH:
+            return None
+
+        if not _outline_looks_like_content(units, flat_items, total_pages):
             return None
 
         confidence = TOC_CONFIDENCE if len(units) >= MIN_UNITS_FOR_HIGH_CONFIDENCE else 0.7

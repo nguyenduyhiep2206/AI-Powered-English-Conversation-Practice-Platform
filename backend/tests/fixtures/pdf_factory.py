@@ -156,3 +156,57 @@ def make_chapter_outline_pdf(path: Path, num_pages: int = 30) -> Path:
   with path.open("wb") as handle:
     writer.write(handle)
   return path
+
+
+def make_accessibility_outline_pdf(path: Path, num_pages: int = 52) -> Path:
+  """Broken outline like OER accessibility bookmarks (not real chapter TOC)."""
+  writer = PdfWriter()
+  for _ in range(num_pages):
+    writer.add_blank_page(612, 792)
+
+  access = writer.add_outline_item("Accessibility Statement", 3)
+  writer.add_outline_item("Multiple File Formats Available", 3, parent=access)
+  writer.add_outline_item("Organization of content", 3, parent=access)
+  writer.add_outline_item("Images", 3, parent=access)
+  writer.add_outline_item("Links", 3, parent=access)
+  writer.add_outline_item("Font Size and formatting", 4, parent=access)
+  writer.add_outline_item("Known Issues/Potential barriers to accessibility", 4, parent=access)
+
+  with path.open("wb") as handle:
+    writer.write(handle)
+  return path
+
+
+def make_numbered_caps_passage_pdf(path: Path) -> Path:
+  """Headings like Daily Departures: '1' then ALL-CAPS title."""
+  c = canvas.Canvas(str(path), pagesize=letter)
+  passages = [
+    ("1", "THE OLD MAN WAITS AT THE POST OFFICE"),
+    ("2", "DON\u2019T WEAR HEADPHONES WHILE DRIVING"),
+    ("3", "MAX THE CAT"),
+  ]
+  for number, title in passages:
+    c.setFont("Helvetica-Bold", 14)
+    c.drawString(72, 750, number)
+    c.drawString(72, 730, title)
+    c.setFont("Helvetica", 11)
+    c.drawString(72, 700, "Body text for this reading passage.")
+    c.showPage()
+  c.save()
+  return path
+
+
+def make_junk_toc_with_numbered_caps_pdf(path: Path) -> Path:
+  """Accessibility outline (should be rejected) + numbered ALL-CAPS body headings."""
+  make_numbered_caps_passage_pdf(path)
+  writer = PdfWriter()
+  writer.append(str(path))
+  access = writer.add_outline_item("Accessibility Statement", 0)
+  writer.add_outline_item("Multiple File Formats Available", 0, parent=access)
+  writer.add_outline_item("Images", 0, parent=access)
+  writer.add_outline_item("Links", 1, parent=access)
+  writer.add_outline_item("Font Size and formatting", 1, parent=access)
+  writer.add_outline_item("Known Issues/Potential barriers to accessibility", 2, parent=access)
+  with path.open("wb") as handle:
+    writer.write(handle)
+  return path

@@ -12,3 +12,13 @@ def test_chain_prefers_toc_over_regex(toc_pdf, regex_pdf):
   regex_result = chain.detect(str(regex_pdf))
   assert regex_result is not None
   assert regex_result.method == "regex"
+
+
+def test_chain_falls_through_junk_toc_to_numbered_caps(junk_toc_with_numbered_caps_pdf):
+  result = StructureDetectorChain().detect(str(junk_toc_with_numbered_caps_pdf))
+
+  assert result is not None
+  assert result.method == "regex"
+  assert len(result.units) == 3
+  assert "OLD MAN" in result.units[0].title.upper()
+  assert all("Images" not in unit.title for unit in result.units)

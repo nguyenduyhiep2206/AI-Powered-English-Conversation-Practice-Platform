@@ -50,3 +50,15 @@ def test_regex_detector_keeps_passage_when_test_shares_page(test_and_passage_pdf
   assert result is not None
   assert len(result.units) == 3
   assert all("PASSAGE" in unit.title.upper() for unit in result.units)
+
+
+def test_regex_detector_finds_numbered_all_caps_passages(numbered_caps_passage_pdf):
+  result = RegexDetector().detect(str(numbered_caps_passage_pdf))
+
+  assert result is not None
+  assert result.method == "regex"
+  assert len(result.units) == 3
+  assert result.units[0].title.startswith("1.")
+  assert "OLD MAN" in result.units[0].title.upper()
+  assert result.units[0].page_start == 1
+  assert result.units[2].page_start == 3

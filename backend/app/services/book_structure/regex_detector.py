@@ -12,10 +12,20 @@ PATTERN_SPECS: list[tuple[re.Pattern[str], str, int]] = [
     # PASSAGE / PASSSAGE / Passage 1: ... (tolerate common OCR/typo extra S)
     (re.compile(r"^PASS+AGE\s*\d+\s*[:.\-–—]?", re.IGNORECASE), "passage", 100),
     (re.compile(r"^(TEST|Test)\s*\d+\b"), "test", 80),
+    # Numbered ALL-CAPS titles (e.g. Daily Departures: "1" + "THE OLD MAN...")
+    (re.compile(r"^\d{1,3}\.\s+[A-Z].{5,}$"), "numbered_caps", 70),
     # Unit/Chapter/Section with optional colon title
     (re.compile(r"^(Unit|Chapter|Section|Part)\s+\d+\s*[:.\-–—]?", re.IGNORECASE), "section", 60),
     (re.compile(r"^(Bài|Chương|Phần)\s+\d+\b"), "section_vi", 60),
 ]
+
+NUMBER_LINE_RE = re.compile(r"^\d{1,3}$")
+# Allow ASCII and curly apostrophes/quotes in ALL-CAPS titles (e.g. DON’T, SAM’S).
+ALL_CAPS_TITLE_RE = re.compile(
+    r"^[A-Z][A-Z0-9 ,''\u2018\u2019\"\.\-\:\;\!\?/]{6,}$"
+)
+# Skip question/answer pages that start with a number + short line.
+QUESTION_HINT_RE = re.compile(r"^(questions?|answers?|vocabulary)\b", re.IGNORECASE)
 
 
 def _extract_heading_lines(page_text: str) -> list[str]:
@@ -33,6 +43,28 @@ def _match_line(line: str) -> tuple[str, str] | None:
         if pattern.match(line):
             return source, line
     return None
+
+
+def _find_numbered_caps_headings(page_texts: list[str]) -> list[tuple[int, str]]:
+    """Detect 'N' on one line followed by an ALL-CAPS title on the next line."""
+    found: list[tuple[int, str]] = []
+    for page_number, page_text in enumerate(page_texts, start=1):
+        if not page_text:
+            continue
+        lines = _extract_heading_lines(page_text)
+        for index, line in enumerate(lines):
+            if not NUMBER_LINE_RE.match(line):
+                continue
+            if index + 1 >= len(lines):
+                continue
+            next_line = lines[index + 1]
+            if QUESTION_HINT_RE.match(next_line):
+                continue
+            if not ALL_CAPS_TITLE_RE.match(next_line):
+                continue
+            found.append((page_number, f"{line}. {next_line}"))
+            break
+    return found
 
 
 def _find_matches(page_texts: list[str]) -> dict[str, list[tuple[int, str]]]:
@@ -54,6 +86,11 @@ def _find_matches(page_texts: list[str]) -> dict[str, list[tuple[int, str]]]:
         kept_hits = _filter_page_hits(page_hits, source_priority)
         for source, title in kept_hits:
             matches.setdefault(source, []).append((page_number, title))
+
+    numbered_caps = _find_numbered_caps_headings(page_texts)
+    if len(numbered_caps) >= 2:
+        matches["numbered_caps"] = numbered_caps
+
     return matches
 
 
