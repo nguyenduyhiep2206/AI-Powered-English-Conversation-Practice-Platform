@@ -63,7 +63,7 @@ class Settings(BaseSettings):
 
     # Structure: heuristic candidates + optional AI merge before auto-index
     STRUCTURE_AI_MERGE_ENABLED: bool = True
-    STRUCTURE_SKIM_LINES_PER_PAGE: int = 12
+    STRUCTURE_SKIM_LINES_PER_PAGE: int = 5
     STRUCTURE_SKIM_MAX_PAGES: int = 400
 
 
