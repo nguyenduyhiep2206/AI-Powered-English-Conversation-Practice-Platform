@@ -1,5 +1,8 @@
+from app.models.enums import CEFRLevel
 from app.services.quiz_generation_service import (
     build_generation_prompt,
+    passage_grounded,
+    passage_length_ok,
     validate_generated_questions,
 )
 
@@ -19,6 +22,7 @@ def test_validate_mcq_hop_le():
     ok = validate_generated_questions(raw)
     assert len(ok) == 1
     assert ok[0]["answer"] == "have lived"
+    assert ok[0].get("passage") is None
 
 
 def test_validate_mcq_thieu_option_bi_loai():
@@ -49,3 +53,94 @@ def test_prompt_co_ten_unit_va_so_cau():
     assert "Present perfect 1" in prompt
     assert "5" in prompt
     assert "We use the present perfect" in prompt
+
+
+def test_passage_grounded_substring():
+    excerpt = "The old man waits at the post office every morning."
+    assert passage_grounded("old man waits at the post office", excerpt) is True
+    assert passage_grounded("completely unrelated fantasy text here", excerpt) is False
+
+
+def test_passage_length_ok_rejects_extreme():
+    assert passage_length_ok("x" * 200, CEFRLevel.B1) is True
+    assert passage_length_ok("short", CEFRLevel.B1) is False  # < 250/2
+    assert passage_length_ok("x" * 5000, CEFRLevel.B1) is False  # > 700*2
+
+
+def test_validate_requires_passage_when_blueprint_says_so():
+    excerpt = (
+        "Max the cat sat on the mat and watched the birds outside the window. "
+        "He wanted to catch one but the glass stopped him."
+    )
+    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "detail"}]
+    missing = [
+        {
+            "type": "mcq",
+            "stem": "Where did Max sit?",
+            "options": ["mat", "roof", "car", "box"],
+            "answer": "mat",
+        }
+    ]
+    assert (
+        validate_generated_questions(
+            missing, excerpt=excerpt, blueprint=blueprint, cefr_level=CEFRLevel.A2
+        )
+        == []
+    )
+
+    grounded = [
+        {
+            "type": "mcq",
+            "passage": "Max the cat sat on the mat and watched the birds outside the window.",
+            "stem": "Where did Max sit?",
+            "options": ["mat", "roof", "car", "box"],
+            "answer": "mat",
+            "difficulty": "easy",
+        }
+    ]
+    ok = validate_generated_questions(
+        grounded, excerpt=excerpt, blueprint=blueprint, cefr_level=CEFRLevel.A2
+    )
+    assert len(ok) == 1
+    assert "Max the cat" in (ok[0]["passage"] or "")
+
+
+def test_validate_rejects_ungrounded_passage():
+    excerpt = "We use the present perfect with since and for."
+    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "grammar_in_context"}]
+    raw = [
+        {
+            "type": "mcq",
+            "passage": "Once upon a time in a galaxy far away the robots danced.",
+            "stem": "Choose the tense.",
+            "options": ["a", "b", "c", "d"],
+            "answer": "a",
+        }
+    ]
+    assert (
+        validate_generated_questions(
+            raw, excerpt=excerpt, blueprint=blueprint, cefr_level=CEFRLevel.B1
+        )
+        == []
+    )
+
+
+def test_validate_rejects_passage_length_way_off_level():
+    excerpt = "word " * 400
+    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "detail"}]
+    # Tiny passage for B1 band (min 250 → reject < 125)
+    raw = [
+        {
+            "type": "mcq",
+            "passage": "word word word",
+            "stem": "What repeats?",
+            "options": ["word", "cat", "dog", "bird"],
+            "answer": "word",
+        }
+    ]
+    assert (
+        validate_generated_questions(
+            raw, excerpt=excerpt, blueprint=blueprint, cefr_level=CEFRLevel.B1
+        )
+        == []
+    )
