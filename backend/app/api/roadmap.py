@@ -7,7 +7,10 @@ from app.api.deps import get_current_active_user
 from app.core.database import get_db
 from app.models.enums import CEFRLevel
 from app.models.user import UserDB
-from app.services.roadmap_assembler_service import assemble_user_roadmap
+from app.services.roadmap_assembler_service import (
+    assemble_user_roadmap,
+    get_user_roadmap,
+)
 from app.services.roadmap_progress_service import complete_roadmap_week
 
 router = APIRouter()
@@ -16,6 +19,15 @@ router = APIRouter()
 class AssembleRequest(BaseModel):
     level: CEFRLevel | None = None
     max_steps: int = Field(default=10, ge=8, le=12)
+
+
+@router.get("")
+async def get_roadmap(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserDB = Depends(get_current_active_user),
+):
+    data = await get_user_roadmap(db, int(current_user.id))
+    return {"data": data}
 
 
 @router.post("/assemble")

@@ -348,3 +348,124 @@ async def assemble_user_roadmap(
 
     await db.commit()
     return weeks
+
+
+async def _load_progress_step_rows(
+    db: AsyncSession, user_id: int
+) -> list[tuple[UserProgressDB, RoadmapStepDB, ScenarioDB]]:
+    return list(
+        (
+            await db.execute(
+                select(UserProgressDB, RoadmapStepDB, ScenarioDB)
+                .join(RoadmapStepDB, RoadmapStepDB.id == UserProgressDB.roadmap_step_id)
+                .join(ScenarioDB, ScenarioDB.id == RoadmapStepDB.scenario_id)
+                .where(UserProgressDB.user_id == user_id)
+                .order_by(RoadmapStepDB.week_number, RoadmapStepDB.id)
+            )
+        ).all()
+    )
+
+
+async def _load_quiz_skill_id_by_step(
+    db: AsyncSession, step_ids: list[int]
+) -> dict[int, int]:
+    if not step_ids:
+        return {}
+    link_rows = list(
+        (
+            await db.execute(
+                select(RoadmapStepSkillDB).where(
+                    RoadmapStepSkillDB.roadmap_step_id.in_(step_ids),
+                    RoadmapStepSkillDB.role == "quiz",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {int(link.roadmap_step_id): int(link.skill_id) for link in link_rows}
+
+
+async def _load_skills_by_id(
+    db: AsyncSession, skill_ids: set[int]
+) -> dict[int, LearningSkillDB]:
+    if not skill_ids:
+        return {}
+    skill_rows = list(
+        (
+            await db.execute(select(LearningSkillDB).where(LearningSkillDB.id.in_(skill_ids)))
+        )
+        .scalars()
+        .all()
+    )
+    return {int(s.id): s for s in skill_rows}
+
+
+def _fallback_skill_dict(skill_id: int) -> dict[str, Any]:
+    return {
+        "id": skill_id,
+        "slug": f"skill-{skill_id}",
+        "title": None,
+        "skill_type": None,
+        "difficulty_in_level": DEFAULT_DIFFICULTY,
+    }
+
+
+def _week_dict_from_row(
+    progress: UserProgressDB,
+    step: RoadmapStepDB,
+    scenario: ScenarioDB,
+    *,
+    skill_id: int,
+    skill: LearningSkillDB | None,
+    mastery: dict[int, float],
+) -> dict[str, Any]:
+    skill_dict = _skill_as_dict(skill) if skill is not None else _fallback_skill_dict(skill_id)
+    status = progress.status
+    level = step.level
+    return {
+        "week_number": int(step.week_number),
+        "roadmap_step_id": int(step.id),
+        "title": step.title,
+        "skill_id": skill_id,
+        "skill_slug": skill_dict["slug"],
+        "skill_title": skill_dict.get("title"),
+        "skill_type": skill_dict.get("skill_type"),
+        "difficulty_in_level": int(
+            skill_dict.get("difficulty_in_level") or DEFAULT_DIFFICULTY
+        ),
+        "scenario_id": int(scenario.id),
+        "scenario_title": scenario.title,
+        "status": status.value if hasattr(status, "value") else str(status),
+        "mastery": float(mastery.get(skill_id, DEFAULT_PRIOR)),
+        "level": level.value if hasattr(level, "value") else str(level),
+    }
+
+
+async def get_user_roadmap(db: AsyncSession, user_id: int) -> list[dict[str, Any]]:
+    """Return the learner's current path (same week dict shape as assemble)."""
+    rows = await _load_progress_step_rows(db, user_id)
+    if not rows:
+        return []
+
+    step_ids = [int(step.id) for _progress, step, _scenario in rows]
+    skill_id_by_step = await _load_quiz_skill_id_by_step(db, step_ids)
+    skills = await _load_skills_by_id(db, set(skill_id_by_step.values()))
+    mastery = await load_mastery_map(db, user_id)
+
+    weeks: list[dict[str, Any]] = []
+    for progress, step, scenario in rows:
+        skill_id = skill_id_by_step.get(int(step.id))
+        if skill_id is None:
+            continue
+        weeks.append(
+            _week_dict_from_row(
+                progress,
+                step,
+                scenario,
+                skill_id=skill_id,
+                skill=skills.get(skill_id),
+                mastery=mastery,
+            )
+        )
+    return weeks
