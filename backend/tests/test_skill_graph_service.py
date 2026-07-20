@@ -1,7 +1,9 @@
 """Unit tests for skill graph pure helpers (exclude / section / edges)."""
 
+from app.models.enums import SkillTypeEnum
 from app.services.skill_graph_service import (
     build_linear_edges,
+    build_rule_unit_mappings,
     infer_section_title,
     should_exclude_unit,
 )
@@ -37,3 +39,17 @@ def test_normalize_present_perfect_unit_title():
     slug, title = normalize_unit_to_slug("Present perfect 1 (I have done)")
     assert slug == "present_perfect"
     assert "present perfect" in title.lower()
+
+
+def test_build_rule_unit_mappings_sets_difficulty_and_exclude():
+    units = [
+        {"title": "Present simple", "unit_index": 0},
+        {"title": "Key to Exercises", "unit_index": 1},
+    ]
+    mappings = build_rule_unit_mappings(units, default_skill_type=SkillTypeEnum.grammar)
+    assert len(mappings) == 2
+    assert mappings[0]["slug"] == "present_simple"
+    assert mappings[0]["difficulty_in_level"] == 1
+    assert mappings[0]["exclude"] is False
+    assert mappings[1]["exclude"] is True
+    assert mappings[1]["difficulty_in_level"] == 10

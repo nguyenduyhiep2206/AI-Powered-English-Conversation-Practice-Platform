@@ -14,6 +14,8 @@ export type SyncSkillsResult = {
   book_id: number;
   source_count: number;
   excluded: number;
+  llm_used?: boolean;
+  edge_count_added?: number;
   sources: SkillSourceRow[];
 };
 

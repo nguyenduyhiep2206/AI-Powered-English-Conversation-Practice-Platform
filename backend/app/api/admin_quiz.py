@@ -31,7 +31,7 @@ router = APIRouter()
 async def admin_sync_skills(book_id: int, db: AsyncSession = Depends(get_db)):
     """Sync learning skills + book_skill_sources from a ready book's structure preview."""
     try:
-        sources = await sync_skills_from_preview(db, book_id)
+        sources, meta = await sync_skills_from_preview(db, book_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -40,6 +40,8 @@ async def admin_sync_skills(book_id: int, db: AsyncSession = Depends(get_db)):
             "book_id": book_id,
             "source_count": len(sources),
             "excluded": sum(1 for s in sources if s.is_excluded),
+            "llm_used": bool(meta.get("llm_used")),
+            "edge_count_added": int(meta.get("edge_count_added") or 0),
             "sources": [
                 {
                     "id": s.id,

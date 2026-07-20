@@ -84,7 +84,12 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
       }
       setSourcesByUnitId(next);
       setStatusMessage(
-        `Synced ${result.source_count} skill source(s); ${result.excluded} excluded.`,
+        `Synced ${result.source_count} skill source(s); ${result.excluded} excluded` +
+          (result.llm_used === true
+            ? "; LLM refine on."
+            : result.llm_used === false
+              ? "; rule fallback."
+              : "."),
       );
       await refreshDrafts();
     } catch (err) {
