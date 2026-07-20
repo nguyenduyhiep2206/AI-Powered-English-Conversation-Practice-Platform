@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 from sqlalchemy import delete, select
@@ -14,7 +15,7 @@ from app.models.enums import (
     ScenarioCategoryEnum,
     WeakPointEnum,
 )
-from app.models.learning_skill import LearningSkillDB
+from app.models.learning_skill import LearningSkillDB, SkillEdgeDB
 from app.models.profile import UserProfileDB
 from app.models.roadmap_step_skill import RoadmapStepSkillDB
 from app.models.scenario import RoadmapStepDB, ScenarioDB, UserProgressDB
@@ -29,6 +30,9 @@ GOAL_TO_CATEGORY: dict[GoalEnum, ScenarioCategoryEnum] = {
     GoalEnum.business: ScenarioCategoryEnum.job_interview,
 }
 
+DEFAULT_DIFFICULTY = 5
+ZPD_WINDOW = 2
+
 
 def _skill_type_value(skill: dict[str, Any] | LearningSkillDB) -> str:
     if isinstance(skill, dict):
@@ -40,7 +44,11 @@ def _skill_type_value(skill: dict[str, Any] | LearningSkillDB) -> str:
 
 def _skill_as_dict(skill: LearningSkillDB | dict[str, Any]) -> dict[str, Any]:
     if isinstance(skill, dict):
-        return skill
+        out = dict(skill)
+        if out.get("difficulty_in_level") is None:
+            out["difficulty_in_level"] = DEFAULT_DIFFICULTY
+        return out
+    difficulty = skill.difficulty_in_level
     return {
         "id": int(skill.id),
         "slug": skill.slug,
@@ -50,35 +58,85 @@ def _skill_as_dict(skill: LearningSkillDB | dict[str, Any]) -> dict[str, Any]:
         else str(skill.cefr_level),
         "skill_type": _skill_type_value(skill),
         "is_active": bool(skill.is_active),
+        "difficulty_in_level": int(difficulty)
+        if difficulty is not None
+        else DEFAULT_DIFFICULTY,
     }
+
+
+def _clamp_placement_score(placement_score: int | None) -> int:
+    if placement_score is None:
+        return 1
+    score = int(placement_score)
+    if score <= 0:
+        return 1
+    return min(10, score)
+
+
+def _prereqs_met(
+    skill_id: int,
+    mastery: dict[int, float],
+    prereq_from_by_to: dict[int, list[int]],
+) -> bool:
+    for from_id in prereq_from_by_to.get(skill_id, []):
+        if float(mastery.get(int(from_id), DEFAULT_PRIOR)) < MASTERY_STRONG:
+            return False
+    return True
 
 
 def select_skills_for_roadmap(
     skills: list[dict[str, Any]] | list[LearningSkillDB],
     mastery: dict[int, float],
+    *,
+    placement_score: int | None,
+    prereq_from_by_to: dict[int, list[int]],
     max_steps: int = 10,
     weak_point: WeakPointEnum | str | None = None,
+    window: int = ZPD_WINDOW,
 ) -> list[dict[str, Any]]:
-    """Keep weak skills (< STRONG), sort by mastery asc, optionally boost weak_point type."""
+    """Pick weak skills in ZPD window that have prerequisites mastered."""
     wp = weak_point.value if hasattr(weak_point, "value") else (weak_point or "")
-    candidates: list[tuple[dict[str, Any], float]] = []
+    sub = _clamp_placement_score(placement_score)
+    lo = max(1, sub)
+    hi = min(10, sub + max(0, int(window)))
+    max_steps = max(0, int(max_steps))
 
+    prepared: list[dict[str, Any]] = []
     for raw in skills:
         skill = _skill_as_dict(raw)
         if not skill.get("is_active", True):
             continue
-        score = float(mastery.get(int(skill["id"]), DEFAULT_PRIOR))
+        skill_id = int(skill["id"])
+        score = float(mastery.get(skill_id, DEFAULT_PRIOR))
         if score >= MASTERY_STRONG:
             continue
-        candidates.append((skill, score))
+        if not _prereqs_met(skill_id, mastery, prereq_from_by_to):
+            continue
+        prepared.append(skill)
 
-    def sort_key(item: tuple[dict[str, Any], float]) -> tuple[int, float, int]:
-        skill, score = item
+    def collect(low: int, high: int) -> list[tuple[dict[str, Any], float, int]]:
+        out: list[tuple[dict[str, Any], float, int]] = []
+        for skill in prepared:
+            diff = int(skill.get("difficulty_in_level") or DEFAULT_DIFFICULTY)
+            if diff < low or diff > high:
+                continue
+            skill_id = int(skill["id"])
+            score = float(mastery.get(skill_id, DEFAULT_PRIOR))
+            out.append((skill, score, diff))
+        return out
+
+    candidates = collect(lo, hi)
+    while len(candidates) < max_steps and hi < 10:
+        hi += 1
+        candidates = collect(lo, hi)
+
+    def sort_key(item: tuple[dict[str, Any], float, int]) -> tuple[int, int, float, int]:
+        skill, score, diff = item
         matches_weak = 0 if wp and skill.get("skill_type") == wp else 1
-        return (matches_weak, score, int(skill["id"]))
+        return (matches_weak, diff, score, int(skill["id"]))
 
     candidates.sort(key=sort_key)
-    return [skill for skill, _ in candidates[: max(0, max_steps)]]
+    return [skill for skill, _score, _diff in candidates[:max_steps]]
 
 
 async def load_active_skills(db: AsyncSession, level: CEFRLevel) -> list[LearningSkillDB]:
@@ -102,6 +160,30 @@ async def load_mastery_map(db: AsyncSession, user_id: int) -> dict[int, float]:
         .all()
     )
     return {int(r.skill_id): float(r.mastery) for r in rows}
+
+
+async def load_prereq_map(
+    db: AsyncSession, skill_ids: set[int]
+) -> dict[int, list[int]]:
+    """Map to_skill_id -> [from_skill_id, ...] for prerequisite edges within skill_ids."""
+    if not skill_ids:
+        return {}
+    edges = list(
+        (
+            await db.execute(
+                select(SkillEdgeDB).where(SkillEdgeDB.relation == "prerequisite")
+            )
+        )
+        .scalars()
+        .all()
+    )
+    prereq_from_by_to: dict[int, list[int]] = defaultdict(list)
+    for edge in edges:
+        frm = int(edge.from_skill_id)
+        to = int(edge.to_skill_id)
+        if frm in skill_ids and to in skill_ids:
+            prereq_from_by_to[to].append(frm)
+    return dict(prereq_from_by_to)
 
 
 async def pick_scenario(
@@ -196,10 +278,14 @@ async def assemble_user_roadmap(
     if not skills:
         raise ValueError(f"Chưa có learning_skills active cho level {target_level}")
 
+    skill_ids = {int(s.id) for s in skills}
     mastery = await load_mastery_map(db, user_id)
+    prereq_from_by_to = await load_prereq_map(db, skill_ids)
     selected = select_skills_for_roadmap(
         skills,
         mastery,
+        placement_score=profile.placement_score,
+        prereq_from_by_to=prereq_from_by_to,
         max_steps=max_steps,
         weak_point=profile.weak_point,
     )
@@ -247,6 +333,9 @@ async def assemble_user_roadmap(
                 "skill_slug": skill["slug"],
                 "skill_title": skill.get("title"),
                 "skill_type": skill.get("skill_type"),
+                "difficulty_in_level": int(
+                    skill.get("difficulty_in_level") or DEFAULT_DIFFICULTY
+                ),
                 "scenario_id": int(scenario.id),
                 "scenario_title": scenario.title,
                 "status": status.value,
