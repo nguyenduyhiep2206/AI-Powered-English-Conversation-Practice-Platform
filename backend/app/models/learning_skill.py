@@ -3,6 +3,7 @@ from sqlalchemy import (
     Boolean,
     Column,
     ForeignKey,
+    SmallInteger,
     String,
     TIMESTAMP,
     UniqueConstraint,
@@ -25,6 +26,7 @@ class LearningSkillDB(Base):
     title = Column(String(500), nullable=False)
     cefr_level = Column(cefr_level_enum, nullable=False, index=True)
     skill_type = Column(skill_type_enum, nullable=False, server_default="grammar")
+    difficulty_in_level = Column(SmallInteger, nullable=True)
     is_active = Column(Boolean, nullable=False, server_default="true")
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
