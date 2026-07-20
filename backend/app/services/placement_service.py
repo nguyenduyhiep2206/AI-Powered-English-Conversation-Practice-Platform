@@ -58,20 +58,16 @@ def score_to_level(score: int) -> CEFRLevel:
     return CEFRLevel.C1
 
 
-def _type_rank(question_type: str) -> int:
-    """Lower rank is preferred (mcq first)."""
-    if question_type == "mcq":
-        return 0
-    if question_type == "cloze":
-        return 1
-    return 2
-
-
 def select_from_candidates(
     candidates: Sequence[PlacementCandidate],
     *,
     rng_seed: int | None = None,
 ) -> list[PlacementCandidate]:
+    """Pick 2 questions per CEFR level without preferring any question_type.
+
+    Within each level, prefer unused skills. Across the whole set, prefer
+    question types that are currently under-represented so types spread evenly.
+    """
     rng = random.Random(rng_seed)
     by_level: dict[CEFRLevel, list[PlacementCandidate]] = defaultdict(list)
     for c in candidates:
@@ -83,27 +79,45 @@ def select_from_candidates(
         if len(pool) < PER_LEVEL:
             raise ValueError(INSUFFICIENT_BANK_MSG)
 
-        # Shuffle for variety, then stable-sort so mcq stays preferred.
         rng.shuffle(pool)
-        pool.sort(key=lambda c: _type_rank(c.question_type))
-
         chosen: list[PlacementCandidate] = []
         used_skills: set[int] = set()
-        for c in pool:
-            if len(chosen) >= PER_LEVEL:
-                break
-            if c.skill_id in used_skills:
-                continue
-            chosen.append(c)
-            used_skills.add(c.skill_id)
 
-        if len(chosen) < PER_LEVEL:
-            for c in pool:
-                if len(chosen) >= PER_LEVEL:
+        def type_count_so_far(question_type: str) -> int:
+            return sum(
+                1
+                for item in (*picked, *chosen)
+                if item.question_type == question_type
+            )
+
+        def take(*, require_unique_skill: bool) -> None:
+            remaining = [c for c in pool if c not in chosen]
+            while len(chosen) < PER_LEVEL and remaining:
+                scored = sorted(
+                    remaining,
+                    key=lambda c: (
+                        1
+                        if require_unique_skill and c.skill_id in used_skills
+                        else 0,
+                        type_count_so_far(c.question_type),
+                        rng.random(),
+                    ),
+                )
+                candidate = None
+                for c in scored:
+                    if require_unique_skill and c.skill_id in used_skills:
+                        continue
+                    candidate = c
                     break
-                if c in chosen:
-                    continue
-                chosen.append(c)
+                if candidate is None:
+                    break
+                chosen.append(candidate)
+                used_skills.add(candidate.skill_id)
+                remaining = [c for c in remaining if c.id != candidate.id]
+
+        take(require_unique_skill=True)
+        if len(chosen) < PER_LEVEL:
+            take(require_unique_skill=False)
 
         if len(chosen) < PER_LEVEL:
             raise ValueError(INSUFFICIENT_BANK_MSG)
