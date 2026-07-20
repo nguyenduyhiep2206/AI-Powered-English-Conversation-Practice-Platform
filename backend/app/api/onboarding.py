@@ -4,7 +4,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_active_user
 from app.core.database import get_db
 from app.models.user import UserDB
+from app.models.enums import CEFRLevel
 from app.schemas.onboarding_schema import (
+    LevelChallengeQuestionsData,
+    LevelChallengeQuestionsResponse,
+    LevelChallengeResultData,
+    LevelChallengeSubmitRequest,
+    LevelChallengeSubmitResponse,
     OnboardingStatusResponse,
     PlacementQuestionOut,
     PlacementQuestionsData,
@@ -19,6 +25,11 @@ from app.schemas.survey_schema import (
     SubmitSurveyResponse,
     SurveyQuestionsData,
     SurveyQuestionsResponse,
+)
+from app.services.level_challenge_service import (
+    INSUFFICIENT_CHALLENGE_BANK_MSG,
+    get_level_challenge_questions,
+    submit_level_challenge,
 )
 from app.services.onboarding_service import get_onboarding_status
 from app.services.placement_service import (
@@ -104,3 +115,52 @@ async def placement_submit(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     return PlacementSubmitResponse(data=PlacementResultData(**result))
+
+
+@router.get("/level-challenge", response_model=LevelChallengeQuestionsResponse)
+async def level_challenge_questions(
+    target_level: CEFRLevel | None = None,
+    current_user: UserDB = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return 6 published questions for the next CEFR level (no answers)."""
+    try:
+        data = await get_level_challenge_questions(
+            db, int(current_user.id), target_level=target_level
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        status = 503 if str(exc) == INSUFFICIENT_CHALLENGE_BANK_MSG else 400
+        raise HTTPException(status_code=status, detail=str(exc)) from exc
+
+    questions = [PlacementQuestionOut(**q) for q in data["questions"]]
+    return LevelChallengeQuestionsResponse(
+        data=LevelChallengeQuestionsData(
+            target_level=data["target_level"],
+            question_count=data["question_count"],
+            questions=questions,
+        )
+    )
+
+
+@router.post("/level-challenge", response_model=LevelChallengeSubmitResponse)
+async def level_challenge_submit(
+    payload: LevelChallengeSubmitRequest,
+    current_user: UserDB = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Grade +1 CEFR challenge; promote on pass. Does not auto-assemble roadmap."""
+    try:
+        result = await submit_level_challenge(
+            db,
+            int(current_user.id),
+            payload.target_level,
+            [a.model_dump() for a in payload.answers],
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return LevelChallengeSubmitResponse(data=LevelChallengeResultData(**result))

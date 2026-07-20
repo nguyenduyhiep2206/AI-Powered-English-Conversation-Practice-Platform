@@ -231,7 +231,7 @@ async def pick_scenario(
     return fallback
 
 
-async def _clear_user_roadmap(db: AsyncSession, user_id: int) -> None:
+async def clear_user_roadmap(db: AsyncSession, user_id: int) -> None:
     progress_rows = list(
         (
             await db.execute(select(UserProgressDB).where(UserProgressDB.user_id == user_id))
@@ -293,7 +293,7 @@ async def assemble_user_roadmap(
         raise ValueError("Không còn skill yếu để lắp lộ trình ở level này")
 
     scenario = await pick_scenario(db, profile.goal, target_level)
-    await _clear_user_roadmap(db, user_id)
+    await clear_user_roadmap(db, user_id)
 
     weeks: list[dict[str, Any]] = []
     for index, skill in enumerate(selected, start=1):

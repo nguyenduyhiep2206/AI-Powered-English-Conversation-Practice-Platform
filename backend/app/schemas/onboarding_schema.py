@@ -67,3 +67,33 @@ class PlacementResultData(BaseModel):
 class PlacementSubmitResponse(BaseModel):
     success: bool = True
     data: PlacementResultData
+
+
+class LevelChallengeQuestionsData(BaseModel):
+    target_level: str
+    question_count: int
+    questions: list[PlacementQuestionOut]
+
+
+class LevelChallengeQuestionsResponse(BaseModel):
+    success: bool = True
+    data: LevelChallengeQuestionsData
+
+
+class LevelChallengeSubmitRequest(BaseModel):
+    target_level: CEFRLevel
+    answers: list[PlacementAnswerIn] = Field(min_length=6, max_length=6)
+
+
+class LevelChallengeResultData(BaseModel):
+    passed: bool
+    correct_count: int
+    total: int
+    current_level: str
+    placement_score: int | None = None
+    target_level: str
+
+
+class LevelChallengeSubmitResponse(BaseModel):
+    success: bool = True
+    data: LevelChallengeResultData
