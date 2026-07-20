@@ -15,6 +15,7 @@ import {
   type PlacementQuestion,
   type PlacementResult,
 } from "@/lib/placement";
+import { assembleRoadmap } from "@/lib/roadmap";
 
 type AnswerState = Record<number, string>;
 
@@ -25,6 +26,7 @@ export default function PlacementPage() {
   const [answers, setAnswers] = useState<AnswerState>({});
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [assembling, setAssembling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PlacementResult | null>(null);
 
@@ -85,6 +87,21 @@ export default function PlacementPage() {
     }
   }
 
+  async function goToRoadmap() {
+    setAssembling(true);
+    setError(null);
+    try {
+      await assembleRoadmap({ max_steps: 10 });
+      router.push("/dashboard");
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : "Failed to create your learning path",
+      );
+    } finally {
+      setAssembling(false);
+    }
+  }
+
   if (loading) {
     return (
       <div className="dark flex min-h-screen items-center justify-center bg-background">
@@ -118,14 +135,37 @@ export default function PlacementPage() {
               Score {result.correct_count}/{result.total} ({result.placement_score}/10)
             </p>
             <p className="text-sm text-muted-foreground">
-              You can create your learning roadmap when you are ready.
+              Create a personalized weekly path from skills in your zone, or go to
+              the dashboard and build it later.
             </p>
-            <Button asChild size="lg">
-              <Link href="/dashboard">
-                Go to dashboard
-                <ArrowRight className="ml-2 h-4 w-4" />
-              </Link>
-            </Button>
+            {error ? (
+              <p className="text-sm text-destructive" role="alert">
+                {error}
+              </p>
+            ) : null}
+            <div className="flex flex-col items-stretch gap-3 sm:items-center">
+              <Button
+                type="button"
+                size="lg"
+                disabled={assembling}
+                onClick={goToRoadmap}
+              >
+                {assembling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating path…
+                  </>
+                ) : (
+                  <>
+                    Create my path
+                    <ArrowRight className="ml-2 h-4 w-4" />
+                  </>
+                )}
+              </Button>
+              <Button asChild variant="ghost" size="lg" disabled={assembling}>
+                <Link href="/dashboard">Go to dashboard</Link>
+              </Button>
+            </div>
           </section>
         ) : (
           <>
