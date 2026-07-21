@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Check, Lock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -89,21 +90,32 @@ export function WeekNode({
         ) : null}
 
         {week.status === "in_progress" ? (
-          <div className="mt-3">
+          <div className="mt-3 space-y-2">
             <p className="text-xs text-muted-foreground">
               Practice this skill until mastery ≥ 70%, then complete the week.
             </p>
             <Button
+              asChild
               type="button"
               size="sm"
-              className="mt-2 w-full"
+              variant="secondary"
+              className="w-full"
+            >
+              <Link href={`/dashboard/practice/${week.skill_id}`}>
+                Practice skill
+              </Link>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              className="w-full"
               disabled={!canComplete || completing}
               onClick={() => onComplete(week)}
             >
               {completing ? "Completing…" : "Complete week"}
             </Button>
             {actionError ? (
-              <p className="mt-2 text-xs text-destructive" role="alert">
+              <p className="text-xs text-destructive" role="alert">
                 {actionError}
               </p>
             ) : null}
