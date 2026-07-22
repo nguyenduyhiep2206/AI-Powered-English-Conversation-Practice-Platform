@@ -104,7 +104,7 @@ export default function OnboardingSurveyPage() {
       <header className="border-b border-border">
         <div className="mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/start-onboarding" className="flex items-center gap-2">
-            <div className="ef-grad-hero flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
               <Sparkles className="h-4 w-4 text-black" />
             </div>
             <span className="font-semibold tracking-tight">EnglishFlow</span>

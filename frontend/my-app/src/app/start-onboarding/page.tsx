@@ -67,10 +67,10 @@ export default function StartOnboardingPage() {
       <header className="border-b border-border">
         <div className="mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="ef-grad-hero flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
               <Sparkles className="h-4 w-4 text-black" />
             </div>
-            <span className="font-semibold tracking-tight text-white">EnglishFlow</span>
+            <span className="font-semibold tracking-tight text-foreground">EnglishFlow</span>
           </Link>
           <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/40 p-1 backdrop-blur-sm">
             <Link
@@ -86,19 +86,19 @@ export default function StartOnboardingPage() {
       </header>
 
       <main className="mx-auto flex min-h-[calc(100vh-73px)] max-w-3xl items-center px-6 py-12">
-        <div className="ef-card w-full overflow-hidden border border-border rounded-xl bg-card/60 shadow-md">
-          <div className="ef-grad-hero flex flex-col items-center gap-4 px-8 py-10 text-center text-white md:px-12 md:py-12">
-            <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/25 bg-white/15 backdrop-blur-sm ef-glow-primary">
-              <RouteIcon className="h-8 w-8" strokeWidth={2} />
+        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
+          <div className="flex flex-col items-center gap-4 border-b border-border bg-card px-8 py-10 text-center md:px-12 md:py-12">
+            <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-secondary">
+              <RouteIcon className="h-8 w-8 text-foreground" strokeWidth={2} />
             </div>
-            <Badge variant="secondary" className="gap-1.5 border border-white/25 bg-white/15 text-white hover:bg-white/25">
+            <Badge variant="outline" className="gap-1.5">
               <Clock className="h-3 w-3" />
               ~5–7 min
             </Badge>
-            <h1 className="max-w-xl text-3xl font-semibold tracking-tight md:text-4xl">
+            <h1 className="max-w-xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
               {isContinue ? "Continue your setup" : "Let's build your personalized English plan!"}
             </h1>
-            <p className="max-w-lg text-sm text-white/85 md:text-base">
+            <p className="max-w-lg text-sm text-muted-foreground md:text-base">
               {isContinue
                 ? "Pick up right where you left off — we saved your progress."
                 : "A quick survey, then a short placement test — so we can place you at the right CEFR level and generate your roadmap."}

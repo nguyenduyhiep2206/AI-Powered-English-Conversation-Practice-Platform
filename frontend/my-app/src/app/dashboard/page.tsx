@@ -88,10 +88,10 @@ export default function DashboardPage() {
       <header className="border-b border-border">
         <div className="mx-auto flex max-w-3xl items-center justify-between px-6 py-4">
           <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
               <Sparkles className="h-4 w-4 text-black" />
             </div>
-            <span className="font-semibold tracking-tight text-white">
+            <span className="font-semibold tracking-tight text-foreground">
               EnglishFlow
             </span>
           </Link>
@@ -113,7 +113,7 @@ export default function DashboardPage() {
             <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               Your path
             </p>
-            <h1 className="mt-1.5 text-3xl font-semibold tracking-tight text-white">
+            <h1 className="mt-1.5 text-3xl font-semibold tracking-tight text-foreground">
               Weekly roadmap
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">

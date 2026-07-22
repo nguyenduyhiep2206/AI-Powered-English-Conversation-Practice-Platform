@@ -30,11 +30,11 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
   return (
     <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-sidebar">
       <div className="flex items-center gap-2 border-b border-border px-5 py-4">
-        <div className="ef-grad-hero flex h-8 w-8 items-center justify-center rounded-lg bg-white">
+        <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
           <Sparkles className="h-4 w-4 text-black" />
         </div>
         <div className="min-w-0">
-          <p className="truncate text-sm font-semibold text-white">EnglishFlow</p>
+          <p className="truncate text-sm font-semibold text-foreground">EnglishFlow</p>
           <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
             Admin
           </p>
