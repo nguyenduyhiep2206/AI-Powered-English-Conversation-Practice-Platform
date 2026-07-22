@@ -1,5 +1,6 @@
 "use client";
 
+import type { CSSProperties } from "react";
 import Link from "next/link";
 import { Check, Lock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +12,7 @@ const MASTERY_PASS = 0.7;
 type WeekNodeProps = {
   week: RoadmapWeek;
   offset: "left" | "right" | "center";
+  index?: number;
   completing: boolean;
   actionError: string | null;
   onComplete: (week: RoadmapWeek) => void;
@@ -20,6 +22,7 @@ type WeekNodeProps = {
 export function WeekNode({
   week,
   offset,
+  index = 0,
   completing,
   actionError,
   onComplete,
@@ -33,11 +36,12 @@ export function WeekNode({
   return (
     <div
       className={cn(
-        "relative flex w-full max-w-md flex-col items-center",
+        "ef-fade-up relative flex w-full max-w-md flex-col items-center",
         offset === "left" && "self-start sm:ml-4",
         offset === "right" && "self-end sm:mr-4",
         offset === "center" && "self-center",
       )}
+      style={{ "--ef-index": index } as CSSProperties}
     >
       <button
         type="button"
@@ -45,13 +49,13 @@ export function WeekNode({
           if (week.status === "locked") onLockedTap();
         }}
         className={cn(
-          "relative flex h-16 w-16 items-center justify-center rounded-full border-2 transition-transform",
+          "relative flex h-16 w-16 items-center justify-center rounded-full border transition-transform active:scale-95",
           week.status === "completed" &&
-            "border-emerald-500/60 bg-emerald-500/20 text-emerald-300",
+            "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
           week.status === "in_progress" &&
-            "border-primary bg-primary text-primary-foreground shadow-[0_0_0_6px_oklch(1_0_0/0.06)] motion-safe:animate-pulse",
+            "border-primary bg-primary text-primary-foreground ring-4 ring-primary/10",
           week.status === "locked" &&
-            "border-border bg-muted/40 text-muted-foreground",
+            "cursor-pointer border-border bg-muted/30 text-muted-foreground",
         )}
         aria-label={`${week.title} — ${week.status}`}
       >
@@ -64,12 +68,21 @@ export function WeekNode({
         )}
       </button>
 
-      <div className="mt-3 w-full rounded-xl border border-border/70 bg-card/50 px-4 py-3 text-left backdrop-blur-sm">
-        <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+      <div
+        className={cn(
+          "mt-4 w-full rounded-xl border bg-card/40 px-5 py-4 text-left transition-colors",
+          week.status === "in_progress"
+            ? "border-primary/40"
+            : "border-border/60",
+        )}
+      >
+        <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
           Week {week.week_number}
         </p>
-        <p className="mt-1 text-sm font-medium text-foreground">{title}</p>
-        <p className="mt-0.5 text-xs text-muted-foreground">{week.title}</p>
+        <p className="mt-1.5 text-sm font-medium leading-tight text-foreground">
+          {title}
+        </p>
+        <p className="mt-1 text-xs text-muted-foreground">{week.title}</p>
 
         {week.status !== "locked" ? (
           <div className="mt-3">

@@ -108,15 +108,15 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-3xl px-6 py-10">
-        <div className="mb-8 flex flex-wrap items-end justify-between gap-4">
+        <div className="ef-fade-up mb-10 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
               Your path
             </p>
-            <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">
+            <h1 className="mt-1.5 text-3xl font-semibold tracking-tight text-white">
               Weekly roadmap
             </h1>
-            <p className="mt-1 text-sm text-muted-foreground">
+            <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
               One clear next step — unlock weeks as you build mastery.
             </p>
           </div>
@@ -138,12 +138,14 @@ export default function DashboardPage() {
             {error}
           </div>
         ) : weeks.length === 0 ? (
-          <section className="rounded-2xl border border-border/70 bg-card/40 px-6 py-12 text-center">
-            <RouteIcon className="mx-auto h-10 w-10 text-muted-foreground" />
-            <h2 className="mt-4 text-lg font-medium text-foreground">
+          <section className="ef-fade-up rounded-xl border border-border/60 bg-card/40 px-6 py-14 text-center">
+            <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-lg border border-border/60 bg-muted/30">
+              <RouteIcon className="h-5 w-5 text-muted-foreground" />
+            </div>
+            <h2 className="mt-5 text-lg font-medium text-foreground">
               No path yet
             </h2>
-            <p className="mx-auto mt-2 max-w-sm text-sm text-muted-foreground">
+            <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
               Build a personalized 8–12 week path from skills in your zone of
               proximal development.
             </p>

@@ -227,7 +227,7 @@ async def pick_scenario(
             )
         ).scalar_one_or_none()
     if fallback is None:
-        raise ValueError("Chưa có scenario — seed scenarios trước khi assemble lộ trình")
+        raise ValueError("No scenarios yet — seed scenarios before assembling the roadmap.")
     return fallback
 
 
@@ -257,30 +257,36 @@ async def clear_user_roadmap(db: AsyncSession, user_id: int) -> None:
         await db.execute(delete(RoadmapStepDB).where(RoadmapStepDB.id == step_id))
 
 
-async def assemble_user_roadmap(
-    db: AsyncSession,
-    user_id: int,
-    level: CEFRLevel | None = None,
-    max_steps: int = 10,
-) -> list[dict[str, Any]]:
+async def _require_profile(db: AsyncSession, user_id: int) -> UserProfileDB:
     profile = (
         await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
     ).scalar_one_or_none()
     if profile is None:
-        raise ValueError("User chưa có profile — hoàn thành onboarding trước")
+        raise ValueError("User has no profile — complete onboarding first.")
+    return profile
 
+
+def _resolve_target_level(
+    profile: UserProfileDB, level: CEFRLevel | None
+) -> CEFRLevel:
     target_level = level or profile.current_level
     if target_level is None:
-        raise ValueError("Thiếu CEFR level để lắp lộ trình")
+        raise ValueError("Missing CEFR level to assemble the roadmap.")
+    return target_level
 
-    max_steps = max(8, min(12, int(max_steps)))
+
+async def _select_roadmap_skills(
+    db: AsyncSession,
+    profile: UserProfileDB,
+    target_level: CEFRLevel,
+    max_steps: int,
+) -> tuple[list[dict[str, Any]], dict[int, float]]:
     skills = await load_active_skills(db, target_level)
     if not skills:
-        raise ValueError(f"Chưa có learning_skills active cho level {target_level}")
+        raise ValueError(f"No active learning_skills for level {target_level}.")
 
-    skill_ids = {int(s.id) for s in skills}
-    mastery = await load_mastery_map(db, user_id)
-    prereq_from_by_to = await load_prereq_map(db, skill_ids)
+    mastery = await load_mastery_map(db, profile.user_id)
+    prereq_from_by_to = await load_prereq_map(db, {int(s.id) for s in skills})
     selected = select_skills_for_roadmap(
         skills,
         mastery,
@@ -290,62 +296,93 @@ async def assemble_user_roadmap(
         weak_point=profile.weak_point,
     )
     if not selected:
-        raise ValueError("Không còn skill yếu để lắp lộ trình ở level này")
+        raise ValueError("No weak skills left to assemble the roadmap at this level.")
+    return selected, mastery
 
+
+def _assemble_week_dict(
+    step: RoadmapStepDB,
+    status: ProgressStatusEnum,
+    skill: dict[str, Any],
+    scenario: ScenarioDB,
+    target_level: CEFRLevel,
+    mastery: dict[int, float],
+) -> dict[str, Any]:
+    skill_id = int(skill["id"])
+    return {
+        "week_number": int(step.week_number),
+        "roadmap_step_id": int(step.id),
+        "title": step.title,
+        "skill_id": skill_id,
+        "skill_slug": skill["slug"],
+        "skill_title": skill.get("title"),
+        "skill_type": skill.get("skill_type"),
+        "difficulty_in_level": int(
+            skill.get("difficulty_in_level") or DEFAULT_DIFFICULTY
+        ),
+        "scenario_id": int(scenario.id),
+        "scenario_title": scenario.title,
+        "status": status.value,
+        "mastery": float(mastery.get(skill_id, DEFAULT_PRIOR)),
+        "level": target_level.value
+        if hasattr(target_level, "value")
+        else str(target_level),
+    }
+
+
+async def _persist_week(
+    db: AsyncSession,
+    user_id: int,
+    index: int,
+    skill: dict[str, Any],
+    scenario: ScenarioDB,
+    target_level: CEFRLevel,
+    mastery: dict[int, float],
+) -> dict[str, Any]:
+    step = RoadmapStepDB(
+        level=target_level,
+        week_number=index,
+        title=f"Week {index}: {skill.get('title') or skill['slug']}",
+        scenario_id=scenario.id,
+        unlock_condition=None if index == 1 else f"complete_week_{index - 1}",
+    )
+    db.add(step)
+    await db.flush()
+
+    db.add(
+        RoadmapStepSkillDB(
+            roadmap_step_id=step.id, skill_id=int(skill["id"]), role="quiz"
+        )
+    )
+    status = (
+        ProgressStatusEnum.in_progress if index == 1 else ProgressStatusEnum.locked
+    )
+    db.add(UserProgressDB(user_id=user_id, roadmap_step_id=step.id, status=status))
+    return _assemble_week_dict(step, status, skill, scenario, target_level, mastery)
+
+
+async def assemble_user_roadmap(
+    db: AsyncSession,
+    user_id: int,
+    level: CEFRLevel | None = None,
+    max_steps: int = 10,
+) -> list[dict[str, Any]]:
+    profile = await _require_profile(db, user_id)
+    target_level = _resolve_target_level(profile, level)
+    max_steps = max(8, min(12, int(max_steps)))
+
+    selected, mastery = await _select_roadmap_skills(
+        db, profile, target_level, max_steps
+    )
     scenario = await pick_scenario(db, profile.goal, target_level)
     await clear_user_roadmap(db, user_id)
 
-    weeks: list[dict[str, Any]] = []
-    for index, skill in enumerate(selected, start=1):
-        step = RoadmapStepDB(
-            level=target_level,
-            week_number=index,
-            title=f"Week {index}: {skill.get('title') or skill['slug']}",
-            scenario_id=scenario.id,
-            unlock_condition=None if index == 1 else f"complete_week_{index - 1}",
+    weeks = [
+        await _persist_week(
+            db, user_id, index, skill, scenario, target_level, mastery
         )
-        db.add(step)
-        await db.flush()
-
-        db.add(
-            RoadmapStepSkillDB(
-                roadmap_step_id=step.id,
-                skill_id=int(skill["id"]),
-                role="quiz",
-            )
-        )
-        status = (
-            ProgressStatusEnum.in_progress if index == 1 else ProgressStatusEnum.locked
-        )
-        db.add(
-            UserProgressDB(
-                user_id=user_id,
-                roadmap_step_id=step.id,
-                status=status,
-            )
-        )
-        weeks.append(
-            {
-                "week_number": index,
-                "roadmap_step_id": int(step.id),
-                "title": step.title,
-                "skill_id": int(skill["id"]),
-                "skill_slug": skill["slug"],
-                "skill_title": skill.get("title"),
-                "skill_type": skill.get("skill_type"),
-                "difficulty_in_level": int(
-                    skill.get("difficulty_in_level") or DEFAULT_DIFFICULTY
-                ),
-                "scenario_id": int(scenario.id),
-                "scenario_title": scenario.title,
-                "status": status.value,
-                "mastery": float(mastery.get(int(skill["id"]), DEFAULT_PRIOR)),
-                "level": target_level.value
-                if hasattr(target_level, "value")
-                else str(target_level),
-            }
-        )
-
+        for index, skill in enumerate(selected, start=1)
+    ]
     await db.commit()
     return weeks
 

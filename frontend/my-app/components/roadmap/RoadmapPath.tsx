@@ -43,6 +43,7 @@ export function RoadmapPath({
             key={week.roadmap_step_id}
             week={week}
             offset={offset}
+            index={index}
             completing={completingStepId === week.roadmap_step_id}
             actionError={
               week.status === "in_progress" ? actionError : null
