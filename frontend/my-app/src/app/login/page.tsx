@@ -55,7 +55,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <div className="grid min-h-screen md:grid-cols-2">
         {/* Brand panel */}
         <div className="relative hidden md:flex flex-col justify-between border-r border-border bg-sidebar px-6 py-4">

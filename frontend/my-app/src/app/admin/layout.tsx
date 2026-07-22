@@ -43,7 +43,7 @@ export default function AdminLayout({
 
   if (status !== "ready" || !user) {
     return (
-      <div className="dark flex min-h-screen items-center justify-center bg-background text-foreground">
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
         <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
@@ -51,7 +51,7 @@ export default function AdminLayout({
 
   return (
     <AdminUserProvider user={user}>
-      <div className="dark flex min-h-screen bg-background text-foreground">
+      <div className="flex min-h-screen bg-background text-foreground">
         <AdminSidebar user={user} />
         <div className="flex min-w-0 flex-1 flex-col">{children}</div>
       </div>

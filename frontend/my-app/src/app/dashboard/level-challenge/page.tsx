@@ -108,14 +108,14 @@ export default function LevelChallengePage() {
 
   if (loading) {
     return (
-      <div className="dark flex min-h-screen items-center justify-center bg-background">
+      <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   return (
-    <div className="dark min-h-screen bg-background text-foreground">
+    <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
         <div className="mx-auto flex items-center justify-between px-6 py-4">
           <Link href="/dashboard" className="flex items-center gap-2">
