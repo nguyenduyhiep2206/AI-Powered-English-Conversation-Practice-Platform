@@ -36,30 +36,31 @@ class Settings(BaseSettings):
     MAX_BOOK_UPLOAD_MB: int = 50
 
     # Supabase Storage
-    SUPABASE_URL: str | None = None
-    SUPABASE_SERVICE_ROLE_KEY: str | None = None
-    SUPABASE_SECRET_KEY: str | None = None  # new dashboard "secret" key (sb_secret_...)
+    SUPABASE_URL: str
+    # Provide either the legacy service_role JWT or the new sb_secret_... key.
+    SUPABASE_SERVICE_ROLE_KEY: str = ""
+    SUPABASE_SECRET_KEY: str = ""  # new dashboard "secret" key (sb_secret_...)
     SUPABASE_BOOK_BUCKET: str = "books"
     SUPABASE_BOOK_BUCKET_PUBLIC: bool = False
 
-    def supabase_api_key(self) -> str | None:
+    def supabase_api_key(self) -> str:
         return self.SUPABASE_SERVICE_ROLE_KEY or self.SUPABASE_SECRET_KEY
 
     # MongoDB (optional until indexing pipeline is enabled)
-    MONGODB_URL: str | None = None
+    MONGODB_URL: str
     MONGODB_DB_NAME: str = "englishflow"
 
     # Voyage AI embeddings (book indexing) — phase 2 after text chunks are saved
-    VOYAGE_API_KEY: str | None = None
+    VOYAGE_API_KEY: str
     VOYAGE_EMBEDDING_MODEL: str = "voyage-4-lite"
     VOYAGE_EMBED_BATCH_SIZE: int = 32
     VOYAGE_EMBED_BATCH_DELAY_SECONDS: float = 1.0
 
     # Quiz generation context (text only; no embeddings required)
     QUIZ_CONTEXT_MAX_CHARS: int = 5000
-    OPENAI_API_KEY: str | None = None
-    OPENAI_MODEL: str = "gpt-4o-mini"
-    OPENAI_BASE_URL: str | None = None
+    OPENAI_API_KEY: str
+    OPENAI_MODEL: str
+    OPENAI_BASE_URL: str
 
     # Structure: heuristic candidates + optional AI merge before auto-index
     STRUCTURE_AI_MERGE_ENABLED: bool = True
