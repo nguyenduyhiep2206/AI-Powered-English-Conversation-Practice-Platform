@@ -1,7 +1,7 @@
 # Frontend Light Theme (Minimalist) Design
 
 **Date:** 2026-07-22  
-**Status:** Approved  
+**Status:** Implemented — 2026-07-22  
 **Scope:** `frontend/my-app` visual theme only — no API or business-logic changes
 
 ## Goal
