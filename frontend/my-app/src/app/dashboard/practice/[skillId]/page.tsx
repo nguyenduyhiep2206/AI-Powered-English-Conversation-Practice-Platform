@@ -168,7 +168,7 @@ export default function PracticeSkillPage() {
                 <div
                   className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
                     feedback.correct
-                      ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-200"
+                      ? "border-[#346538]/30 bg-[#EDF3EC] text-[#346538]"
                       : "border-destructive/40 bg-destructive/10 text-destructive"
                   }`}
                 >

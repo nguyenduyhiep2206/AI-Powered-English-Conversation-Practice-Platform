@@ -51,7 +51,7 @@ export function WeekNode({
         className={cn(
           "relative flex h-16 w-16 items-center justify-center rounded-full border transition-transform active:scale-95",
           week.status === "completed" &&
-            "border-emerald-500/50 bg-emerald-500/15 text-emerald-300",
+            "border-[#346538]/30 bg-[#EDF3EC] text-[#346538]",
           week.status === "in_progress" &&
             "border-primary bg-primary text-primary-foreground ring-4 ring-primary/10",
           week.status === "locked" &&
@@ -70,7 +70,7 @@ export function WeekNode({
 
       <div
         className={cn(
-          "mt-4 w-full rounded-xl border bg-card/40 px-5 py-4 text-left transition-colors",
+          "mt-4 w-full rounded-xl border bg-card px-5 py-4 text-left transition-colors",
           week.status === "in_progress"
             ? "border-primary/40"
             : "border-border/60",
@@ -94,7 +94,7 @@ export function WeekNode({
               <div
                 className={cn(
                   "h-full rounded-full transition-all",
-                  masteryPct >= 70 ? "bg-emerald-400" : "bg-primary",
+                  masteryPct >= 70 ? "bg-[#346538]" : "bg-primary",
                 )}
                 style={{ width: `${Math.min(100, masteryPct)}%` }}
               />
