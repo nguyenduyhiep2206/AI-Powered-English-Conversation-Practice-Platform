@@ -30,13 +30,14 @@ JUNK_OUTLINE_RE = re.compile(
 
 MIN_HEADINGS_PER_DEPTH = 2
 MIN_UNITS_FOR_HIGH_CONFIDENCE = 3
-TOC_CONFIDENCE = 0.95
+TOC_CONFIDENCE = 0.75
 # Prefer depths whose average unit span is in a "chapter-sized" range.
 MIN_REASONABLE_AVG_SPAN = 2.0
 MAX_REASONABLE_AVG_SPAN = 80.0
 MAX_JUNK_RATIO = 0.5
 
 
+# flatten outline to a list of items
 def _flatten_outline(outline: Any, reader: PdfReader, depth: int = 0) -> list[dict[str, Any]]:
     if not outline:
         return []
@@ -100,12 +101,15 @@ def _avg_page_span(items: list[dict[str, Any]], total_pages: int) -> float:
     return float(mean(spans))
 
 
-def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int | None:
+def _group_by_depth(flat_items: list[dict[str, Any]]) -> dict[int, list[dict[str, Any]]]:
     by_depth: dict[int, list[dict[str, Any]]] = {}
     for item in flat_items:
         by_depth.setdefault(item["depth"], []).append(item)
+    return by_depth
 
-    # 1) Prefer depths with many content-like titles (Chapter N / N.M / Unit N).
+
+def _depth_by_content_titles(by_depth: dict[int, list[dict[str, Any]]]) -> int | None:
+    """Prefer the depth with the most content-like titles (Chapter N / N.M / Unit N)."""
     content_scores: dict[int, int] = {}
     for depth, items in by_depth.items():
         if _junk_ratio(items) >= MAX_JUNK_RATIO:
@@ -113,13 +117,16 @@ def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int 
         score = sum(1 for item in items if _is_content_title(item["title"]))
         if score >= MIN_HEADINGS_PER_DEPTH:
             content_scores[depth] = score
+    if not content_scores:
+        return None
+    return max(content_scores.items(), key=lambda pair: pair[1])[0]
 
-    if content_scores:
-        return max(content_scores.items(), key=lambda pair: pair[1])[0]
 
-    # 2) Fallback: choose depth with reasonable average page span and enough items,
-    # preferring fewer front-matter titles.
-    candidates: list[tuple[float, int, int, int]] = []
+def _depth_by_page_span(
+    by_depth: dict[int, list[dict[str, Any]]], total_pages: int
+) -> int | None:
+    """Depth with a chapter-sized average span, preferring fewer front-matter titles."""
+    candidates: list[tuple[int, int, float, int]] = []
     for depth, items in by_depth.items():
         if len(items) < MIN_UNITS_FOR_HIGH_CONFIDENCE:
             continue
@@ -129,23 +136,37 @@ def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int 
         if not (MIN_REASONABLE_AVG_SPAN <= avg_span <= MAX_REASONABLE_AVG_SPAN):
             continue
         front_matter_count = sum(1 for item in items if _is_front_matter(item["title"]))
-        # Sort key later: fewer front-matter, more items, then closer to mid span.
+        # Sort: fewer front-matter, more items, then closer to mid span.
         span_penalty = abs(avg_span - 10.0)
         candidates.append((front_matter_count, -len(items), span_penalty, depth))
+    if not candidates:
+        return None
+    candidates.sort()
+    return candidates[0][3]
 
-    if candidates:
-        candidates.sort()
-        return candidates[0][3]
 
-    # 3) Last resort: shallowest depth with enough non-junk items.
+def _shallowest_eligible_depth(by_depth: dict[int, list[dict[str, Any]]]) -> int | None:
+    """Last resort: shallowest depth with enough non-junk items."""
     eligible = [
         d
         for d, items in by_depth.items()
         if len(items) >= MIN_UNITS_FOR_HIGH_CONFIDENCE and _junk_ratio(items) < MAX_JUNK_RATIO
     ]
-    if not eligible:
-        return None
-    return min(eligible)
+    return min(eligible) if eligible else None
+
+
+def _pick_best_depth(flat_items: list[dict[str, Any]], total_pages: int) -> int | None:
+    """Choose the outline depth that best represents chapter-level units."""
+    by_depth = _group_by_depth(flat_items)
+
+    # Depth 0 is valid, so test each strategy with `is not None` (not truthiness).
+    depth = _depth_by_content_titles(by_depth)
+    if depth is not None:
+        return depth
+    depth = _depth_by_page_span(by_depth, total_pages)
+    if depth is not None:
+        return depth
+    return _shallowest_eligible_depth(by_depth)
 
 
 def _outline_looks_like_content(
@@ -168,8 +189,10 @@ def _outline_looks_like_content(
     return True
 
 
-def _to_units(flat_items: list[dict[str, Any]], depth: int, total_pages: int) -> list[DetectedUnit]:
+def _select_depth_items(flat_items: list[dict[str, Any]], depth: int) -> list[dict[str, Any]]:
+    """Items at this depth, sorted by page, dropping junk/front-matter when enough remain."""
     selected = [item for item in flat_items if item["depth"] == depth]
+
     # Drop accessibility / junk bookmarks when enough other titles remain.
     without_junk = [item for item in selected if not _is_junk_outline_title(item["title"])]
     if len(without_junk) >= MIN_HEADINGS_PER_DEPTH:
@@ -181,6 +204,11 @@ def _to_units(flat_items: list[dict[str, Any]], depth: int, total_pages: int) ->
         selected = content_only
 
     selected.sort(key=lambda item: item["page_index"])
+    return selected
+
+
+def _to_units(flat_items: list[dict[str, Any]], depth: int, total_pages: int) -> list[DetectedUnit]:
+    selected = _select_depth_items(flat_items, depth)
 
     units: list[DetectedUnit] = []
     for index, item in enumerate(selected):

@@ -120,6 +120,21 @@ def _resolve_target_level(
     return resolved
 
 
+def _row_to_candidate(question: QuizQuestionDB, skill: LearningSkillDB) -> PlacementCandidate:
+    qtype = question.question_type
+    return PlacementCandidate(
+        id=int(question.id),
+        skill_id=int(question.skill_id),
+        cefr_level=skill.cefr_level,
+        question_type=qtype.value if hasattr(qtype, "value") else str(qtype),
+        stem=question.stem,
+        options=list(question.options) if question.options else None,
+        difficulty=question.difficulty or "medium",
+        answer=question.answer,
+        passage=question.passage,
+    )
+
+
 async def _load_published_for_level(
     db: AsyncSession, level: CEFRLevel
 ) -> list[PlacementCandidate]:
@@ -134,23 +149,7 @@ async def _load_published_for_level(
             )
         )
     ).all()
-    out: list[PlacementCandidate] = []
-    for question, skill in rows:
-        qtype = question.question_type
-        out.append(
-            PlacementCandidate(
-                id=int(question.id),
-                skill_id=int(question.skill_id),
-                cefr_level=skill.cefr_level,
-                question_type=qtype.value if hasattr(qtype, "value") else str(qtype),
-                stem=question.stem,
-                options=list(question.options) if question.options else None,
-                difficulty=question.difficulty or "medium",
-                answer=question.answer,
-                passage=question.passage,
-            )
-        )
-    return out
+    return [_row_to_candidate(question, skill) for question, skill in rows]
 
 
 async def get_level_challenge_questions(

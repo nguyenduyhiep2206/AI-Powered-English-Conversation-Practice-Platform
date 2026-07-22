@@ -42,28 +42,24 @@ def _title_grounded(title: str, page_text: str) -> bool:
     return SequenceMatcher(None, needle, haystack).ratio() >= FUZZY_RATIO_MIN
 
 
-def validate_structure(
-    units: list[DetectedUnit],
-    *,
-    total_pages: int,
-    page_texts: list[str],
-) -> tuple[bool, list[str]]:
-    """Return (ok, reasons). Empty reasons when ok."""
-    reasons: list[str] = []
-
+def _preflight_failure(
+    units: list[DetectedUnit], total_pages: int, page_texts: list[str]
+) -> str | None:
+    """Fatal shape check before per-unit validation; None when inputs are usable."""
     if not (MIN_UNITS <= len(units) <= MAX_UNITS):
-        reasons.append(f"unit count {len(units)} outside [{MIN_UNITS}, {MAX_UNITS}]")
-        return False, reasons
-
+        return f"unit count {len(units)} outside [{MIN_UNITS}, {MAX_UNITS}]"
     if total_pages < 1:
-        reasons.append("total_pages must be >= 1")
-        return False, reasons
-
+        return "total_pages must be >= 1"
     if len(page_texts) < total_pages:
-        reasons.append("page_texts shorter than total_pages")
-        return False, reasons
+        return "page_texts shorter than total_pages"
+    return None
 
-    sorted_units = sorted(units, key=lambda u: (u.page_start, u.page_end, u.title))
+
+def _unit_reasons(
+    sorted_units: list[DetectedUnit], total_pages: int, page_texts: list[str]
+) -> list[str]:
+    """Collect per-unit gate violations: page bounds, overlap, grounding, junk ratio."""
+    reasons: list[str] = []
     prev_end = 0
     junk_hits = 0
 
@@ -91,4 +87,20 @@ def validate_structure(
     if junk_hits >= max(2, (len(sorted_units) + 1) // 2):
         reasons.append(f"too many junk titles ({junk_hits}/{len(sorted_units)})")
 
+    return reasons
+
+
+def validate_structure(
+    units: list[DetectedUnit],
+    *,
+    total_pages: int,
+    page_texts: list[str],
+) -> tuple[bool, list[str]]:
+    """Return (ok, reasons). Empty reasons when ok."""
+    fatal = _preflight_failure(units, total_pages, page_texts)
+    if fatal is not None:
+        return False, [fatal]
+
+    sorted_units = sorted(units, key=lambda u: (u.page_start, u.page_end, u.title))
+    reasons = _unit_reasons(sorted_units, total_pages, page_texts)
     return (len(reasons) == 0), reasons

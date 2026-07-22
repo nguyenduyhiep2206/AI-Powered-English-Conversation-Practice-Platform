@@ -34,14 +34,17 @@ def _question_to_public(question: SurveyQuestionDB) -> SurveyQuestionPublic:
     )
 
 
-async def list_active_survey_questions(db: AsyncSession) -> list[SurveyQuestionPublic]:
+async def _load_active_questions(db: AsyncSession) -> list[SurveyQuestionDB]:
     result = await db.execute(
         select(SurveyQuestionDB)
         .where(SurveyQuestionDB.is_active.is_(True))
         .order_by(SurveyQuestionDB.priority.desc(), SurveyQuestionDB.id.asc())
     )
-    questions = result.scalars().all()
-    return [_question_to_public(q) for q in questions]
+    return list(result.scalars().all())
+
+
+async def list_active_survey_questions(db: AsyncSession) -> list[SurveyQuestionPublic]:
+    return [_question_to_public(q) for q in await _load_active_questions(db)]
 
 
 async def _get_user_profile(db: AsyncSession, user_id: int) -> UserProfileDB | None:
@@ -49,13 +52,17 @@ async def _get_user_profile(db: AsyncSession, user_id: int) -> UserProfileDB | N
     return result.scalar_one_or_none()
 
 
-async def get_survey_questions_for_user(db: AsyncSession, user_id: int) -> list[SurveyQuestionPublic]:
-    profile = await _get_user_profile(db, user_id)
+def _require_survey_not_done(profile: UserProfileDB | None) -> None:
     if profile and profile.survey_done:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="Survey already completed",
         )
+
+
+async def get_survey_questions_for_user(db: AsyncSession, user_id: int) -> list[SurveyQuestionPublic]:
+    profile = await _get_user_profile(db, user_id)
+    _require_survey_not_done(profile)
     return await list_active_survey_questions(db)
 
 
@@ -119,52 +126,49 @@ def _apply_profile_field(profile: UserProfileDB, field: str, raw_value: str) -> 
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=f"Unknown profile field: {field}")
 
 
-async def submit_survey(
-    db: AsyncSession,
-    user_id: int,
-    answers: list[SurveyAnswerItem],
-) -> None:
-    profile = await _get_user_profile(db, user_id)
-    if profile and profile.survey_done:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail="Survey already completed",
-        )
-
-    result = await db.execute(
-        select(SurveyQuestionDB)
-        .where(SurveyQuestionDB.is_active.is_(True))
-        .order_by(SurveyQuestionDB.priority.desc(), SurveyQuestionDB.id.asc())
-    )
-    active_questions = {int(q.id): q for q in result.scalars().all()}
-
+async def _require_active_question_map(db: AsyncSession) -> dict[int, SurveyQuestionDB]:
+    active_questions = {int(q.id): q for q in await _load_active_questions(db)}
     if not active_questions:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No active survey questions configured",
         )
+    return active_questions
 
-    answers_by_question = {item.question_id: item for item in answers}
 
+def _require_required_answers(
+    active_questions: dict[int, SurveyQuestionDB],
+    answers_by_question: dict[int, SurveyAnswerItem],
+) -> None:
     for question in active_questions.values():
-        if not question.is_required:
-            continue
-        if question.id not in answers_by_question:
+        if question.is_required and question.id not in answers_by_question:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Missing required answer for question {question.id}",
             )
 
-    if profile is None:
-        profile = UserProfileDB(
-            user_id=user_id,
-            goal=GoalEnum.daily_conversation,
-            current_level=CEFRLevel.A1,
-            daily_time_min=30,
-            survey_done=False,
-        )
-        db.add(profile)
 
+def _ensure_profile(
+    db: AsyncSession, user_id: int, profile: UserProfileDB | None
+) -> UserProfileDB:
+    if profile is not None:
+        return profile
+    profile = UserProfileDB(
+        user_id=user_id,
+        goal=GoalEnum.daily_conversation,
+        current_level=CEFRLevel.A1,
+        daily_time_min=30,
+        survey_done=False,
+    )
+    db.add(profile)
+    return profile
+
+
+def _apply_answers_to_profile(
+    profile: UserProfileDB,
+    active_questions: dict[int, SurveyQuestionDB],
+    answers_by_question: dict[int, SurveyAnswerItem],
+) -> None:
     for question_id, item in answers_by_question.items():
         question = active_questions.get(question_id)
         if question is None:
@@ -177,13 +181,30 @@ async def submit_survey(
         _validate_option_value(question, raw_value)
 
         field = question.maps_to_profile_field
-        if field:
-            if field not in PROFILE_FIELDS:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Question {question.id} has invalid maps_to_profile_field",
-                )
-            _apply_profile_field(profile, field, raw_value)
+        if not field:
+            continue
+        if field not in PROFILE_FIELDS:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Question {question.id} has invalid maps_to_profile_field",
+            )
+        _apply_profile_field(profile, field, raw_value)
+
+
+async def submit_survey(
+    db: AsyncSession,
+    user_id: int,
+    answers: list[SurveyAnswerItem],
+) -> None:
+    profile = await _get_user_profile(db, user_id)
+    _require_survey_not_done(profile)
+
+    active_questions = await _require_active_question_map(db)
+    answers_by_question = {item.question_id: item for item in answers}
+    _require_required_answers(active_questions, answers_by_question)
+
+    profile = _ensure_profile(db, user_id, profile)
+    _apply_answers_to_profile(profile, active_questions, answers_by_question)
 
     profile.survey_done = True
     await db.commit()
@@ -214,17 +235,22 @@ async def create_survey_question(db: AsyncSession, payload: SurveyQuestionCreate
     return question
 
 
-async def update_survey_question(
-    db: AsyncSession,
-    question_id: int,
-    payload: SurveyQuestionUpdate,
-) -> SurveyQuestionDB:
+async def _get_question_or_404(db: AsyncSession, question_id: int) -> SurveyQuestionDB:
     result = await db.execute(
         select(SurveyQuestionDB).where(SurveyQuestionDB.id == question_id)
     )
     question = result.scalar_one_or_none()
     if question is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Survey question not found")
+    return question
+
+
+async def update_survey_question(
+    db: AsyncSession,
+    question_id: int,
+    payload: SurveyQuestionUpdate,
+) -> SurveyQuestionDB:
+    question = await _get_question_or_404(db, question_id)
 
     updates = payload.model_dump(exclude_unset=True)
     if "options" in updates and updates["options"] is not None:
@@ -239,12 +265,7 @@ async def update_survey_question(
 
 
 async def deactivate_survey_question(db: AsyncSession, question_id: int) -> SurveyQuestionDB:
-    result = await db.execute(
-        select(SurveyQuestionDB).where(SurveyQuestionDB.id == question_id)
-    )
-    question = result.scalar_one_or_none()
-    if question is None:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Survey question not found")
+    question = await _get_question_or_404(db, question_id)
 
     question.is_active = False
     await db.commit()

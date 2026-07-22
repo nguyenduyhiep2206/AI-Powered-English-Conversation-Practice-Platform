@@ -59,23 +59,15 @@ async def get_book(db: AsyncSession, book_id: int) -> BookDB:
     return await _get_book_or_404(db, book_id)
 
 
-async def upload_book(
-    db: AsyncSession,
-    *,
-    file: UploadFile,
-    title: str,
-    description: str | None,
-    cefr_level: CEFRLevel | None,
-    book_type: BookTypeEnum,
-    uploaded_by: int,
-) -> BookDB:
-    if not supabase_storage_service.is_configured():
-        detail = supabase_storage_service.configuration_error() or "Supabase Storage is not configured"
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=detail,
-        )
+def _require_storage_configured() -> None:
+    if supabase_storage_service.is_configured():
+        return
+    detail = supabase_storage_service.configuration_error() or "Supabase Storage is not configured"
+    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=detail)
 
+
+async def _read_valid_pdf_upload(file: UploadFile) -> tuple[bytes, str]:
+    """Validate the upload is a non-empty, in-size PDF; return (content, original_name)."""
     if file.content_type not in (PDF_CONTENT_TYPE, "application/octet-stream"):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -97,12 +89,23 @@ async def upload_book(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"File exceeds {settings.MAX_BOOK_UPLOAD_MB}MB limit",
         )
-
     if not content.startswith(b"%PDF"):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PDF file")
 
-    page_count = _validate_pdf(content)
+    return content, original_name
 
+
+async def _persist_book_record(
+    db: AsyncSession,
+    *,
+    title: str,
+    description: str | None,
+    cefr_level: CEFRLevel | None,
+    book_type: BookTypeEnum,
+    uploaded_by: int,
+    content: bytes,
+    page_count: int,
+) -> BookDB:
     book = BookDB(
         title=title.strip(),
         description=description.strip() if description else None,
@@ -117,7 +120,13 @@ async def upload_book(
     )
     db.add(book)
     await db.flush()
+    return book
 
+
+async def _upload_and_link_file(
+    db: AsyncSession, book: BookDB, content: bytes, original_name: str
+) -> None:
+    """Upload the PDF to storage and link it to the book; rollback on failure."""
     storage_path = f"{book.id}_{uuid.uuid4().hex}_{_safe_filename(original_name)}.pdf"
     try:
         file_url, stored_path = supabase_storage_service.upload_pdf(content, storage_path)
@@ -127,9 +136,35 @@ async def upload_book(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail=f"Failed to upload to Supabase Storage: {exc}",
         )
-
     book.file_path = file_url
     book.file_public_id = stored_path
+
+
+async def upload_book(
+    db: AsyncSession,
+    *,
+    file: UploadFile,
+    title: str,
+    description: str | None,
+    cefr_level: CEFRLevel | None,
+    book_type: BookTypeEnum,
+    uploaded_by: int,
+) -> BookDB:
+    _require_storage_configured()
+    content, original_name = await _read_valid_pdf_upload(file)
+    page_count = _validate_pdf(content)
+
+    book = await _persist_book_record(
+        db,
+        title=title,
+        description=description,
+        cefr_level=cefr_level,
+        book_type=book_type,
+        uploaded_by=uploaded_by,
+        content=content,
+        page_count=page_count,
+    )
+    await _upload_and_link_file(db, book, content, original_name)
 
     await db.commit()
     await db.refresh(book)

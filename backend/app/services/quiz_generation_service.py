@@ -213,18 +213,16 @@ def validate_generated_questions(
     return valid
 
 
-async def generate_quiz_for_skill(
-    db: AsyncSession,
-    skill_id: int,
-    count: int = 8,
-) -> list[QuizQuestionDB]:
-    """Sinh quiz CEFR-aware: blueprint + passage grounding → draft rows."""
+async def _require_skill(db: AsyncSession, skill_id: int) -> LearningSkillDB:
     skill = (
         await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
     ).scalar_one_or_none()
     if skill is None:
-        raise ValueError("Không tìm thấy skill")
+        raise ValueError("Don`t have skill")
+    return skill
 
+
+async def _resolve_primary_source(db: AsyncSession, skill_id: int) -> BookSkillSourceDB:
     sources = list(
         (
             await db.execute(
@@ -238,57 +236,66 @@ async def generate_quiz_for_skill(
         .all()
     )
     if not sources:
-        raise ValueError("Skill chưa có book source — sync sách trước")
+        raise ValueError("Skill doesn't have book source — sync book first.")
 
     primary = next((s for s in sources if s.is_primary), sources[0])
     if primary.is_excluded:
-        raise ValueError("Primary source bị exclude — không sinh quiz")
+        raise ValueError("Primary source is excluded — can't generate quiz.")
+    return primary
 
-    book = (
-        await db.execute(select(BookDB).where(BookDB.id == primary.book_id))
-    ).scalar_one_or_none()
+
+async def _require_source_book(db: AsyncSession, book_id: int) -> BookDB:
+    book = (await db.execute(select(BookDB).where(BookDB.id == book_id))).scalar_one_or_none()
     if book is None:
-        raise ValueError("Không tìm thấy sách nguồn")
+        raise ValueError("Don't have source book.")
+    return book
 
-    cefr = skill.cefr_level
+
+def _load_unit_context(
+    skill: LearningSkillDB, book: BookDB, primary: BookSkillSourceDB
+) -> dict[str, Any]:
     skill_type = skill.skill_type or SkillTypeEnum.grammar
     book_type = book.book_type or BookTypeEnum.freeform
-
-    blueprint = blueprint_for(book_type, skill_type, count)
-    can_do = get_can_do(cefr, skill_type)
-    mode = context_mode_for(book_type, skill_type)
-    budget = context_budget_for_level(cefr)
-
     ctx = get_unit_context(
         int(primary.book_id),
         int(primary.unit_id),
-        max_chars=budget,
-        mode=mode,
+        max_chars=context_budget_for_level(skill.cefr_level),
+        mode=context_mode_for(book_type, skill_type),
     )
     if not ctx["text"]:
-        raise ValueError("Unit nguồn không có text chunk")
+        raise ValueError("Source unit doesn't have text chunk.")
+    return ctx
 
-    cefr_s = cefr.value if hasattr(cefr, "value") else str(cefr)
-    skill_type_s = skill_type.value if hasattr(skill_type, "value") else str(skill_type)
-    book_type_s = book_type.value if hasattr(book_type, "value") else str(book_type)
-    unit_title = primary.unit_title or skill.title
+
+def _request_validated_items(
+    skill: LearningSkillDB,
+    book: BookDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    count: int,
+) -> list[dict[str, Any]]:
+    """Build the CEFR-aware prompt, call the LLM, and keep only grounded items."""
+    cefr = skill.cefr_level
+    skill_type = skill.skill_type or SkillTypeEnum.grammar
+    book_type = book.book_type or BookTypeEnum.freeform
+    blueprint = blueprint_for(book_type, skill_type, count)
 
     payload = chat_json(
         SYSTEM_PROMPT,
         build_generation_prompt(
-            unit_title,
-            cefr_s,
+            primary.unit_title or skill.title,
+            cefr.value if hasattr(cefr, "value") else str(cefr),
             ctx["text"],
             count,
-            can_do=can_do,
+            can_do=get_can_do(cefr, skill_type),
             blueprint=blueprint,
-            skill_type=skill_type_s,
-            book_type=book_type_s,
+            skill_type=skill_type.value if hasattr(skill_type, "value") else str(skill_type),
+            book_type=book_type.value if hasattr(book_type, "value") else str(book_type),
         ),
     )
     raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
     if not isinstance(raw_questions, list):
-        raise ValueError("LLM không trả về danh sách questions")
+        raise ValueError("LLM didn't return a list of questions.")
 
     validated = validate_generated_questions(
         raw_questions,
@@ -297,30 +304,61 @@ async def generate_quiz_for_skill(
         cefr_level=cefr,
     )
     if not validated:
-        raise ValueError("Không có câu hỏi hợp lệ sau validate")
+        raise ValueError("No valid questions after validation.")
+    return validated
 
+
+def _build_draft_row(
+    skill: LearningSkillDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    batch_id: str,
+    item: dict[str, Any],
+) -> QuizQuestionDB:
+    return QuizQuestionDB(
+        skill_id=skill.id,
+        book_id=primary.book_id,
+        unit_id=primary.unit_id,
+        question_type=QuizQuestionTypeEnum(item["type"]),
+        stem=item["stem"],
+        passage=item.get("passage"),
+        options=item["options"],
+        answer=item["answer"],
+        explanation=item.get("explanation"),
+        cefr_level=skill.cefr_level,
+        difficulty=item["difficulty"],
+        status=QuizQuestionStatusEnum.draft,
+        generation_batch_id=batch_id,
+        source_chunk_ids=ctx["chunk_ids"],
+    )
+
+
+async def _persist_draft_questions(
+    db: AsyncSession,
+    skill: LearningSkillDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    validated: list[dict[str, Any]],
+) -> list[QuizQuestionDB]:
     batch_id = uuid.uuid4().hex
-    rows: list[QuizQuestionDB] = []
-    for item in validated:
-        row = QuizQuestionDB(
-            skill_id=skill.id,
-            book_id=primary.book_id,
-            unit_id=primary.unit_id,
-            question_type=QuizQuestionTypeEnum(item["type"]),
-            stem=item["stem"],
-            passage=item.get("passage"),
-            options=item["options"],
-            answer=item["answer"],
-            explanation=item.get("explanation"),
-            cefr_level=skill.cefr_level,
-            difficulty=item["difficulty"],
-            status=QuizQuestionStatusEnum.draft,
-            generation_batch_id=batch_id,
-            source_chunk_ids=ctx["chunk_ids"],
-        )
-        db.add(row)
-        rows.append(row)
+    rows = [_build_draft_row(skill, primary, ctx, batch_id, item) for item in validated]
+    db.add_all(rows)
     await db.commit()
     for row in rows:
         await db.refresh(row)
     return rows
+
+
+async def generate_quiz_for_skill(
+    db: AsyncSession,
+    skill_id: int,
+    count: int = 8,
+) -> list[QuizQuestionDB]:
+    """Generate CEFR-aware quiz: blueprint + passage grounding → draft rows."""
+    skill = await _require_skill(db, skill_id)
+    primary = await _resolve_primary_source(db, skill_id)
+    book = await _require_source_book(db, int(primary.book_id))
+
+    ctx = _load_unit_context(skill, book, primary)
+    validated = _request_validated_items(skill, book, primary, ctx, count)
+    return await _persist_draft_questions(db, skill, primary, ctx, validated)

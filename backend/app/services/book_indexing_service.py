@@ -10,9 +10,12 @@ from __future__ import annotations
 import logging
 import tempfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 import pdfplumber
+from fastapi import HTTPException, status
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -126,6 +129,63 @@ def index_unit_chunks(book: Any, unit: Any, pdf_path: str) -> list[dict[str, Any
     return docs
 
 
+@contextmanager
+def _temp_pdf(pdf_bytes: bytes) -> Iterator[str]:
+    """Yield a temp file path holding the PDF bytes; auto-cleaned on exit."""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
+        tmp.write(pdf_bytes)
+        tmp.flush()
+        yield tmp.name
+
+
+def _chunk_all_units(book: Any, units: list[Any], pdf_path: str) -> tuple[list[dict[str, Any]], list[str]]:
+    """Chunk every unit; collect docs and per-unit failure notes (fail-soft)."""
+    all_docs: list[dict[str, Any]] = []
+    failed_units: list[str] = []
+    for unit in units:
+        try:
+            all_docs.extend(index_unit_chunks(book, unit, pdf_path))
+        except Exception as exc:
+            failed_units.append(f"unit_id={unit.id} title={unit.title!r}: {exc}")
+            logger.exception("Failed chunking book=%s unit=%s", book.id, unit.id)
+    return all_docs, failed_units
+
+
+def _resolve_embedded_text(doc: dict[str, Any]) -> str:
+    text = (doc.get("embedded_text") or "").strip()
+    if text:
+        return text
+    title = doc.get("unit_title") or ""
+    body = (doc.get("text") or "").strip()
+    return build_embedded_text(title, body) if body else ""
+
+
+def _prepare_embed_batch(pending: list[dict[str, Any]]) -> tuple[list[str], list[Any], int]:
+    """Split pending docs into (texts, ids); mark and count docs with no text."""
+    texts: list[str] = []
+    ids: list[Any] = []
+    failed = 0
+    for doc in pending:
+        text = _resolve_embedded_text(doc)
+        if not text:
+            mark_chunks_embed_failed([doc["_id"]], "empty embedded_text")
+            failed += 1
+            continue
+        texts.append(text)
+        ids.append(doc["_id"])
+    return texts, ids, failed
+
+
+def _embed_one_batch(book_id: int, unit_id: int | None, texts: list[str], ids: list[Any]) -> int:
+    """Embed one batch and persist vectors. Raises on hard failure."""
+    vectors = embed_texts(texts)
+    if len(vectors) != len(ids):
+        raise RuntimeError(f"embedding count mismatch: got {len(vectors)} for {len(ids)} chunks")
+    mark_chunks_embedded(list(zip(ids, vectors)))
+    logger.info("Embedded book=%s unit=%s batch=%s", book_id, unit_id, len(ids))
+    return len(ids)
+
+
 def embed_pending_chunks(book_id: int, *, unit_id: int | None = None) -> dict[str, int]:
     """Phase 2: embed pending/failed chunks for a book (best-effort).
 
@@ -143,55 +203,37 @@ def embed_pending_chunks(book_id: int, *, unit_id: int | None = None) -> dict[st
         if not pending:
             break
 
-        texts: list[str] = []
-        ids: list[Any] = []
-        for doc in pending:
-            text = (doc.get("embedded_text") or "").strip()
-            if not text:
-                title = doc.get("unit_title") or ""
-                body = (doc.get("text") or "").strip()
-                text = build_embedded_text(title, body) if body else ""
-            if not text:
-                mark_chunks_embed_failed([doc["_id"]], "empty embedded_text")
-                failed += 1
-                continue
-            texts.append(text)
-            ids.append(doc["_id"])
-
+        texts, ids, batch_failed = _prepare_embed_batch(pending)
+        failed += batch_failed
         if not texts:
             continue
 
         try:
-            vectors = embed_texts(texts)
-            if len(vectors) != len(ids):
-                raise RuntimeError(
-                    f"embedding count mismatch: got {len(vectors)} for {len(ids)} chunks"
-                )
-            mark_chunks_embedded(list(zip(ids, vectors)))
-            embedded += len(ids)
-            logger.info(
-                "Embedded book=%s unit=%s batch=%s",
-                book_id,
-                unit_id,
-                len(ids),
-            )
+            embedded += _embed_one_batch(book_id, unit_id, texts, ids)
         except Exception as exc:
             mark_chunks_embed_failed(ids, str(exc))
             failed += len(ids)
-            logger.exception(
-                "Embed batch failed book=%s unit=%s size=%s",
-                book_id,
-                unit_id,
-                len(ids),
-            )
+            logger.exception("Embed batch failed book=%s unit=%s size=%s", book_id, unit_id, len(ids))
             # Stop loop on hard failure for this pass; retry-embed can resume later.
             break
 
         if delay > 0:
             time.sleep(delay)
 
-    pending_left = count_pending_embed_chunks(book_id)
-    return {"embedded": embedded, "failed": failed, "pending_left": pending_left}
+    return {
+        "embedded": embedded,
+        "failed": failed,
+        "pending_left": count_pending_embed_chunks(book_id),
+    }
+
+
+def _run_embed_phase(book_id: int, *, unit_id: int | None = None) -> None:
+    """Best-effort phase 2 outside the DB transaction; never rolls back ready status."""
+    try:
+        stats = embed_pending_chunks(book_id, unit_id=unit_id)
+        logger.info("Book %s embed phase done unit=%s %s", book_id, unit_id, stats)
+    except Exception:
+        logger.exception("Book %s embed phase crashed unit=%s; text chunks retained", book_id, unit_id)
 
 
 async def _load_book_and_units(
@@ -215,6 +257,53 @@ async def _load_book_and_units(
     return book, units
 
 
+async def _fail_book(db: AsyncSession, book: BookDB, message: str) -> None:
+    book.status = BookStatusEnum.failed
+    await db.commit()
+    logger.error(message)
+
+
+def _log_chunk_outcome(book_id: int, chunk_count: int, failed_units: list[str]) -> None:
+    if failed_units:
+        logger.warning(
+            "Book %s ready with partial chunking — %s unit(s) failed: %s",
+            book_id,
+            len(failed_units),
+            "; ".join(failed_units),
+        )
+    else:
+        logger.info("Book %s chunked successfully chunks=%s", book_id, chunk_count)
+
+
+async def _store_book_chunks(
+    db: AsyncSession,
+    book: BookDB,
+    book_id: int,
+    all_docs: list[dict[str, Any]],
+    failed_units: list[str],
+) -> bool:
+    """Replace book chunks and set final status. Return True when book is ready."""
+    delete_book_chunks(book_id)
+    if all_docs:
+        insert_chunks(all_docs)
+    book.chunk_count = len(all_docs)
+
+    if not all_docs:
+        await _fail_book(
+            db,
+            book,
+            f"Book {book_id} chunking produced no docs — "
+            f"{len(failed_units)} unit(s) failed: {'; '.join(failed_units)}",
+        )
+        return False
+
+    # Text chunks are enough for unit-scoped quiz generation.
+    book.status = BookStatusEnum.ready
+    await db.commit()
+    _log_chunk_outcome(book_id, len(all_docs), failed_units)
+    return True
+
+
 async def index_book(book_id: int) -> None:
     """Phase 1 chunk all units, mark ready, then best-effort Voyage embed (phase 2)."""
     ensure_book_chunks_indexes()
@@ -222,62 +311,41 @@ async def index_book(book_id: int) -> None:
     async with AsyncSessionLocal() as db:
         book, units = await _load_book_and_units(db, book_id)
         if not units:
-            book.status = BookStatusEnum.failed
-            await db.commit()
-            logger.error("Book %s has no structure preview units to index", book_id)
+            await _fail_book(db, book, f"Book {book_id} has no structure preview units to index")
             return
 
         pdf_bytes = await _download_pdf_bytes(book)
-        failed_units: list[str] = []
-        all_docs: list[dict[str, Any]] = []
+        with _temp_pdf(pdf_bytes) as pdf_path:
+            all_docs, failed_units = _chunk_all_units(book, units, pdf_path)
 
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
-            tmp.write(pdf_bytes)
-            tmp.flush()
-
-            for unit in units:
-                try:
-                    docs = index_unit_chunks(book, unit, tmp.name)
-                    all_docs.extend(docs)
-                except Exception as exc:
-                    failed_units.append(f"unit_id={unit.id} title={unit.title!r}: {exc}")
-                    logger.exception("Failed chunking book=%s unit=%s", book_id, unit.id)
-
-        delete_book_chunks(book_id)
-        if all_docs:
-            insert_chunks(all_docs)
-
-        book.chunk_count = len(all_docs)
-        if not all_docs:
-            book.status = BookStatusEnum.failed
-            await db.commit()
-            logger.error(
-                "Book %s chunking produced no docs — %s unit(s) failed: %s",
-                book_id,
-                len(failed_units),
-                "; ".join(failed_units),
-            )
+        if not await _store_book_chunks(db, book, book_id, all_docs, failed_units):
             return
 
-        # Text chunks are enough for unit-scoped quiz generation.
-        book.status = BookStatusEnum.ready
-        await db.commit()
-        if failed_units:
-            logger.warning(
-                "Book %s ready with partial chunking — %s unit(s) failed: %s",
-                book_id,
-                len(failed_units),
-                "; ".join(failed_units),
-            )
-        else:
-            logger.info("Book %s chunked successfully chunks=%s", book_id, len(all_docs))
+    _run_embed_phase(book_id)
 
-    # Phase 2 outside the DB transaction — does not roll back ready status.
-    try:
-        stats = embed_pending_chunks(book_id)
-        logger.info("Book %s embed phase done %s", book_id, stats)
-    except Exception:
-        logger.exception("Book %s embed phase crashed; text chunks retained", book_id)
+
+async def _rechunk_single_unit(
+    db: AsyncSession, book: BookDB, unit: Any, book_id: int, unit_id: int
+) -> list[dict[str, Any]]:
+    """Chunk one unit; mark book failed and raise ValueError on error."""
+    pdf_bytes = await _download_pdf_bytes(book)
+    with _temp_pdf(pdf_bytes) as pdf_path:
+        try:
+            return index_unit_chunks(book, unit, pdf_path)
+        except Exception as exc:
+            await _fail_book(db, book, f"Reindex chunking failed book={book_id} unit={unit_id}: {exc}")
+            raise ValueError(str(exc)) from exc
+
+
+async def _store_unit_chunks(
+    db: AsyncSession, book: BookDB, book_id: int, unit_id: int, docs: list[dict[str, Any]]
+) -> None:
+    delete_unit_chunks(book_id, unit_id)
+    insert_chunks(docs)
+    book.chunk_count = count_book_chunks(book_id)
+    book.status = BookStatusEnum.ready
+    await db.commit()
+    logger.info("Rechunked book=%s unit=%s chunks=%s", book_id, unit_id, len(docs))
 
 
 async def reindex_unit(book_id: int, unit_id: int) -> None:
@@ -289,39 +357,13 @@ async def reindex_unit(book_id: int, unit_id: int) -> None:
         if not units:
             raise ValueError(f"Unit {unit_id} not found for book {book_id}")
 
-        unit = units[0]
         book.status = BookStatusEnum.processing
         await db.commit()
 
-        pdf_bytes = await _download_pdf_bytes(book)
+        docs = await _rechunk_single_unit(db, book, units[0], book_id, unit_id)
+        await _store_unit_chunks(db, book, book_id, unit_id, docs)
 
-        with tempfile.NamedTemporaryFile(suffix=".pdf", delete=True) as tmp:
-            tmp.write(pdf_bytes)
-            tmp.flush()
-            try:
-                docs = index_unit_chunks(book, unit, tmp.name)
-            except Exception as exc:
-                book.status = BookStatusEnum.failed
-                await db.commit()
-                logger.exception("Reindex chunking failed book=%s unit=%s", book_id, unit_id)
-                raise ValueError(str(exc)) from exc
-
-        delete_unit_chunks(book_id, unit_id)
-        insert_chunks(docs)
-        book.chunk_count = count_book_chunks(book_id)
-        book.status = BookStatusEnum.ready
-        await db.commit()
-        logger.info("Rechunked book=%s unit=%s chunks=%s", book_id, unit_id, len(docs))
-
-    try:
-        stats = embed_pending_chunks(book_id, unit_id=unit_id)
-        logger.info("Reindex embed book=%s unit=%s %s", book_id, unit_id, stats)
-    except Exception:
-        logger.exception(
-            "Reindex embed failed book=%s unit=%s; text chunks retained",
-            book_id,
-            unit_id,
-        )
+    _run_embed_phase(book_id, unit_id=unit_id)
 
 
 async def retry_embeddings(book_id: int) -> dict[str, int]:
@@ -336,26 +378,29 @@ async def retry_embeddings(book_id: int) -> dict[str, int]:
     return embed_pending_chunks(book_id)
 
 
-async def confirm_and_start_indexing(db: AsyncSession, book_id: int) -> BookDB:
-    """Validate preview exists, set status=processing. Caller schedules background job."""
+async def _require_book(db: AsyncSession, book_id: int) -> BookDB:
     result = await db.execute(select(BookDB).where(BookDB.id == book_id))
     book = result.scalar_one_or_none()
     if book is None:
-        from fastapi import HTTPException, status
-
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Book not found")
+    return book
 
+
+async def _require_preview_units(db: AsyncSession, book_id: int) -> None:
     units_result = await db.execute(
         select(BookStructurePreviewDB).where(BookStructurePreviewDB.book_id == book_id)
     )
-    units = list(units_result.scalars().all())
-    if not units:
-        from fastapi import HTTPException, status
-
+    if not list(units_result.scalars().all()):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="No structure preview to confirm. Run detect-structure first.",
         )
+
+
+async def confirm_and_start_indexing(db: AsyncSession, book_id: int) -> BookDB:
+    """Validate preview exists, set status=processing. Caller schedules background job."""
+    book = await _require_book(db, book_id)
+    await _require_preview_units(db, book_id)
 
     book.status = BookStatusEnum.processing
     await db.commit()

@@ -148,6 +148,21 @@ def placement_public_dict(c: PlacementCandidate) -> dict[str, Any]:
     }
 
 
+def _row_to_candidate(question: QuizQuestionDB, skill: LearningSkillDB) -> PlacementCandidate:
+    qtype = question.question_type
+    return PlacementCandidate(
+        id=int(question.id),
+        skill_id=int(question.skill_id),
+        cefr_level=skill.cefr_level,
+        question_type=qtype.value if hasattr(qtype, "value") else str(qtype),
+        stem=question.stem,
+        options=list(question.options) if question.options else None,
+        difficulty=question.difficulty or "medium",
+        answer=question.answer,
+        passage=question.passage,
+    )
+
+
 async def load_published_candidates(db: AsyncSession) -> list[PlacementCandidate]:
     q = (
         select(QuizQuestionDB, LearningSkillDB)
@@ -158,30 +173,10 @@ async def load_published_candidates(db: AsyncSession) -> list[PlacementCandidate
         )
     )
     rows = (await db.execute(q)).all()
-    out: list[PlacementCandidate] = []
-    for question, skill in rows:
-        qtype = question.question_type
-        qtype_s = qtype.value if hasattr(qtype, "value") else str(qtype)
-        out.append(
-            PlacementCandidate(
-                id=int(question.id),
-                skill_id=int(question.skill_id),
-                cefr_level=skill.cefr_level,
-                question_type=qtype_s,
-                stem=question.stem,
-                options=list(question.options) if question.options else None,
-                difficulty=question.difficulty or "medium",
-                answer=question.answer,
-                passage=question.passage,
-            )
-        )
-    return out
+    return [_row_to_candidate(question, skill) for question, skill in rows]
 
 
-async def get_placement_questions_for_user(
-    db: AsyncSession,
-    user_id: int,
-) -> list[PlacementCandidate]:
+async def _require_placement_profile(db: AsyncSession, user_id: int) -> UserProfileDB:
     profile = (
         await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
     ).scalar_one_or_none()
@@ -189,7 +184,67 @@ async def get_placement_questions_for_user(
         raise PermissionError("Hoàn thành survey trước khi làm placement")
     if profile.placement_score is not None:
         raise RuntimeError("Đã hoàn thành placement")
+    return profile
 
+
+def _parse_answer_ids(answers: list[dict[str, Any]]) -> list[int]:
+    if len(answers) != PLACEMENT_SIZE:
+        raise ValueError(f"Cần đúng {PLACEMENT_SIZE} câu trả lời")
+    ids = [int(a["question_id"]) for a in answers]
+    if len(set(ids)) != PLACEMENT_SIZE:
+        raise ValueError("question_id trùng hoặc thiếu")
+    return ids
+
+
+async def _fetch_published_questions(
+    db: AsyncSession, ids: list[int]
+) -> dict[int, QuizQuestionDB]:
+    q = select(QuizQuestionDB).where(
+        QuizQuestionDB.id.in_(ids),
+        QuizQuestionDB.status == QuizQuestionStatusEnum.published,
+    )
+    by_id = {int(r.id): r for r in (await db.execute(q)).scalars().all()}
+    if len(by_id) != PLACEMENT_SIZE:
+        raise ValueError("Một số câu không tồn tại hoặc chưa published")
+    return by_id
+
+
+def _grade_answers(
+    ids: list[int],
+    by_id: dict[int, QuizQuestionDB],
+    answers: list[dict[str, Any]],
+) -> tuple[int, list[tuple[QuizQuestionDB, bool]]]:
+    answer_map = {int(a["question_id"]): str(a["answer"]) for a in answers}
+    correct_count = 0
+    graded: list[tuple[QuizQuestionDB, bool]] = []
+    for qid in ids:
+        row = by_id[qid]
+        ok = grade_placement_answer(row.answer, answer_map[qid])
+        if ok:
+            correct_count += 1
+        graded.append((row, ok))
+    return correct_count, graded
+
+
+def _apply_placement_result(profile: UserProfileDB, correct_count: int) -> CEFRLevel:
+    level = score_to_level(correct_count)
+    profile.placement_score = correct_count
+    profile.current_level = level
+    return level
+
+
+async def _seed_placement_mastery(
+    db: AsyncSession, user_id: int, graded: list[tuple[QuizQuestionDB, bool]]
+) -> None:
+    for row, ok in graded:
+        await apply_answer(db, user_id, int(row.skill_id), ok)
+
+
+async def get_placement_questions_for_user(
+    db: AsyncSession,
+    user_id: int,
+) -> list[PlacementCandidate]:
+    await _require_placement_profile(db, user_id)
     candidates = await load_published_candidates(db)
     return select_from_candidates(candidates)
 
@@ -200,47 +255,14 @@ async def submit_placement(
     answers: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Grade answers, set CEFR level + mastery. Does not assemble a roadmap."""
-    profile = (
-        await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
-    ).scalar_one_or_none()
-    if profile is None or not profile.survey_done:
-        raise PermissionError("Hoàn thành survey trước khi làm placement")
-    if profile.placement_score is not None:
-        raise RuntimeError("Đã hoàn thành placement")
+    profile = await _require_placement_profile(db, user_id)
+    ids = _parse_answer_ids(answers)
+    by_id = await _fetch_published_questions(db, ids)
+    correct_count, graded = _grade_answers(ids, by_id, answers)
 
-    if len(answers) != PLACEMENT_SIZE:
-        raise ValueError(f"Cần đúng {PLACEMENT_SIZE} câu trả lời")
-
-    ids = [int(a["question_id"]) for a in answers]
-    if len(set(ids)) != PLACEMENT_SIZE:
-        raise ValueError("question_id trùng hoặc thiếu")
-
-    q = select(QuizQuestionDB).where(
-        QuizQuestionDB.id.in_(ids),
-        QuizQuestionDB.status == QuizQuestionStatusEnum.published,
-    )
-    rows = list((await db.execute(q)).scalars().all())
-    by_id = {int(r.id): r for r in rows}
-    if len(by_id) != PLACEMENT_SIZE:
-        raise ValueError("Một số câu không tồn tại hoặc chưa published")
-
-    correct_count = 0
-    graded: list[tuple[QuizQuestionDB, bool]] = []
-    answer_map = {int(a["question_id"]): str(a["answer"]) for a in answers}
-    for qid in ids:
-        row = by_id[qid]
-        ok = grade_placement_answer(row.answer, answer_map[qid])
-        if ok:
-            correct_count += 1
-        graded.append((row, ok))
-
-    level = score_to_level(correct_count)
-    profile.placement_score = correct_count
-    profile.current_level = level
+    level = _apply_placement_result(profile, correct_count)
     await db.commit()
-
-    for row, ok in graded:
-        await apply_answer(db, user_id, int(row.skill_id), ok)
+    await _seed_placement_mastery(db, user_id, graded)
 
     return {
         "placement_score": correct_count,

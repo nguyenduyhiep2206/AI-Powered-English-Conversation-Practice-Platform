@@ -110,13 +110,17 @@ def _candidates_payload(candidates: list[DetectionResult]) -> list[dict[str, Any
     return payload
 
 
-def _parse_units(data: Any, total_pages: int) -> list[DetectedUnit]:
+def _require_raw_units(data: Any) -> list[Any]:
     if not isinstance(data, dict):
         raise ValueError("AI merge response must be a JSON object")
     raw_units = data.get("units")
     if not isinstance(raw_units, list) or not raw_units:
         raise ValueError("AI merge response missing units[]")
+    return raw_units
 
+
+def _parse_raw_units(raw_units: list[Any], total_pages: int) -> list[DetectedUnit]:
+    """Build clamped DetectedUnits from raw items; skip title-less, raise on bad pages."""
     units: list[DetectedUnit] = []
     for item in raw_units:
         if not isinstance(item, dict):
@@ -142,14 +146,16 @@ def _parse_units(data: Any, total_pages: int) -> list[DetectedUnit]:
 
     if not units:
         raise ValueError("AI merge produced no valid units")
+    return units
 
+
+def _assign_page_ranges(units: list[DetectedUnit]) -> list[DetectedUnit]:
+    """Order units, drop back-matter, and cap page_end before the next unit / back-matter."""
     units.sort(key=lambda u: u.page_start)
     # If Answers/Definitions follow teaching units, cap the last lesson before them.
-    first_back_matter_start: int | None = None
-    for unit in units:
-        if is_back_matter_unit_title(unit.title):
-            first_back_matter_start = unit.page_start
-            break
+    first_back_matter_start = next(
+        (u.page_start for u in units if is_back_matter_unit_title(u.title)), None
+    )
 
     units = drop_back_matter_units(units)
     if not units:
@@ -168,30 +174,44 @@ def _parse_units(data: Any, total_pages: int) -> list[DetectedUnit]:
     return units
 
 
+def _parse_units(data: Any, total_pages: int) -> list[DetectedUnit]:
+    raw_units = _require_raw_units(data)
+    units = _parse_raw_units(raw_units, total_pages)
+    return _assign_page_ranges(units)
+
+
+def _skim_for_prompt(pdf_path: str, total_pages: int) -> list[dict[str, Any]]:
+    """Skim page headings, pad up to the page cap, and keep only non-empty pages."""
+    skim = skim_pdf_headings(pdf_path)
+    while len(skim) < total_pages and len(skim) < settings.STRUCTURE_SKIM_MAX_PAGES:
+        skim.append("")
+    return [
+        {"page": i + 1, "text": text} for i, text in enumerate(skim[:total_pages]) if text.strip()
+    ]
+
+
+def _build_user_message(
+    candidates: list[DetectionResult], skim_for_prompt: list[dict[str, Any]], total_pages: int
+) -> str:
+    user_payload = {
+        "total_pages": total_pages,
+        "candidates": _candidates_payload(candidates),
+        "page_skims": skim_for_prompt,
+    }
+    return (
+        "Merge these detector candidates into one structure for the book.\n"
+        f"{json.dumps(user_payload, ensure_ascii=False)}"
+    )
+
+
 def merge_structure_with_ai(
     pdf_path: str,
     candidates: list[DetectionResult],
     *,
     total_pages: int,
 ) -> DetectionResult:
-    skim = skim_pdf_headings(pdf_path)
-    # Pad skim if PDF reported more pages than skimmed (cap)
-    while len(skim) < total_pages and len(skim) < settings.STRUCTURE_SKIM_MAX_PAGES:
-        skim.append("")
-
-    skim_for_prompt = [
-        {"page": i + 1, "text": text} for i, text in enumerate(skim[:total_pages]) if text.strip()
-    ]
-
-    user_payload = {
-        "total_pages": total_pages,
-        "candidates": _candidates_payload(candidates),
-        "page_skims": skim_for_prompt,
-    }
-    user = (
-        "Merge these detector candidates into one structure for the book.\n"
-        f"{json.dumps(user_payload, ensure_ascii=False)}"
-    )
+    skim_for_prompt = _skim_for_prompt(pdf_path, total_pages)
+    user = _build_user_message(candidates, skim_for_prompt, total_pages)
 
     data = chat_json(SYSTEM_PROMPT, user)
     units = _parse_units(data, total_pages)

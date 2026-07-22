@@ -31,7 +31,6 @@ GOAL_TO_CATEGORY: dict[GoalEnum, ScenarioCategoryEnum] = {
 }
 
 DEFAULT_DIFFICULTY = 5
-ZPD_WINDOW = 2
 
 
 def _skill_type_value(skill: dict[str, Any] | LearningSkillDB) -> str:
@@ -73,17 +72,6 @@ def _clamp_placement_score(placement_score: int | None) -> int:
     return min(10, score)
 
 
-def _prereqs_met(
-    skill_id: int,
-    mastery: dict[int, float],
-    prereq_from_by_to: dict[int, list[int]],
-) -> bool:
-    for from_id in prereq_from_by_to.get(skill_id, []):
-        if float(mastery.get(int(from_id), DEFAULT_PRIOR)) < MASTERY_STRONG:
-            return False
-    return True
-
-
 def select_skills_for_roadmap(
     skills: list[dict[str, Any]] | list[LearningSkillDB],
     mastery: dict[int, float],
@@ -92,51 +80,55 @@ def select_skills_for_roadmap(
     prereq_from_by_to: dict[int, list[int]],
     max_steps: int = 10,
     weak_point: WeakPointEnum | str | None = None,
-    window: int = ZPD_WINDOW,
 ) -> list[dict[str, Any]]:
-    """Pick weak skills in ZPD window that have prerequisites mastered."""
+    """Build an ordered curriculum path of weak skills.
+
+    The placement sub-level acts as a floor: easier skills are assumed already
+    learned and are not re-taught. A skill joins the path once its prerequisites
+    are satisfied by known skills (strong mastery or below the floor) **or** by
+    skills already placed in earlier weeks — so a prerequisite chain unfolds into
+    consecutive weeks instead of collapsing to a single unlockable skill.
+    Difficulty orders the path; weak-point matches break ties.
+    """
     wp = weak_point.value if hasattr(weak_point, "value") else (weak_point or "")
-    sub = _clamp_placement_score(placement_score)
-    lo = max(1, sub)
-    hi = min(10, sub + max(0, int(window)))
+    floor = _clamp_placement_score(placement_score)
     max_steps = max(0, int(max_steps))
 
-    prepared: list[dict[str, Any]] = []
+    by_id: dict[int, dict[str, Any]] = {}
     for raw in skills:
         skill = _skill_as_dict(raw)
-        if not skill.get("is_active", True):
-            continue
-        skill_id = int(skill["id"])
-        score = float(mastery.get(skill_id, DEFAULT_PRIOR))
-        if score >= MASTERY_STRONG:
-            continue
-        if not _prereqs_met(skill_id, mastery, prereq_from_by_to):
-            continue
-        prepared.append(skill)
+        if skill.get("is_active", True):
+            by_id[int(skill["id"])] = skill
 
-    def collect(low: int, high: int) -> list[tuple[dict[str, Any], float, int]]:
-        out: list[tuple[dict[str, Any], float, int]] = []
-        for skill in prepared:
-            diff = int(skill.get("difficulty_in_level") or DEFAULT_DIFFICULTY)
-            if diff < low or diff > high:
-                continue
-            skill_id = int(skill["id"])
-            score = float(mastery.get(skill_id, DEFAULT_PRIOR))
-            out.append((skill, score, diff))
-        return out
+    def difficulty_of(sid: int) -> int:
+        return int(by_id[sid].get("difficulty_in_level") or DEFAULT_DIFFICULTY)
 
-    candidates = collect(lo, hi)
-    while len(candidates) < max_steps and hi < 10:
-        hi += 1
-        candidates = collect(lo, hi)
+    known: set[int] = {
+        sid
+        for sid in by_id
+        if float(mastery.get(sid, DEFAULT_PRIOR)) >= MASTERY_STRONG
+        or difficulty_of(sid) < floor
+    }
+    pool = {sid for sid in by_id if sid not in known}
 
-    def sort_key(item: tuple[dict[str, Any], float, int]) -> tuple[int, int, float, int]:
-        skill, score, diff = item
+    def prereqs_satisfied(sid: int) -> bool:
+        return all(from_id in known for from_id in prereq_from_by_to.get(sid, []))
+
+    def order_key(sid: int) -> tuple[int, int, float, int]:
+        skill = by_id[sid]
         matches_weak = 0 if wp and skill.get("skill_type") == wp else 1
-        return (matches_weak, diff, score, int(skill["id"]))
+        return (difficulty_of(sid), matches_weak, float(mastery.get(sid, DEFAULT_PRIOR)), sid)
 
-    candidates.sort(key=sort_key)
-    return [skill for skill, _score, _diff in candidates[:max_steps]]
+    selected: list[dict[str, Any]] = []
+    while len(selected) < max_steps:
+        eligible = [sid for sid in pool if prereqs_satisfied(sid)]
+        if not eligible:
+            break
+        pick = min(eligible, key=order_key)
+        selected.append(by_id[pick])
+        known.add(pick)
+        pool.discard(pick)
+    return selected
 
 
 async def load_active_skills(db: AsyncSession, level: CEFRLevel) -> list[LearningSkillDB]:
@@ -186,49 +178,40 @@ async def load_prereq_map(
     return dict(prereq_from_by_to)
 
 
+async def _first_active_scenario(
+    db: AsyncSession,
+    *,
+    level: CEFRLevel | None = None,
+    category: ScenarioCategoryEnum | None = None,
+) -> ScenarioDB | None:
+    stmt = select(ScenarioDB).where(ScenarioDB.is_active.is_(True))
+    if level is not None:
+        stmt = stmt.where(ScenarioDB.level == level)
+    if category is not None:
+        stmt = stmt.where(ScenarioDB.category == category)
+    stmt = stmt.order_by(ScenarioDB.order_index, ScenarioDB.id).limit(1)
+    return (await db.execute(stmt)).scalar_one_or_none()
+
+
 async def pick_scenario(
     db: AsyncSession,
     goal: GoalEnum | None,
     level: CEFRLevel,
 ) -> ScenarioDB:
     category = GOAL_TO_CATEGORY.get(goal) if goal is not None else None
-    if category is not None:
-        matched = (
-            await db.execute(
-                select(ScenarioDB)
-                .where(
-                    ScenarioDB.is_active.is_(True),
-                    ScenarioDB.level == level,
-                    ScenarioDB.category == category,
-                )
-                .order_by(ScenarioDB.order_index, ScenarioDB.id)
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-        if matched is not None:
-            return matched
-
-    fallback = (
-        await db.execute(
-            select(ScenarioDB)
-            .where(ScenarioDB.is_active.is_(True), ScenarioDB.level == level)
-            .order_by(ScenarioDB.order_index, ScenarioDB.id)
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-    if fallback is None:
-        # Last resort: any active scenario
-        fallback = (
-            await db.execute(
-                select(ScenarioDB)
-                .where(ScenarioDB.is_active.is_(True))
-                .order_by(ScenarioDB.order_index, ScenarioDB.id)
-                .limit(1)
-            )
-        ).scalar_one_or_none()
-    if fallback is None:
+    scenario = (
+        (await _first_active_scenario(db, level=level, category=category))
+        if category is not None
+        else None
+    )
+    scenario = (
+        scenario
+        or await _first_active_scenario(db, level=level)
+        or await _first_active_scenario(db)
+    )
+    if scenario is None:
         raise ValueError("No scenarios yet — seed scenarios before assembling the roadmap.")
-    return fallback
+    return scenario
 
 
 async def clear_user_roadmap(db: AsyncSession, user_id: int) -> None:

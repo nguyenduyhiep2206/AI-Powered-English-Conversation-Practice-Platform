@@ -426,6 +426,10 @@ async def _union_prerequisite_edges(
     return added
 
 
+async def _clear_book_sources(db: AsyncSession, book_id: int) -> None:
+    await db.execute(delete(BookSkillSourceDB).where(BookSkillSourceDB.book_id == book_id))
+
+
 async def sync_skills_from_preview(
     db: AsyncSession, book_id: int
 ) -> tuple[list[BookSkillSourceDB], dict[str, Any]]:
@@ -447,7 +451,7 @@ async def sync_skills_from_preview(
         default_skill_type=default_skill_type,
     )
 
-    await db.execute(delete(BookSkillSourceDB).where(BookSkillSourceDB.book_id == book_id))
+    await _clear_book_sources(db, book_id)
     created_sources, sequence_for_edges, slug_to_id = await _create_sources_from_mappings(
         db,
         book=book,
