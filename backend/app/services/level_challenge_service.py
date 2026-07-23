@@ -14,7 +14,7 @@ from app.models.learning_skill import LearningSkillDB
 from app.models.profile import UserProfileDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.mastery_service import apply_answer
-from app.services.placement_service import (
+from app.services.placement.bank import (
     CEFR_ORDER,
     PlacementCandidate,
     grade_placement_answer,

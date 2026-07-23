@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from app.services.placement_session_service import (
+from app.services.placement.session_service import (
     RETAKE_COOLDOWN_DAYS,
     _retake_allowed_for_profile,
     progress_dict,

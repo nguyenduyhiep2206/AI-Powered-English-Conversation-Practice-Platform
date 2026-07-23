@@ -1,5 +1,5 @@
 from app.models.enums import CEFRLevel, WeakPointEnum
-from app.services.placement_adaptive_engine import (
+from app.services.placement.adaptive_engine import (
     MAX_QUESTIONS,
     MIN_QUESTIONS,
     map_ability_to_profile,
@@ -8,7 +8,7 @@ from app.services.placement_adaptive_engine import (
     should_stop,
     update_ability,
 )
-from app.services.placement_service import PlacementCandidate
+from app.services.placement.bank import PlacementCandidate
 
 
 def test_preferred_skill_types_mapping():

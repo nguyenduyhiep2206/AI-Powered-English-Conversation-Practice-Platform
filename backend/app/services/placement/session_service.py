@@ -15,7 +15,7 @@ from app.models.placement_attempt import PlacementAttemptAnswerDB, PlacementAtte
 from app.models.profile import UserProfileDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.mastery_service import apply_answer
-from app.services.placement_adaptive_engine import (
+from app.services.placement.adaptive_engine import (
     MAX_QUESTIONS,
     MIN_QUESTIONS,
     cefr_index,
@@ -24,7 +24,7 @@ from app.services.placement_adaptive_engine import (
     should_stop,
     update_ability,
 )
-from app.services.placement_service import (
+from app.services.placement.bank import (
     PlacementCandidate,
     grade_placement_answer,
     load_published_candidates,

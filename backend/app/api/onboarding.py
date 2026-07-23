@@ -33,7 +33,7 @@ from app.services.level_challenge_service import (
     submit_level_challenge,
 )
 from app.services.onboarding_service import get_onboarding_status
-from app.services.placement_session_service import (
+from app.services.placement.session_service import (
     INSUFFICIENT_ADAPTIVE_BANK_MSG,
     get_current_session,
     get_retake_status,

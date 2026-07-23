@@ -7,7 +7,7 @@ import random
 from typing import Sequence
 
 from app.models.enums import CEFRLevel, WeakPointEnum
-from app.services.placement_service import CEFR_ORDER, PlacementCandidate
+from app.services.placement.bank import CEFR_ORDER, PlacementCandidate
 
 MIN_QUESTIONS = 6
 MAX_QUESTIONS = 15

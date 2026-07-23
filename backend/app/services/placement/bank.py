@@ -1,4 +1,4 @@
-"""Shared placement/quiz-bank helpers used by adaptive placement and level challenge."""
+"""Shared quiz-bank helpers for adaptive placement and level challenge."""
 
 from __future__ import annotations
 

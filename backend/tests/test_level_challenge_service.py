@@ -7,7 +7,7 @@ from app.services.level_challenge_service import (
     next_cefr_level,
     sample_challenge_candidates,
 )
-from app.services.placement_service import PlacementCandidate
+from app.services.placement.bank import PlacementCandidate
 
 
 def test_next_cefr():

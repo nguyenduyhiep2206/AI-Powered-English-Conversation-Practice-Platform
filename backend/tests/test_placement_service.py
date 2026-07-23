@@ -1,5 +1,5 @@
 from app.models.enums import CEFRLevel
-from app.services.placement_service import (
+from app.services.placement.bank import (
     PlacementCandidate,
     grade_placement_answer,
     placement_public_dict,
