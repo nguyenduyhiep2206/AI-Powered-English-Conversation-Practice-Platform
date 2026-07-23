@@ -15,12 +15,10 @@ from app.schemas.onboarding_schema import (
     PlacementAnswerRequest,
     PlacementProgressOut,
     PlacementQuestionOut,
-    PlacementQuestionsResponse,
     PlacementRetakeStatusData,
     PlacementRetakeStatusResponse,
     PlacementSessionData,
     PlacementSessionResponse,
-    PlacementSubmitResponse,
 )
 from app.schemas.survey_schema import (
     SubmitSurveyData,
@@ -35,9 +33,6 @@ from app.services.level_challenge_service import (
     submit_level_challenge,
 )
 from app.services.onboarding_service import get_onboarding_status
-from app.services.placement_service import (
-    INSUFFICIENT_BANK_MSG,
-)
 from app.services.placement_session_service import (
     INSUFFICIENT_ADAPTIVE_BANK_MSG,
     get_current_session,
@@ -76,11 +71,7 @@ def _map_placement_exc(exc: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, ValueError):
         msg = str(exc)
-        status = (
-            503
-            if msg in (INSUFFICIENT_ADAPTIVE_BANK_MSG, INSUFFICIENT_BANK_MSG)
-            else 400
-        )
+        status = 503 if msg == INSUFFICIENT_ADAPTIVE_BANK_MSG else 400
         return HTTPException(status_code=status, detail=msg)
     return HTTPException(status_code=500, detail="Internal error")
 
@@ -177,30 +168,6 @@ async def placement_retake_status(
         raise _map_placement_exc(exc) from exc
     return PlacementRetakeStatusResponse(data=PlacementRetakeStatusData(**data))
 
-
-@router.get("/questions", response_model=PlacementQuestionsResponse)
-async def placement_questions(
-    current_user: UserDB = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Deprecated batch placement — use adaptive sessions."""
-    raise HTTPException(
-        status_code=410,
-        detail="Deprecated. Use POST /onboarding/placement/sessions",
-    )
-
-
-@router.post("/placement", response_model=PlacementSubmitResponse)
-async def placement_submit(
-    payload: PlacementSubmitRequest,
-    current_user: UserDB = Depends(get_current_active_user),
-    db: AsyncSession = Depends(get_db),
-):
-    """Deprecated batch placement — use adaptive sessions."""
-    raise HTTPException(
-        status_code=410,
-        detail="Deprecated. Use POST /onboarding/placement/sessions",
-    )
 
 @router.get("/level-challenge", response_model=LevelChallengeQuestionsResponse)
 async def level_challenge_questions(

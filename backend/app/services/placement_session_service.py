@@ -28,6 +28,7 @@ from app.services.placement_service import (
     grade_placement_answer,
     load_published_candidates,
     placement_public_dict,
+    row_to_candidate,
 )
 
 RETAKE_COOLDOWN_DAYS = 7
@@ -202,9 +203,7 @@ async def _load_question_candidate(
     if row is None:
         raise ValueError("Câu hỏi không tồn tại")
     question, skill = row
-    from app.services.placement_service import _row_to_candidate
-
-    return _row_to_candidate(question, skill)
+    return row_to_candidate(question, skill)
 
 
 def _mid_payload(attempt: PlacementAttemptDB, question: PlacementCandidate) -> dict[str, Any]:

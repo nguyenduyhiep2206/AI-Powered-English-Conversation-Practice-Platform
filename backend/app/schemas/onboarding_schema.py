@@ -38,36 +38,9 @@ class PlacementQuestionOut(BaseModel):
     difficulty: str
 
 
-class PlacementQuestionsData(BaseModel):
-    question_count: int
-    questions: list[PlacementQuestionOut]
-
-
-class PlacementQuestionsResponse(BaseModel):
-    success: bool = True
-    data: PlacementQuestionsData
-
-
 class PlacementAnswerIn(BaseModel):
     question_id: int
     answer: str
-
-
-class PlacementSubmitRequest(BaseModel):
-    answers: list[PlacementAnswerIn] = Field(min_length=10, max_length=10)
-
-
-class PlacementResultData(BaseModel):
-    placement_score: int
-    current_level: str
-    correct_count: int
-    total: int
-    onboarding_complete: bool
-
-
-class PlacementSubmitResponse(BaseModel):
-    success: bool = True
-    data: PlacementResultData
 
 
 class PlacementProgressOut(BaseModel):
