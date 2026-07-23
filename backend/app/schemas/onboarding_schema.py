@@ -1,3 +1,4 @@
+from datetime import datetime
 from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -67,6 +68,44 @@ class PlacementResultData(BaseModel):
 class PlacementSubmitResponse(BaseModel):
     success: bool = True
     data: PlacementResultData
+
+
+class PlacementProgressOut(BaseModel):
+    asked: int
+    min_questions: int = 6
+    max_questions: int = 15
+
+
+class PlacementSessionData(BaseModel):
+    done: bool
+    attempt_id: int
+    question: PlacementQuestionOut | None = None
+    progress: PlacementProgressOut | None = None
+    placement_score: int | None = None
+    current_level: str | None = None
+    questions_asked: int | None = None
+    onboarding_complete: bool | None = None
+
+
+class PlacementSessionResponse(BaseModel):
+    success: bool = True
+    data: PlacementSessionData
+
+
+class PlacementAnswerRequest(BaseModel):
+    question_id: int
+    answer: str
+
+
+class PlacementRetakeStatusData(BaseModel):
+    allowed: bool
+    has_in_progress: bool
+    retry_after_at: datetime | None = None
+
+
+class PlacementRetakeStatusResponse(BaseModel):
+    success: bool = True
+    data: PlacementRetakeStatusData
 
 
 class LevelChallengeQuestionsData(BaseModel):
