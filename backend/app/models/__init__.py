@@ -37,6 +37,8 @@ from app.models.book_skill_source import BookSkillSourceDB
 
 from app.models.quiz_question import QuizQuestionDB
 
+from app.models.placement_attempt import PlacementAttemptDB, PlacementAttemptAnswerDB
+
 from app.models.user_skill_mastery import UserSkillMasteryDB
 
 from app.models.roadmap_step_skill import RoadmapStepSkillDB
@@ -75,7 +77,8 @@ __all__ = [
     "UserProfileDB", "SurveyQuestionDB", "BookDB", "BookStructurePreviewDB",
     # Level-first skill graph & quiz bank
     "LearningSkillDB", "SkillEdgeDB", "BookSkillSourceDB",
-    "QuizQuestionDB", "UserSkillMasteryDB", "RoadmapStepSkillDB",
+    "QuizQuestionDB", "PlacementAttemptDB", "PlacementAttemptAnswerDB",
+    "UserSkillMasteryDB", "RoadmapStepSkillDB",
     # Scenario & Roadmap
     "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
     # Chat

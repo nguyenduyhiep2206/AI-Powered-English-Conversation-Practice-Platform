@@ -200,3 +200,16 @@ quiz_question_status_enum = SAEnum(
     QuizQuestionStatusEnum, name="quiz_question_status_enum", create_type=True
 )
 skill_type_enum = SAEnum(SkillTypeEnum, name="skill_type_enum", create_type=True)
+
+
+class PlacementAttemptStatusEnum(str, enum.Enum):
+    in_progress = "in_progress"
+    completed = "completed"
+    abandoned = "abandoned"
+
+
+placement_attempt_status_enum = SAEnum(
+    PlacementAttemptStatusEnum,
+    name="placement_attempt_status_enum",
+    create_type=True,
+)
