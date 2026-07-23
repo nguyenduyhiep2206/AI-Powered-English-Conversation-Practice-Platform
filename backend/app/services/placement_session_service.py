@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -30,6 +31,16 @@ from app.services.placement_service import (
     placement_public_dict,
     row_to_candidate,
 )
+
+
+@dataclass(frozen=True)
+class _GradedAnswer:
+    question: PlacementCandidate
+    given_answer: str
+    is_correct: bool
+    ability_after: float
+    confidence_after: float
+    questions_asked: int
 
 RETAKE_COOLDOWN_DAYS = 7
 INSUFFICIENT_ADAPTIVE_BANK_MSG = (
@@ -104,19 +115,36 @@ async def _last_completed_at(db: AsyncSession, user_id: int) -> datetime | None:
     return row
 
 
+def _retake_allowed_for_profile(
+    *,
+    has_in_progress: bool,
+    last_completed_at: datetime | None,
+    placement_score: int | None,
+    now: datetime,
+) -> bool:
+    if has_in_progress:
+        return False
+    if placement_score is None:
+        return True
+    return retake_allowed(last_completed_at, now)
+
+
 async def get_retake_status(db: AsyncSession, user_id: int) -> dict[str, Any]:
-    await _require_survey_done(db, user_id)
+    profile = await _require_survey_done(db, user_id)
     in_progress = await _get_in_progress(db, user_id)
     last_done = await _last_completed_at(db, user_id)
     now = datetime.now(timezone.utc)
-    allowed = in_progress is None and retake_allowed(last_done, now)
-    # First-time users (no completed attempt, no placement_score) can always start
-    profile = await _get_profile(db, user_id)
-    if profile is not None and profile.placement_score is None and in_progress is None:
-        allowed = True
-    retry_after = None
-    if not allowed and in_progress is None and last_done is not None:
-        retry_after = _retry_after_at(last_done)
+    allowed = _retake_allowed_for_profile(
+        has_in_progress=in_progress is not None,
+        last_completed_at=last_done,
+        placement_score=profile.placement_score,
+        now=now,
+    )
+    retry_after = (
+        _retry_after_at(last_done)
+        if (not allowed and in_progress is None and last_done is not None)
+        else None
+    )
     return {
         "allowed": allowed,
         "has_in_progress": in_progress is not None,
@@ -151,15 +179,6 @@ async def _used_skill_ids(db: AsyncSession, attempt_id: int) -> set[int]:
 def _seen_ids(attempt: PlacementAttemptDB) -> set[int]:
     raw = attempt.seen_question_ids or []
     return {int(x) for x in raw}
-
-
-async def _candidate_by_id(
-    candidates: list[PlacementCandidate], question_id: int
-) -> PlacementCandidate | None:
-    for c in candidates:
-        if int(c.id) == int(question_id):
-            return c
-    return None
 
 
 async def _serve_next_question(
@@ -313,6 +332,76 @@ async def _require_in_progress_owned(
     return attempt
 
 
+def _require_current_question(attempt: PlacementAttemptDB, question_id: int) -> None:
+    if attempt.current_question_id is None or int(attempt.current_question_id) != int(
+        question_id
+    ):
+        raise ValueError("question_id không khớp câu hiện tại")
+
+
+async def _grade_current_answer(
+    db: AsyncSession,
+    attempt: PlacementAttemptDB,
+    answer: str,
+) -> _GradedAnswer:
+    question = await _load_question_candidate(db, int(attempt.current_question_id))
+    ok = grade_placement_answer(question.answer, answer)
+    ability, confidence = update_ability(
+        float(attempt.ability_index),
+        float(attempt.confidence),
+        item_level=float(cefr_index(question.cefr_level)),
+        correct=ok,
+    )
+    return _GradedAnswer(
+        question=question,
+        given_answer=str(answer),
+        is_correct=ok,
+        ability_after=ability,
+        confidence_after=confidence,
+        questions_asked=int(attempt.questions_asked) + 1,
+    )
+
+
+def _apply_graded_to_attempt(attempt: PlacementAttemptDB, graded: _GradedAnswer) -> None:
+    attempt.ability_index = graded.ability_after
+    attempt.confidence = graded.confidence_after
+    attempt.questions_asked = graded.questions_asked
+
+
+def _record_answer(
+    db: AsyncSession,
+    attempt: PlacementAttemptDB,
+    graded: _GradedAnswer,
+) -> None:
+    q = graded.question
+    db.add(
+        PlacementAttemptAnswerDB(
+            attempt_id=int(attempt.id),
+            question_id=int(q.id),
+            skill_id=int(q.skill_id),
+            cefr_level=q.cefr_level,
+            given_answer=graded.given_answer,
+            is_correct=graded.is_correct,
+            ability_after=graded.ability_after,
+            confidence_after=graded.confidence_after,
+        )
+    )
+
+
+async def _seed_attempt_mastery(
+    db: AsyncSession, user_id: int, attempt_id: int
+) -> None:
+    answers = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id
+            )
+        )
+    ).scalars().all()
+    for ans in answers:
+        await apply_answer(db, user_id, int(ans.skill_id), bool(ans.is_correct))
+
+
 async def _complete_attempt(
     db: AsyncSession,
     profile: UserProfileDB,
@@ -326,17 +415,30 @@ async def _complete_attempt(
     attempt.result_sublevel = sub
     profile.current_level = level
     profile.placement_score = sub
-
-    answers = (
-        await db.execute(
-            select(PlacementAttemptAnswerDB).where(
-                PlacementAttemptAnswerDB.attempt_id == int(attempt.id)
-            )
-        )
-    ).scalars().all()
     await db.commit()
-    for ans in answers:
-        await apply_answer(db, int(profile.user_id), int(ans.skill_id), bool(ans.is_correct))
+    await _seed_attempt_mastery(db, int(profile.user_id), int(attempt.id))
+
+
+async def _finish_session(
+    db: AsyncSession,
+    profile: UserProfileDB,
+    attempt: PlacementAttemptDB,
+) -> dict[str, Any]:
+    await _complete_attempt(db, profile, attempt)
+    await db.refresh(profile)
+    await db.refresh(attempt)
+    return _done_payload(attempt, profile)
+
+
+async def _advance_session(
+    db: AsyncSession,
+    profile: UserProfileDB,
+    attempt: PlacementAttemptDB,
+) -> dict[str, Any]:
+    next_q = await _serve_next_question(db, attempt, profile.weak_point)
+    await db.commit()
+    await db.refresh(attempt)
+    return _mid_payload(attempt, next_q)
 
 
 async def submit_session_answer(
@@ -348,44 +450,10 @@ async def submit_session_answer(
 ) -> dict[str, Any]:
     profile = await _require_survey_done(db, user_id)
     attempt = await _require_in_progress_owned(db, user_id, attempt_id)
-    if attempt.current_question_id is None or int(attempt.current_question_id) != int(
-        question_id
-    ):
-        raise ValueError("question_id không khớp câu hiện tại")
-
-    question = await _load_question_candidate(db, int(question_id))
-    ok = grade_placement_answer(question.answer, answer)
-    item_level = float(cefr_index(question.cefr_level))
-    ability, confidence = update_ability(
-        float(attempt.ability_index),
-        float(attempt.confidence),
-        item_level=item_level,
-        correct=ok,
-    )
-    attempt.ability_index = ability
-    attempt.confidence = confidence
-    attempt.questions_asked = int(attempt.questions_asked) + 1
-
-    db.add(
-        PlacementAttemptAnswerDB(
-            attempt_id=int(attempt.id),
-            question_id=int(question.id),
-            skill_id=int(question.skill_id),
-            cefr_level=question.cefr_level,
-            given_answer=str(answer),
-            is_correct=ok,
-            ability_after=ability,
-            confidence_after=confidence,
-        )
-    )
-
-    if should_stop(int(attempt.questions_asked), float(attempt.confidence)):
-        await _complete_attempt(db, profile, attempt)
-        await db.refresh(profile)
-        await db.refresh(attempt)
-        return _done_payload(attempt, profile)
-
-    next_q = await _serve_next_question(db, attempt, profile.weak_point)
-    await db.commit()
-    await db.refresh(attempt)
-    return _mid_payload(attempt, next_q)
+    _require_current_question(attempt, question_id)
+    graded = await _grade_current_answer(db, attempt, answer)
+    _apply_graded_to_attempt(attempt, graded)
+    _record_answer(db, attempt, graded)
+    if should_stop(graded.questions_asked, graded.confidence_after):
+        return await _finish_session(db, profile, attempt)
+    return await _advance_session(db, profile, attempt)
