@@ -153,7 +153,8 @@ export default function PlacementPage() {
             </p>
             <p className="text-sm text-muted-foreground">
               Create a personalized weekly path from skills in your zone, or go to
-              the dashboard and build it later.
+              the dashboard and build it later. Retaking placement later will reset
+              your current path.
             </p>
             {error ? (
               <p className="text-sm text-destructive" role="alert">

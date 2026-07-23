@@ -31,6 +31,7 @@ from app.services.placement.bank import (
     placement_public_dict,
     row_to_candidate,
 )
+from app.services.roadmap_assembler_service import clear_user_roadmap
 
 
 @dataclass(frozen=True)
@@ -415,6 +416,8 @@ async def _complete_attempt(
     attempt.result_sublevel = sub
     profile.current_level = level
     profile.placement_score = sub
+    # Re-eval / first placement both start from a fresh path after assemble.
+    await clear_user_roadmap(db, int(profile.user_id))
     await db.commit()
     await _seed_attempt_mastery(db, int(profile.user_id), int(attempt.id))
 

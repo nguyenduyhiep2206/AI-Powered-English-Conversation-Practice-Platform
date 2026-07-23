@@ -44,7 +44,7 @@ Cần placement đo ability hiệu quả hơn, khóa session, tách CEFR khỏi 
 - Auto-assemble roadmap sau placement.
 - Partial-credit / chấm mở ngoài `grade_mcq` hiện có.
 - Đổi schema survey / JSON answer động (concern riêng).
-- Viết lại level-challenge ngoài việc ghi nhận `placement_score` nghĩa là sub-level 1–10.
+- Level-challenge (+1 CEFR quiz) — **đã bỏ**; đánh giá lại chỉ qua adaptive placement retake (cooldown 7 ngày). Complete retake → clear roadmap hiện tại.
 
 ---
 
@@ -61,7 +61,8 @@ Cần placement đo ability hiệu quả hơn, khóa session, tách CEFR khỏi 
 | Output profile | `current_level` = CEFR; `placement_score` = sub-level **1–10** (không còn = số câu đúng) |
 | Lưu attempt | Bảng mới `placement_attempts` + `placement_attempt_answers` |
 | Retake | Cooldown **7 ngày** kể từ lần **completed** gần nhất; `in_progress` thì resume |
-| Sau khi nộp | Chỉ level + mastery; user tự assemble roadmap |
+| Sau khi nộp | Level + mastery; **clear roadmap** nếu đang có; user tự assemble lại |
+| Đánh giá lại | **Chỉ adaptive retake** (không level-challenge) |
 | Điểm legacy | Giữ nguyên `placement_score` cũ (có thể = số đúng cũ); attempt mới ghi sub-level thật |
 
 ---

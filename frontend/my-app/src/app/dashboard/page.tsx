@@ -119,12 +119,6 @@ export default function DashboardPage() {
                 Retake after {new Date(retake.retry_after_at).toLocaleDateString()}
               </span>
             ) : null}
-            <Link
-              href="/dashboard/level-challenge"
-              className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline"
-            >
-              Level feels too easy?
-            </Link>
             <LogoutButton />
           </div>
         </div>
@@ -190,22 +184,12 @@ export default function DashboardPage() {
             </Button>
           </section>
         ) : (
-          <>
-            <div className="mb-4 flex justify-end sm:hidden">
-              <Link
-                href="/dashboard/level-challenge"
-                className="text-xs text-muted-foreground underline-offset-4 hover:underline"
-              >
-                Level feels too easy?
-              </Link>
-            </div>
-            <RoadmapPath
-              weeks={weeks}
-              completingStepId={completingStepId}
-              actionError={actionError}
-              onComplete={handleComplete}
-            />
-          </>
+          <RoadmapPath
+            weeks={weeks}
+            completingStepId={completingStepId}
+            actionError={actionError}
+            onComplete={handleComplete}
+          />
         )}
       </main>
     </div>
