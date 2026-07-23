@@ -3,48 +3,66 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
 import {
-  fetchPlacementQuestions,
-  submitPlacement,
+  fetchRetakeStatus,
+  getCurrentPlacementSession,
+  startPlacementSession,
+  submitPlacementAnswer,
+  type PlacementProgress,
   type PlacementQuestion,
-  type PlacementResult,
+  type PlacementSession,
 } from "@/lib/placement";
 import { assembleRoadmap } from "@/lib/roadmap";
 
-type AnswerState = Record<number, string>;
-
 export default function PlacementPage() {
   const router = useRouter();
-  const [questions, setQuestions] = useState<PlacementQuestion[]>([]);
-  const [index, setIndex] = useState(0);
-  const [answers, setAnswers] = useState<AnswerState>({});
+  const [attemptId, setAttemptId] = useState<number | null>(null);
+  const [question, setQuestion] = useState<PlacementQuestion | null>(null);
+  const [progress, setProgress] = useState<PlacementProgress | null>(null);
+  const [answer, setAnswer] = useState("");
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlacementResult | null>(null);
+  const [result, setResult] = useState<PlacementSession | null>(null);
 
   useEffect(() => {
     async function load() {
       try {
         const status = await fetchOnboardingStatus();
-        if (status.onboarding_complete || status.placement_done) {
-          router.replace("/dashboard");
-          return;
-        }
         if (!status.survey_done) {
           router.replace("/onboarding");
           return;
         }
 
-        const qs = await fetchPlacementQuestions();
-        setQuestions(qs);
+        const retake = await fetchRetakeStatus().catch(() => null);
+        const canEnter =
+          !status.placement_done ||
+          Boolean(retake?.allowed) ||
+          Boolean(retake?.has_in_progress);
+        if (!canEnter) {
+          router.replace("/dashboard");
+          return;
+        }
+
+        let session = await getCurrentPlacementSession();
+        if (!session) {
+          session = await startPlacementSession();
+        }
+        if (session.done) {
+          setResult(session);
+          return;
+        }
+        setAttemptId(session.attempt_id);
+        setQuestion(session.question ?? null);
+        setProgress(session.progress ?? null);
+        setAnswer("");
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load placement");
       } finally {
@@ -54,34 +72,29 @@ export default function PlacementPage() {
     load();
   }, [router]);
 
-  const current = questions[index];
-  const allAnswered =
-    questions.length > 0 && questions.every((q) => Boolean(answers[q.id]?.trim()));
-  const isLast = index === questions.length - 1;
-
-  function setAnswer(value: string) {
-    if (!current) return;
-    setAnswers((prev) => ({ ...prev, [current.id]: value }));
-    setError(null);
-  }
-
-  async function handleSubmit() {
-    if (!allAnswered) {
-      setError("Please answer all questions before submitting");
+  async function handleSubmitAnswer() {
+    if (!attemptId || !question || !answer.trim()) {
+      setError("Please answer before continuing");
       return;
     }
     setSubmitting(true);
     setError(null);
     try {
-      const payload = questions.map((q) => ({
-        question_id: q.id,
-        answer: answers[q.id].trim(),
-      }));
-      const data = await submitPlacement(payload);
-      setResult(data);
-      router.refresh();
+      const session = await submitPlacementAnswer(attemptId, {
+        question_id: question.id,
+        answer: answer.trim(),
+      });
+      if (session.done) {
+        setResult(session);
+        router.refresh();
+        return;
+      }
+      setAttemptId(session.attempt_id);
+      setQuestion(session.question ?? null);
+      setProgress(session.progress ?? null);
+      setAnswer("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit placement");
+      setError(err instanceof Error ? err.message : "Failed to submit answer");
     } finally {
       setSubmitting(false);
     }
@@ -110,6 +123,10 @@ export default function PlacementPage() {
     );
   }
 
+  const asked = progress?.asked ?? 0;
+  const maxQ = progress?.max_questions ?? 15;
+  const minQ = progress?.min_questions ?? 6;
+
   return (
     <div className="min-h-screen bg-background text-foreground">
       <header className="border-b border-border">
@@ -125,14 +142,14 @@ export default function PlacementPage() {
       </header>
 
       <main className="mx-auto max-w-2xl px-6 py-10">
-        {result ? (
+        {result?.done ? (
           <section className="ef-card space-y-6 rounded-xl border border-border bg-card/60 p-8 text-center">
             <p className="text-sm text-muted-foreground">Placement complete</p>
             <h1 className="text-3xl font-semibold tracking-tight">
               Your level: {result.current_level}
             </h1>
             <p className="text-sm text-muted-foreground">
-              Score {result.correct_count}/{result.total} ({result.placement_score}/10)
+              Sub-level {result.placement_score}/10 · {result.questions_asked} questions
             </p>
             <p className="text-sm text-muted-foreground">
               Create a personalized weekly path from skills in your zone, or go to
@@ -171,48 +188,54 @@ export default function PlacementPage() {
           <>
             <div className="mb-8">
               <p className="text-sm text-muted-foreground">Step 2 of 2</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight">Placement Test</h1>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight">
+                Placement Test
+              </h1>
               <p className="mt-2 text-sm text-muted-foreground">
-                Answer 10 questions so we can place you at the right CEFR level.
+                Adaptive test ({minQ}–{maxQ} questions). We stop early when we are
+                confident about your level.
               </p>
             </div>
 
-            {error && !current && (
+            {error && !question ? (
               <p className="mb-4 text-sm text-destructive" role="alert">
                 {error}
               </p>
-            )}
+            ) : null}
 
-            {current && (
+            {question ? (
               <section className="ef-card rounded-xl border border-border bg-card/60 p-6">
                 <div className="mb-4 flex flex-wrap items-center gap-2">
                   <Badge variant="secondary">
-                    Question {index + 1} / {questions.length}
+                    Answered {asked} / max {maxQ}
                   </Badge>
-                  <Badge variant="outline">{current.cefr_level}</Badge>
-                  <Badge variant="outline">{current.question_type}</Badge>
+                  <Badge variant="outline">{question.cefr_level}</Badge>
+                  <Badge variant="outline">{question.question_type}</Badge>
                 </div>
-                {current.passage ? (
+                {question.passage ? (
                   <div className="mb-5 border-l-2 border-primary/40 pl-4">
                     <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
                       Passage
                     </p>
                     <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-                      {current.passage}
+                      {question.passage}
                     </p>
                   </div>
                 ) : null}
-                <p className="text-base font-medium leading-relaxed">{current.stem}</p>
+                <p className="text-base font-medium leading-relaxed">{question.stem}</p>
 
-                {current.question_type === "mcq" && current.options?.length ? (
+                {question.question_type === "mcq" && question.options?.length ? (
                   <div className="mt-5 grid gap-2">
-                    {current.options.map((option) => {
-                      const selected = answers[current.id] === option;
+                    {question.options.map((option) => {
+                      const selected = answer === option;
                       return (
                         <button
                           key={option}
                           type="button"
-                          onClick={() => setAnswer(option)}
+                          onClick={() => {
+                            setAnswer(option);
+                            setError(null);
+                          }}
                           className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
                             selected
                               ? "border-primary bg-primary/15 text-foreground"
@@ -227,68 +250,43 @@ export default function PlacementPage() {
                 ) : (
                   <Input
                     className="mt-5"
-                    value={answers[current.id] ?? ""}
-                    onChange={(e) => setAnswer(e.target.value)}
+                    value={answer}
+                    onChange={(e) => {
+                      setAnswer(e.target.value);
+                      setError(null);
+                    }}
                     placeholder="Your answer"
                   />
                 )}
 
-                {error && (
+                {error ? (
                   <p className="mt-4 text-sm text-destructive" role="alert">
                     {error}
                   </p>
-                )}
+                ) : null}
 
-                <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                <div className="mt-6 flex justify-end">
                   <Button
                     type="button"
-                    variant="ghost"
-                    disabled={index === 0}
-                    onClick={() => {
-                      setError(null);
-                      setIndex((i) => Math.max(0, i - 1));
-                    }}
+                    size="lg"
+                    disabled={submitting || !answer.trim()}
+                    onClick={handleSubmitAnswer}
                   >
-                    <ArrowLeft className="mr-2 h-4 w-4" />
-                    Back
+                    {submitting ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Checking…
+                      </>
+                    ) : (
+                      <>
+                        Continue
+                        <ArrowRight className="ml-2 h-4 w-4" />
+                      </>
+                    )}
                   </Button>
-
-                  {isLast ? (
-                    <Button
-                      type="button"
-                      size="lg"
-                      disabled={submitting || !allAnswered}
-                      onClick={handleSubmit}
-                    >
-                      {submitting ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Submitting...
-                        </>
-                      ) : (
-                        <>
-                          Submit placement
-                          <ArrowRight className="ml-2 h-4 w-4" />
-                        </>
-                      )}
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="lg"
-                      disabled={!answers[current.id]?.trim()}
-                      onClick={() => {
-                        setError(null);
-                        setIndex((i) => Math.min(questions.length - 1, i + 1));
-                      }}
-                    >
-                      Next
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  )}
                 </div>
               </section>
-            )}
+            ) : null}
           </>
         )}
       </main>

@@ -11,37 +11,71 @@ export type PlacementQuestion = {
   difficulty: string;
 };
 
-export type PlacementResult = {
-  placement_score: number;
-  current_level: string;
-  correct_count: number;
-  total: number;
-  onboarding_complete: boolean;
+export type PlacementProgress = {
+  asked: number;
+  min_questions: number;
+  max_questions: number;
 };
 
-export async function fetchPlacementQuestions(): Promise<PlacementQuestion[]> {
-  const res = await authFetch("/api/v1/onboarding/questions");
+export type PlacementSession = {
+  done: boolean;
+  attempt_id: number;
+  question?: PlacementQuestion | null;
+  progress?: PlacementProgress | null;
+  placement_score?: number | null;
+  current_level?: string | null;
+  questions_asked?: number | null;
+  onboarding_complete?: boolean | null;
+};
+
+export type PlacementRetakeStatus = {
+  allowed: boolean;
+  has_in_progress: boolean;
+  retry_after_at?: string | null;
+};
+
+async function parseSession(res: Response, fallback: string): Promise<PlacementSession> {
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, "Failed to load placement questions"));
+    throw new Error(extractErrorMessage(error, fallback));
   }
-  const body = (await res.json()) as {
-    data: { question_count: number; questions: PlacementQuestion[] };
-  };
-  return body.data.questions;
+  const body = (await res.json()) as { data: PlacementSession };
+  return body.data;
 }
 
-export async function submitPlacement(
-  answers: { question_id: number; answer: string }[],
-): Promise<PlacementResult> {
-  const res = await authFetch("/api/v1/onboarding/placement", {
+export async function startPlacementSession(): Promise<PlacementSession> {
+  const res = await authFetch("/api/v1/onboarding/placement/sessions", {
     method: "POST",
-    body: JSON.stringify({ answers }),
   });
+  return parseSession(res, "Failed to start placement session");
+}
+
+export async function getCurrentPlacementSession(): Promise<PlacementSession | null> {
+  const res = await authFetch("/api/v1/onboarding/placement/sessions/current");
+  if (res.status === 404) return null;
+  return parseSession(res, "Failed to load placement session");
+}
+
+export async function submitPlacementAnswer(
+  attemptId: number,
+  payload: { question_id: number; answer: string },
+): Promise<PlacementSession> {
+  const res = await authFetch(
+    `/api/v1/onboarding/placement/sessions/${attemptId}/answers`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+  return parseSession(res, "Failed to submit placement answer");
+}
+
+export async function fetchRetakeStatus(): Promise<PlacementRetakeStatus> {
+  const res = await authFetch("/api/v1/onboarding/placement/retake-status");
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, "Failed to submit placement"));
+    throw new Error(extractErrorMessage(error, "Failed to load retake status"));
   }
-  const body = (await res.json()) as { data: PlacementResult };
+  const body = (await res.json()) as { data: PlacementRetakeStatus };
   return body.data;
 }

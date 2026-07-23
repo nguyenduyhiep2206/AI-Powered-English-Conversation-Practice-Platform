@@ -43,7 +43,7 @@ export default function StartOnboardingPage() {
 
   const isContinue = currentStep === "placement";
 
-  // Matches spec §2: Onboarding = Survey (4 fields) + Placement Test (10 questions) → level + roadmap
+  // Survey preferences + adaptive placement (6–15 questions) → level + roadmap
   const steps = [
     {
       icon: ClipboardList,
@@ -53,7 +53,7 @@ export default function StartOnboardingPage() {
     {
       icon: PencilLine,
       title: "Placement Test",
-      desc: "10 questions — pick the right word, fix the grammar, fill the blank",
+      desc: "Adaptive 6–15 questions — we adjust difficulty as you answer",
     },
     {
       icon: Target,
