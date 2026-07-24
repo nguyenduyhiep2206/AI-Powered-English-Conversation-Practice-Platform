@@ -1,4 +1,4 @@
-"""Complete roadmap weeks when skill mastery passes the gate; unlock next week."""
+"""Complete roadmap weeks when skill mastery passes the gate; replan locked tail."""
 
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ from app.models.roadmap_step_skill import RoadmapStepSkillDB
 from app.models.scenario import RoadmapStepDB, UserProgressDB
 from app.models.user_skill_mastery import UserSkillMasteryDB
 from app.services.mastery_service import DEFAULT_PRIOR, MASTERY_STRONG
+from app.services.roadmap_assembler_service import replan_locked_tail
 
 
 def can_pass_week(mastery: float, threshold: float = MASTERY_STRONG) -> bool:
@@ -71,35 +72,13 @@ async def _mastery_for_skill(
     return float(row.mastery) if row is not None else DEFAULT_PRIOR
 
 
-async def _unlock_next_week(
-    db: AsyncSession, user_id: int, current_week: int
-) -> int | None:
-    rows = list(
-        (
-            await db.execute(
-                select(UserProgressDB, RoadmapStepDB)
-                .join(RoadmapStepDB, RoadmapStepDB.id == UserProgressDB.roadmap_step_id)
-                .where(
-                    UserProgressDB.user_id == user_id,
-                    RoadmapStepDB.week_number == current_week + 1,
-                )
-            )
-        ).all()
-    )
-    for next_progress, _next_step in rows:
-        if next_progress.status == ProgressStatusEnum.locked:
-            next_progress.status = ProgressStatusEnum.in_progress
-            return int(next_progress.roadmap_step_id)
-    return None
-
-
 async def complete_roadmap_week(
     db: AsyncSession,
     user_id: int,
     roadmap_step_id: int,
 ) -> dict[str, Any]:
-    """Pass if mastery of the step's quiz skill >= MASTERY_STRONG; unlock next week."""
-    progress, step = await _require_in_progress(db, user_id, roadmap_step_id)
+    """Pass if mastery of the step's quiz skill >= MASTERY_STRONG; replan locked tail."""
+    progress, _step = await _require_in_progress(db, user_id, roadmap_step_id)
     skill_id = await _quiz_skill_id(db, roadmap_step_id)
     mastery = await _mastery_for_skill(db, user_id, skill_id)
     if not can_pass_week(mastery):
@@ -107,7 +86,11 @@ async def complete_roadmap_week(
 
     progress.status = ProgressStatusEnum.completed
     progress.completed_at = datetime.now(timezone.utc)
-    unlocked_step_id = await _unlock_next_week(db, user_id, int(step.week_number))
+    await db.flush()
+
+    weeks = await replan_locked_tail(db, user_id, commit=False)
+    unlocked = next((w for w in weeks if w.get("status") == "in_progress"), None)
+    unlocked_step_id = int(unlocked["roadmap_step_id"]) if unlocked else None
     await db.commit()
 
     return {
@@ -116,4 +99,5 @@ async def complete_roadmap_week(
         "skill_id": skill_id,
         "mastery": mastery,
         "unlocked_step_id": unlocked_step_id,
+        "replanned": True,
     }

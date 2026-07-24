@@ -31,6 +31,7 @@ GOAL_TO_CATEGORY: dict[GoalEnum, ScenarioCategoryEnum] = {
 }
 
 DEFAULT_DIFFICULTY = 5
+DEFAULT_HORIZON = 3
 
 
 def _skill_type_value(skill: dict[str, Any] | LearningSkillDB) -> str:
@@ -240,6 +241,64 @@ async def clear_user_roadmap(db: AsyncSession, user_id: int) -> None:
         await db.execute(delete(RoadmapStepDB).where(RoadmapStepDB.id == step_id))
 
 
+async def _delete_locked_tail(db: AsyncSession, user_id: int) -> None:
+    locked = list(
+        (
+            await db.execute(
+                select(UserProgressDB).where(
+                    UserProgressDB.user_id == user_id,
+                    UserProgressDB.status == ProgressStatusEnum.locked,
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    step_ids = [int(progress.roadmap_step_id) for progress in locked]
+    if locked:
+        await db.execute(
+            delete(UserProgressDB).where(
+                UserProgressDB.user_id == user_id,
+                UserProgressDB.status == ProgressStatusEnum.locked,
+            )
+        )
+
+    for step_id in step_ids:
+        remaining = (
+            await db.execute(
+                select(UserProgressDB.id)
+                .where(UserProgressDB.roadmap_step_id == step_id)
+                .limit(1)
+            )
+        ).scalar_one_or_none()
+        if remaining is not None:
+            continue
+        await db.execute(
+            delete(RoadmapStepSkillDB).where(
+                RoadmapStepSkillDB.roadmap_step_id == step_id
+            )
+        )
+        await db.execute(delete(RoadmapStepDB).where(RoadmapStepDB.id == step_id))
+
+
+async def _next_week_number(db: AsyncSession, user_id: int) -> int:
+    rows = list(
+        (
+            await db.execute(
+                select(RoadmapStepDB.week_number)
+                .join(
+                    UserProgressDB,
+                    UserProgressDB.roadmap_step_id == RoadmapStepDB.id,
+                )
+                .where(UserProgressDB.user_id == user_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return int(max(int(number) for number in rows)) + 1 if rows else 1
+
+
 async def _require_profile(db: AsyncSession, user_id: int) -> UserProfileDB:
     profile = (
         await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
@@ -256,6 +315,61 @@ def _resolve_target_level(
     if target_level is None:
         raise ValueError("Missing CEFR level to assemble the roadmap.")
     return target_level
+
+
+async def _load_assigned_skill_ids(db: AsyncSession, user_id: int) -> set[int]:
+    """Skill ids on completed or in_progress weeks for this user."""
+    rows = list(
+        (
+            await db.execute(
+                select(RoadmapStepSkillDB.skill_id)
+                .join(UserProgressDB, UserProgressDB.roadmap_step_id == RoadmapStepSkillDB.roadmap_step_id)
+                .where(
+                    UserProgressDB.user_id == user_id,
+                    UserProgressDB.status.in_(
+                        [ProgressStatusEnum.completed, ProgressStatusEnum.in_progress]
+                    ),
+                    RoadmapStepSkillDB.role == "quiz",
+                )
+            )
+        )
+        .scalars()
+        .all()
+    )
+    return {int(sid) for sid in rows}
+
+
+async def plan_next_steps(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    horizon: int = DEFAULT_HORIZON,
+    level: CEFRLevel | None = None,
+) -> tuple[list[dict[str, Any]], dict[int, float], UserProfileDB, CEFRLevel]:
+    profile = await _require_profile(db, user_id)
+    target_level = _resolve_target_level(profile, level)
+    horizon = max(1, min(5, int(horizon)))
+
+    skills = await load_active_skills(db, target_level)
+    if not skills:
+        raise ValueError(f"No active learning_skills for level {target_level}.")
+
+    assigned = await _load_assigned_skill_ids(db, user_id)
+    candidates = [s for s in skills if int(s.id) not in assigned]
+    if not candidates:
+        return [], await load_mastery_map(db, user_id), profile, target_level
+
+    mastery = await load_mastery_map(db, user_id)
+    prereq_from_by_to = await load_prereq_map(db, {int(s.id) for s in candidates})
+    selected = select_skills_for_roadmap(
+        candidates,
+        mastery,
+        placement_score=profile.placement_score,
+        prereq_from_by_to=prereq_from_by_to,
+        max_steps=horizon,
+        weak_point=profile.weak_point,
+    )
+    return selected, mastery, profile, target_level
 
 
 async def _select_roadmap_skills(
@@ -321,13 +435,15 @@ async def _persist_week(
     scenario: ScenarioDB,
     target_level: CEFRLevel,
     mastery: dict[int, float],
+    *,
+    is_current: bool = False,
 ) -> dict[str, Any]:
     step = RoadmapStepDB(
         level=target_level,
         week_number=index,
         title=f"Week {index}: {skill.get('title') or skill['slug']}",
         scenario_id=scenario.id,
-        unlock_condition=None if index == 1 else f"complete_week_{index - 1}",
+        unlock_condition=None if is_current else f"complete_week_{index - 1}",
     )
     db.add(step)
     await db.flush()
@@ -337,9 +453,7 @@ async def _persist_week(
             roadmap_step_id=step.id, skill_id=int(skill["id"]), role="quiz"
         )
     )
-    status = (
-        ProgressStatusEnum.in_progress if index == 1 else ProgressStatusEnum.locked
-    )
+    status = ProgressStatusEnum.in_progress if is_current else ProgressStatusEnum.locked
     db.add(UserProgressDB(user_id=user_id, roadmap_step_id=step.id, status=status))
     return _assemble_week_dict(step, status, skill, scenario, target_level, mastery)
 
@@ -348,26 +462,73 @@ async def assemble_user_roadmap(
     db: AsyncSession,
     user_id: int,
     level: CEFRLevel | None = None,
-    max_steps: int = 10,
+    max_steps: int = DEFAULT_HORIZON,
 ) -> list[dict[str, Any]]:
-    profile = await _require_profile(db, user_id)
-    target_level = _resolve_target_level(profile, level)
-    max_steps = max(8, min(12, int(max_steps)))
-
-    selected, mastery = await _select_roadmap_skills(
-        db, profile, target_level, max_steps
-    )
-    scenario = await pick_scenario(db, profile.goal, target_level)
+    horizon = max(1, min(5, int(max_steps)))
     await clear_user_roadmap(db, user_id)
+    selected, mastery, profile, target_level = await plan_next_steps(
+        db, user_id, horizon=horizon, level=level
+    )
+    if not selected:
+        raise ValueError("No weak skills left to assemble the roadmap at this level.")
+    scenario = await pick_scenario(db, profile.goal, target_level)
 
     weeks = [
         await _persist_week(
-            db, user_id, index, skill, scenario, target_level, mastery
+            db,
+            user_id,
+            index,
+            skill,
+            scenario,
+            target_level,
+            mastery,
+            is_current=(index == 1),
         )
         for index, skill in enumerate(selected, start=1)
     ]
     await db.commit()
     return weeks
+
+
+async def replan_locked_tail(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    horizon: int = DEFAULT_HORIZON,
+    commit: bool = True,
+) -> list[dict[str, Any]]:
+    await _delete_locked_tail(db, user_id)
+    has_in_progress = (
+        await db.execute(
+            select(UserProgressDB.id)
+            .where(
+                UserProgressDB.user_id == user_id,
+                UserProgressDB.status == ProgressStatusEnum.in_progress,
+            )
+            .limit(1)
+        )
+    ).scalar_one_or_none() is not None
+    planning_horizon = max(1, horizon - 1) if has_in_progress else horizon
+    selected, mastery, profile, target_level = await plan_next_steps(
+        db, user_id, horizon=planning_horizon
+    )
+    if selected:
+        scenario = await pick_scenario(db, profile.goal, target_level)
+        start = await _next_week_number(db, user_id)
+        for offset, skill in enumerate(selected):
+            await _persist_week(
+                db,
+                user_id,
+                start + offset,
+                skill,
+                scenario,
+                target_level,
+                mastery,
+                is_current=(not has_in_progress and offset == 0),
+            )
+    if commit:
+        await db.commit()
+    return await get_user_roadmap(db, user_id)
 
 
 async def _load_progress_step_rows(

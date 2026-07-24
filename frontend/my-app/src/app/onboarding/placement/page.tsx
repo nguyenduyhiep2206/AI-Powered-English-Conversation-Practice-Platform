@@ -104,7 +104,7 @@ export default function PlacementPage() {
     setAssembling(true);
     setError(null);
     try {
-      await assembleRoadmap({ max_steps: 10 });
+      await assembleRoadmap();
       router.push("/dashboard");
     } catch (err) {
       setError(

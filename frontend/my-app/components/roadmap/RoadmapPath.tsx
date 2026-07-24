@@ -51,7 +51,7 @@ export function RoadmapPath({
             onComplete={onComplete}
             onLockedTap={() =>
               setLockedHint(
-                "Finish the previous week and reach 70% mastery first.",
+                "Finish the current step first — future steps may change as you progress.",
               )
             }
           />

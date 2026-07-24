@@ -4,7 +4,8 @@
 **Status:** Implemented (backend MVP) — 2026-07-20  
 **Shipped:** `difficulty_in_level` + LLM refine at book sync; ZPD assemble; `POST /roadmap/steps/{id}/complete`; `GET|POST /onboarding/level-challenge` (+1 CEFR). Smoke suite Tasks 2–7: 25 passed. Manual E2E checklist still recommended on a live env.  
 **Depends on:** Placement từ quiz bank (`2026-07-15-placement-from-quiz-bank-design.md`), sync skills hiện tại (`skill_graph_service`, `book_skill_sources`, `skill_edges`)  
-**Aligns with:** Approach **A** — một skill graph / CEFR level; cá nhân hóa bằng ZPD + mastery; sách chỉ là nguồn nội dung
+**Aligns with:** Approach **A** — một skill graph / CEFR level; cá nhân hóa bằng ZPD + mastery; sách chỉ là nguồn nội dung  
+**See also:** [Adaptive roadmap rolling horizon](./2026-07-24-adaptive-roadmap-design.md) (2026-07-24)
 
 ---
 

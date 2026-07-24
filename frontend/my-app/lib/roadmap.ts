@@ -24,6 +24,7 @@ export type CompleteRoadmapStepResult = {
   skill_id: number;
   mastery: number;
   unlocked_step_id: number | null;
+  replanned?: boolean;
 };
 
 export type AssembleRoadmapOptions = {
@@ -48,7 +49,7 @@ export async function assembleRoadmap(
     method: "POST",
     body: JSON.stringify({
       ...(opts?.level ? { level: opts.level } : {}),
-      ...(opts?.max_steps != null ? { max_steps: opts.max_steps } : {}),
+      max_steps: opts?.max_steps ?? 3,
     }),
   });
   if (!res.ok) {

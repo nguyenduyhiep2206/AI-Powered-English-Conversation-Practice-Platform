@@ -62,7 +62,7 @@ export default function DashboardPage() {
     setError(null);
     setActionError(null);
     try {
-      const path = await assembleRoadmap({ max_steps: 10 });
+      const path = await assembleRoadmap();
       setWeeks(path);
       if (path[0]?.level) setLevel(path[0].level);
     } catch (err) {
@@ -128,13 +128,14 @@ export default function DashboardPage() {
         <div className="ef-fade-up mb-10 flex flex-wrap items-end justify-between gap-4">
           <div>
             <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-              Your path
+              Your next steps
             </p>
             <h1 className="mt-1.5 text-3xl font-semibold tracking-tight text-foreground">
               Weekly roadmap
             </h1>
             <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
-              One clear next step — unlock weeks as you build mastery.
+              We keep a few steps ahead — the path updates when you complete a
+              week.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -163,8 +164,7 @@ export default function DashboardPage() {
               No path yet
             </h2>
             <p className="mx-auto mt-2 max-w-sm text-sm leading-relaxed text-muted-foreground">
-              Build a personalized 8–12 week path from skills in your zone of
-              proximal development.
+              Build your next 3 steps from skills in your zone.
             </p>
             <Button
               type="button"
