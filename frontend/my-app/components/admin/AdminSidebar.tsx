@@ -6,6 +6,7 @@ import {
   BookOpen,
   ClipboardList,
   LayoutDashboard,
+  ListChecks,
   Sparkles,
   Users,
 } from "lucide-react";
@@ -16,6 +17,7 @@ import type { MeData } from "@/lib/auth";
 const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, enabled: true, exact: true },
   { href: "/admin/books", label: "Books", icon: BookOpen, enabled: true, exact: false },
+  { href: "/admin/quiz", label: "Quiz", icon: ListChecks, enabled: true, exact: false },
   { href: "/admin/survey", label: "Survey", icon: ClipboardList, enabled: false, exact: false },
   { href: "/admin/users", label: "Users", icon: Users, enabled: false, exact: false },
 ] as const;
@@ -28,7 +30,7 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
   const pathname = usePathname();
 
   return (
-    <aside className="flex h-screen w-64 shrink-0 flex-col border-r border-border bg-sidebar">
+    <aside className="flex h-full w-64 shrink-0 flex-col border-r border-[#EAEAEA] bg-white">
       <div className="flex items-center gap-2 border-b border-border px-5 py-4">
         <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
           <Sparkles className="h-4 w-4 text-black" />
@@ -69,8 +71,8 @@ export function AdminSidebar({ user }: AdminSidebarProps) {
               className={cn(
                 "flex items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors",
                 active
-                  ? "bg-primary/15 text-primary"
-                  : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  ? "bg-[#111111] text-white"
+                  : "text-muted-foreground hover:bg-[#F9F9F8] hover:text-foreground"
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />

@@ -51,9 +51,11 @@ export default function AdminLayout({
 
   return (
     <AdminUserProvider user={user}>
-      <div className="flex min-h-screen bg-background text-foreground">
+      <div className="flex h-screen overflow-hidden bg-background text-foreground">
         <AdminSidebar user={user} />
-        <div className="flex min-w-0 flex-1 flex-col">{children}</div>
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto">
+          {children}
+        </div>
       </div>
     </AdminUserProvider>
   );

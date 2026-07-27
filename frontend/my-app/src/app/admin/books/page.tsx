@@ -1,12 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { BookOpen, Loader2, ScanSearch, Trash2, Upload } from "lucide-react";
+import Link from "next/link";
+import { ArrowRight, BookOpen, Loader2, ScanSearch, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookQuizPanel } from "@/components/admin/BookQuizPanel";
 import {
   BOOK_STATUS_LABELS,
   BOOK_TYPE_LABELS,
@@ -34,13 +34,16 @@ const BOOK_TYPES: BookType[] = [
   "freeform",
 ];
 
-const STATUS_VARIANT: Record<Book["status"], "default" | "secondary" | "outline" | "destructive"> = {
-  uploaded: "secondary",
-  needs_review: "outline",
-  processing: "outline",
-  ready: "default",
-  failed: "destructive",
+const STATUS_BADGE: Record<Book["status"], string> = {
+  uploaded: "bg-[#F9F9F8] text-[#787774]",
+  needs_review: "bg-[#FBF3DB] text-[#956400]",
+  processing: "bg-[#E1F3FE] text-[#1F6C9F]",
+  ready: "bg-[#EDF3EC] text-[#346538]",
+  failed: "bg-[#FDEBEC] text-[#9F2F2D]",
 };
+
+const selectClassName =
+  "flex h-9 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm text-[#111111] outline-none focus-visible:border-[#111111] focus-visible:ring-1 focus-visible:ring-[#111111]/50";
 
 export default function AdminBooksPage() {
   const [books, setBooks] = useState<Book[]>([]);
@@ -95,7 +98,6 @@ export default function AdminBooksPage() {
           /* preview may not exist yet on hard fail */
         }
         if (book.status === "processing") {
-          // Keep polling until ready/failed so the UI leaves "Indexing…"
           continue;
         }
         return;
@@ -235,22 +237,24 @@ export default function AdminBooksPage() {
 
   return (
     <>
-      <header className="border-b border-border px-6 py-5">
-        <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+      <header className="border-b border-[#EAEAEA] px-6 py-8 md:px-10">
+        <p className="text-[11px] uppercase tracking-[0.18em] text-[#787774]">
           Content library
         </p>
-        <h1 className="mt-1 text-2xl font-semibold tracking-tight">Books</h1>
-        <p className="mt-1 text-sm text-muted-foreground">
-          Upload a PDF — structure is detected (heuristics + AI), verified, then indexed
-          automatically.
+        <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#111111]">
+          Books
+        </h1>
+        <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#787774]">
+          Upload a PDF, verify structure, then index. Sync skills and generate quiz
+          live on the Quiz page.
         </p>
       </header>
 
-      <main className="flex-1 space-y-6 p-6">
-        <section className="ef-card rounded-xl border border-border bg-card/60 p-5">
-          <div className="mb-4 flex items-center gap-2">
-            <Upload className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Upload PDF</h2>
+      <main className="mx-auto w-full max-w-8xl flex-1 space-y-8 p-6 md:p-10">
+        <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6 md:p-8">
+          <div className="mb-6 flex items-center gap-2">
+            <Upload className="h-4 w-4 text-[#111111]" />
+            <h2 className="text-sm font-semibold tracking-tight">Upload PDF</h2>
           </div>
 
           <form className="grid gap-4 md:grid-cols-2" onSubmit={handleUpload}>
@@ -261,6 +265,7 @@ export default function AdminBooksPage() {
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 placeholder="English Grammar in Use"
+                className="rounded-[6px] border-[#EAEAEA] shadow-none"
                 required
               />
             </div>
@@ -272,6 +277,7 @@ export default function AdminBooksPage() {
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="B1 grammar reference for workplace learners"
+                className="rounded-[6px] border-[#EAEAEA] shadow-none"
               />
             </div>
 
@@ -281,7 +287,7 @@ export default function AdminBooksPage() {
                 id="book-type"
                 value={bookType}
                 onChange={(e) => setBookType(e.target.value as BookType)}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent dark:bg-zinc-900 px-3 text-zinc-950 dark:text-zinc-50 px-3 text-black text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={selectClassName}
                 required
               >
                 {BOOK_TYPES.map((type) => (
@@ -298,7 +304,7 @@ export default function AdminBooksPage() {
                 id="book-level"
                 value={cefrLevel}
                 onChange={(e) => setCefrLevel(e.target.value as CefrLevel | "")}
-                className="flex h-9 w-full rounded-md border border-input bg-transparent dark:bg-zinc-900 px-3 text-zinc-950 dark:text-zinc-50 px-3 text-black text-sm shadow-xs outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                className={selectClassName}
               >
                 <option value="">Not set</option>
                 {CEFR_LEVELS.map((level) => (
@@ -309,19 +315,24 @@ export default function AdminBooksPage() {
               </select>
             </div>
 
-            <div className="space-y-1.5">
+            <div className="space-y-1.5 md:col-span-2">
               <Label htmlFor="book-file">PDF file</Label>
               <Input
                 id="book-file"
                 type="file"
                 accept="application/pdf,.pdf"
                 onChange={(e) => setFile(e.target.files?.[0] ?? null)}
+                className="rounded-[6px] border-[#EAEAEA] shadow-none"
                 required
               />
             </div>
 
             <div className="md:col-span-2">
-              <Button type="submit" disabled={uploading}>
+              <Button
+                type="submit"
+                disabled={uploading}
+                className="rounded-[6px] bg-[#111111] text-white hover:bg-[#333333] active:scale-[0.98]"
+              >
                 {uploading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
                 ) : (
@@ -336,32 +347,32 @@ export default function AdminBooksPage() {
         </section>
 
         {error && (
-          <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+          <div className="rounded-[8px] border border-[#EAEAEA] bg-[#FDEBEC] px-4 py-3 text-sm text-[#9F2F2D]">
             {error}
           </div>
         )}
 
-        <section className="ef-card overflow-hidden rounded-xl border border-border bg-card/60">
-          <div className="flex items-center gap-2 border-b border-border px-5 py-4">
-            <BookOpen className="h-4 w-4 text-primary" />
-            <h2 className="text-sm font-semibold">Uploaded books</h2>
-            <Badge variant="outline" className="ml-auto">
+        <section className="overflow-hidden rounded-[12px] border border-[#EAEAEA] bg-white">
+          <div className="flex items-center gap-2 border-b border-[#EAEAEA] px-6 py-4">
+            <BookOpen className="h-4 w-4 text-[#111111]" />
+            <h2 className="text-sm font-semibold tracking-tight">Uploaded books</h2>
+            <span className="ml-auto rounded-full bg-[#F9F9F8] px-2.5 py-0.5 font-mono text-[11px] text-[#787774]">
               {books.length}
-            </Badge>
+            </span>
           </div>
 
           {loading ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
+            <div className="flex items-center justify-center py-16 text-[#787774]">
               <Loader2 className="h-5 w-5 animate-spin" />
             </div>
           ) : books.length === 0 ? (
-            <p className="px-5 py-10 text-center text-sm text-muted-foreground">
+            <p className="px-6 py-14 text-center text-sm text-[#787774]">
               No books uploaded yet.
             </p>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[720px] text-left text-sm">
-                <thead className="border-b border-border bg-muted/30 text-xs uppercase tracking-wide text-muted-foreground">
+              <table className="w-full min-w-[760px] text-left text-sm">
+                <thead className="border-b border-[#EAEAEA] text-[11px] uppercase tracking-[0.08em] text-[#787774]">
                   <tr>
                     <th className="px-5 py-3 font-medium">Title</th>
                     <th className="px-5 py-3 font-medium">Type</th>
@@ -369,45 +380,58 @@ export default function AdminBooksPage() {
                     <th className="px-5 py-3 font-medium">Status</th>
                     <th className="px-5 py-3 font-medium">Pages</th>
                     <th className="px-5 py-3 font-medium">Size</th>
-                    <th className="px-5 py-3 font-medium">Detection</th>
                     <th className="px-5 py-3 font-medium">Chunks</th>
                     <th className="px-5 py-3 font-medium" />
                   </tr>
                 </thead>
                 <tbody>
                   {books.map((book) => (
-                    <tr key={book.id} className="border-b border-border/70 last:border-0">
-                      <td className="px-5 py-3">
-                        <p className="font-medium text-foreground">{book.title}</p>
+                    <tr key={book.id} className="border-b border-[#EAEAEA] last:border-0">
+                      <td className="px-5 py-3.5">
+                        <p className="font-medium text-[#111111]">{book.title}</p>
                         {book.description && (
-                          <p className="mt-0.5 line-clamp-1 text-xs text-muted-foreground">
+                          <p className="mt-0.5 line-clamp-1 text-xs text-[#787774]">
                             {book.description}
                           </p>
                         )}
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
+                      <td className="px-5 py-3.5 text-[#787774]">
                         {BOOK_TYPE_LABELS[book.book_type]}
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
+                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
                         {book.cefr_level ?? "—"}
                       </td>
-                      <td className="px-5 py-3">
-                        <Badge variant={STATUS_VARIANT[book.status]}>
+                      <td className="px-5 py-3.5">
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[book.status]}`}
+                        >
                           {BOOK_STATUS_LABELS[book.status]}
-                        </Badge>
+                        </span>
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
+                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
                         {book.page_count ?? "—"}
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
+                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
                         {formatFileSize(book.file_size)}
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">
-                        {book.detection_method ?? "—"}
+                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
+                        {book.chunk_count}
                       </td>
-                      <td className="px-5 py-3 text-muted-foreground">{book.chunk_count}</td>
-                      <td className="px-5 py-3 text-right">
+                      <td className="px-5 py-3.5 text-right">
                         <div className="flex items-center justify-end gap-1">
+                          {book.status === "ready" && (
+                            <Button
+                              type="button"
+                              size="sm"
+                              asChild
+                              className="rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
+                            >
+                              <Link href={`/admin/quiz?bookId=${book.id}`}>
+                                Open quiz
+                                <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                              </Link>
+                            </Button>
+                          )}
                           <Button
                             type="button"
                             variant="ghost"
@@ -426,7 +450,6 @@ export default function AdminBooksPage() {
                             ) : (
                               <ScanSearch className="h-4 w-4" />
                             )}
-                            <span className="ml-1 hidden sm:inline">Retry detect</span>
                           </Button>
                           <Button
                             type="button"
@@ -436,7 +459,7 @@ export default function AdminBooksPage() {
                             disabled={previewLoading}
                             onClick={() => handleShowPreview(book.id)}
                           >
-                            Preview
+                            Structure
                           </Button>
                           {(book.status === "ready" || book.status === "failed") && (
                             <Button
@@ -458,7 +481,7 @@ export default function AdminBooksPage() {
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="text-destructive hover:bg-destructive/10 hover:text-destructive"
+                            className="text-[#9F2F2D] hover:bg-[#FDEBEC] hover:text-[#9F2F2D]"
                             disabled={deletingId === book.id}
                             onClick={() => handleDelete(book.id)}
                           >
@@ -479,25 +502,29 @@ export default function AdminBooksPage() {
         </section>
 
         {preview && previewBookId !== null && (
-          <section className="ef-card rounded-xl border border-border bg-card/60 p-5">
+          <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6 md:p-8">
             <div className="mb-4 flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold">Structure preview</h2>
+              <h2 className="text-sm font-semibold tracking-tight">Structure preview</h2>
               {preview.detection_method && (
-                <Badge variant="outline">{preview.detection_method}</Badge>
-              )}
-              {preview.confidence != null && (
-                <Badge variant="secondary">
-                  Confidence {(preview.confidence * 100).toFixed(0)}%
+                <Badge variant="outline" className="rounded-full font-mono text-[10px]">
+                  {preview.detection_method}
                 </Badge>
               )}
-              <Badge variant={STATUS_VARIANT[preview.status]}>
+              {preview.confidence != null && (
+                <span className="rounded-full bg-[#F9F9F8] px-2.5 py-0.5 font-mono text-[10px] text-[#787774]">
+                  {(preview.confidence * 100).toFixed(0)}% confidence
+                </span>
+              )}
+              <span
+                className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[preview.status]}`}
+              >
                 {BOOK_STATUS_LABELS[preview.status]}
-              </Badge>
+              </span>
               {preview.units.length > 0 && preview.status === "needs_review" && (
                 <Button
                   type="button"
                   size="sm"
-                  className="ml-auto"
+                  className="ml-auto rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
                   disabled={indexingId === previewBookId}
                   onClick={() => handleConfirmAndIndex(previewBookId)}
                 >
@@ -511,20 +538,20 @@ export default function AdminBooksPage() {
             </div>
 
             {preview.status === "processing" && (
-              <p className="mb-3 text-sm text-muted-foreground">
+              <p className="mb-3 text-sm text-[#787774]">
                 Indexing in background (chunk + embed)…
               </p>
             )}
 
             {preview.status === "needs_review" && (
-              <p className="mb-3 text-sm text-muted-foreground">
+              <p className="mb-3 text-sm text-[#787774]">
                 Automatic verification did not pass. Retry detect, or Confirm &amp; index
                 to proceed with the units below.
               </p>
             )}
 
             {preview.units.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
+              <p className="text-sm text-[#787774]">
                 {preview.status === "uploaded"
                   ? "Detecting & merging structure in the background…"
                   : "No structure units yet. Use Retry detect if detection failed."}
@@ -532,7 +559,7 @@ export default function AdminBooksPage() {
             ) : (
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
+                  <thead className="border-b border-[#EAEAEA] text-[11px] uppercase tracking-[0.08em] text-[#787774]">
                     <tr>
                       <th className="px-3 py-2 font-medium">#</th>
                       <th className="px-3 py-2 font-medium">Title</th>
@@ -543,16 +570,21 @@ export default function AdminBooksPage() {
                   </thead>
                   <tbody>
                     {preview.units.map((unit) => (
-                      <tr key={unit.id ?? unit.unit_index} className="border-b border-border/70 last:border-0">
-                        <td className="px-3 py-2 text-muted-foreground">{unit.unit_index + 1}</td>
-                        <td className="px-3 py-2 font-medium">{unit.title}</td>
-                        <td className="px-3 py-2 text-muted-foreground">
+                      <tr
+                        key={unit.id ?? unit.unit_index}
+                        className="border-b border-[#EAEAEA] last:border-0"
+                      >
+                        <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
+                          {unit.unit_index + 1}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium">{unit.title}</td>
+                        <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
                           {unit.page_start}–{unit.page_end}
                         </td>
-                        <td className="px-3 py-2 text-muted-foreground">
+                        <td className="px-3 py-2.5 text-[#787774]">
                           {unit.depth_or_source ?? "—"}
                         </td>
-                        <td className="px-3 py-2 text-right">
+                        <td className="px-3 py-2.5 text-right">
                           <Button
                             type="button"
                             variant="ghost"
@@ -574,14 +606,6 @@ export default function AdminBooksPage() {
               </div>
             )}
           </section>
-        )}
-
-        {preview && previewBookId !== null && preview.status === "ready" && (
-          <BookQuizPanel
-            bookId={previewBookId}
-            units={preview.units.map((unit) => ({ id: unit.id, title: unit.title }))}
-            onError={setError}
-          />
         )}
       </main>
     </>
