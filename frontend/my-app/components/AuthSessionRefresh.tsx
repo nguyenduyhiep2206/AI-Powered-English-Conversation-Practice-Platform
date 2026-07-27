@@ -4,6 +4,7 @@ import { useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { getTokenFromCookie, refreshAccessToken, clearTokenCookie } from "@/lib/api";
 import { isJwtExpired } from "@/lib/jwt";
+import { NOT_FOUND_PATH } from "@/lib/routes";
 
 const PROTECTED_PREFIXES = ["/admin", "/dashboard", "/start-onboarding"];
 
@@ -24,7 +25,10 @@ export function AuthSessionRefresh() {
       .then(() => router.refresh())
       .catch(() => {
         clearTokenCookie();
-        window.location.href = "/login";
+        const destination = pathname.startsWith("/admin")
+          ? NOT_FOUND_PATH
+          : "/login";
+        window.location.href = destination;
       });
   }, [pathname, router]);
 

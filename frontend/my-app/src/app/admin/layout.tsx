@@ -6,6 +6,7 @@ import { Loader2 } from "lucide-react";
 import { AdminSidebar } from "@/components/admin/AdminSidebar";
 import { AdminUserProvider } from "@/components/admin/AdminUserContext";
 import { fetchCurrentUserClient, isAdmin, type MeData } from "@/lib/auth";
+import { NOT_FOUND_PATH } from "@/lib/routes";
 
 export default function AdminLayout({
   children,
@@ -25,7 +26,7 @@ export default function AdminLayout({
       .then((me) => {
         if (!active) return;
         if (!isAdmin(me)) {
-          router.replace("/start-onboarding");
+          router.replace(NOT_FOUND_PATH);
           return;
         }
         setUser(me);
@@ -33,7 +34,7 @@ export default function AdminLayout({
       })
       .catch(() => {
         if (!active) return;
-        router.replace("/login");
+        router.replace(NOT_FOUND_PATH);
       });
 
     return () => {

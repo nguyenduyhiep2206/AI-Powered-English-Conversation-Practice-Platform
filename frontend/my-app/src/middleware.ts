@@ -1,9 +1,15 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { resolvePostLoginPath } from "@/lib/auth";
-import { fetchCurrentUser } from "@/lib/auth-server";
+import { fetchCurrentUser, isAdminToken } from "@/lib/auth-server";
 import { isJwtExpired } from "@/lib/jwt";
 import { isOnboardingComplete } from "@/lib/onboarding-status-server";
+import {
+  isAllowedAdminPath,
+  isAllowedDashboardPath,
+  isAllowedOnboardingPath,
+  NOT_FOUND_PATH,
+} from "@/lib/routes";
 
 const APP_ORIGIN = process.env.NEXT_PUBLIC_APP_URL;
 const AUTH_PAGES = ["/login", "/register"];
@@ -24,17 +30,30 @@ async function getPostLoginDestination(token: string): Promise<string> {
   return resolvePostLoginPath(user);
 }
 
+function notFoundResponse(request: NextRequest): NextResponse {
+  return NextResponse.rewrite(new URL(NOT_FOUND_PATH, request.url));
+}
+
 export async function middleware(request: NextRequest) {
   const validToken = getValidToken(request);
   const hasSession = hasSessionCookie(request);
   const { pathname } = request.nextUrl;
 
-  if (!hasSession && pathname.startsWith("/admin")) {
-    return NextResponse.redirect(new URL("/login", APP_ORIGIN));
+  if (pathname.startsWith("/admin")) {
+    if (!validToken || !(await isAdminToken(validToken))) {
+      return notFoundResponse(request);
+    }
+    if (!isAllowedAdminPath(pathname)) {
+      return notFoundResponse(request);
+    }
   }
 
   if (!hasSession && pathname.startsWith("/dashboard")) {
     return NextResponse.redirect(new URL("/login", APP_ORIGIN));
+  }
+
+  if (pathname.startsWith("/dashboard") && !isAllowedDashboardPath(pathname)) {
+    return notFoundResponse(request);
   }
 
   if (
@@ -56,6 +75,13 @@ export async function middleware(request: NextRequest) {
 
   if (!hasSession && pathname.startsWith("/onboarding")) {
     return NextResponse.redirect(new URL("/login", APP_ORIGIN));
+  }
+
+  if (
+    pathname.startsWith("/onboarding") &&
+    !isAllowedOnboardingPath(pathname)
+  ) {
+    return notFoundResponse(request);
   }
 
   if (
