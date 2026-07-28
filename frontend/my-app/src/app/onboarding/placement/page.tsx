@@ -20,6 +20,15 @@ import {
 } from "@/lib/placement";
 import { assembleRoadmap } from "@/lib/roadmap";
 
+const R5_PAGE_SIZE = 10;
+
+type ReadingPage = {
+  key: string;
+  label: string;
+  passage: string | null;
+  items: PlacementFormItem[];
+};
+
 function useCountdown(endsAt: string | null | undefined) {
   const [left, setLeft] = useState<number | null>(null);
   useEffect(() => {
@@ -45,11 +54,57 @@ function formatTime(sec: number | null) {
   return `${m}:${String(s).padStart(2, "0")}`;
 }
 
+function buildReadingPages(
+  items: PlacementFormItem[],
+  passages: Record<string, { body?: string }>,
+): ReadingPage[] {
+  const pages: ReadingPage[] = [];
+  let i = 0;
+  let r5Buffer: PlacementFormItem[] = [];
+
+  const flushR5 = () => {
+    while (r5Buffer.length > 0) {
+      const chunk = r5Buffer.splice(0, R5_PAGE_SIZE);
+      pages.push({
+        key: `r5-${pages.length}`,
+        label: `Part 5 · Incomplete sentences (${chunk.length})`,
+        passage: null,
+        items: chunk,
+      });
+    }
+  };
+
+  while (i < items.length) {
+    const item = items[i];
+    const part = item.toeic_part ?? "";
+    if (part === "r5" || !item.passage_id) {
+      r5Buffer.push(item);
+      i += 1;
+      continue;
+    }
+    flushR5();
+    const pid = item.passage_id;
+    const group: PlacementFormItem[] = [];
+    while (i < items.length && items[i].passage_id === pid) {
+      group.push(items[i]);
+      i += 1;
+    }
+    pages.push({
+      key: `p-${pid}-${pages.length}`,
+      label: `Part ${(part || "R").toUpperCase()} · Passage set (${group.length} Q)`,
+      passage: passages[String(pid)]?.body ?? null,
+      items: group,
+    });
+  }
+  flushR5();
+  return pages;
+}
+
 export default function PlacementPage() {
   const router = useRouter();
   const [session, setSession] = useState<PlacementSession | null>(null);
   const [readingAnswers, setReadingAnswers] = useState<Record<number, string>>({});
-  const [readingIndex, setReadingIndex] = useState(0);
+  const [pageIndex, setPageIndex] = useState(0);
   const [writingIndex, setWritingIndex] = useState(0);
   const [writingText, setWritingText] = useState("");
   const [loading, setLoading] = useState(true);
@@ -62,14 +117,20 @@ export default function PlacementPage() {
   const readingItems = session?.form?.reading_items ?? [];
   const writingItems = session?.form?.writing_items ?? [];
   const passages = session?.form?.passages ?? {};
-  const currentReading = readingItems[readingIndex] as PlacementFormItem | undefined;
-  const currentWriting = writingItems[writingIndex] as PlacementFormItem | undefined;
+  const readingPages = useMemo(
+    () => buildReadingPages(readingItems, passages),
+    [readingItems, passages],
+  );
+  const currentPage = readingPages[pageIndex];
+  const currentWriting = writingItems[writingIndex];
+  const writingPassage =
+    currentWriting?.passage_id != null
+      ? passages[String(currentWriting.passage_id)]?.body ?? null
+      : null;
 
-  const passageBody = useMemo(() => {
-    const item = session?.section === "writing" ? currentWriting : currentReading;
-    if (!item?.passage_id) return null;
-    return passages[String(item.passage_id)]?.body ?? null;
-  }, [session?.section, currentReading, currentWriting, passages]);
+  const readingAnswered = Object.keys(readingAnswers).length;
+  const readingProgress =
+    readingItems.length > 0 ? Math.round((readingAnswered / readingItems.length) * 100) : 0;
 
   useEffect(() => {
     if (loadStarted.current) return;
@@ -103,22 +164,25 @@ export default function PlacementPage() {
     load();
   }, [router]);
 
-  async function saveCurrentReadingAnswer() {
-    if (!session || !currentReading) return;
-    const given = readingAnswers[currentReading.id] ?? "";
-    if (!given) {
-      setError("Select an answer first");
+  async function saveReadingPage() {
+    if (!session || !currentPage) return;
+    const missing = currentPage.items.filter((it) => !readingAnswers[it.id]);
+    if (missing.length > 0) {
+      setError(`Answer all ${missing.length} question(s) on this page`);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      const next = await submitReadingAnswers(session.attempt_id, [
-        { item_id: currentReading.id, given_answer: given },
-      ]);
+      const payload = currentPage.items.map((it) => ({
+        item_id: it.id,
+        given_answer: readingAnswers[it.id],
+      }));
+      const next = await submitReadingAnswers(session.attempt_id, payload);
       setSession(next);
-      if (readingIndex < readingItems.length - 1) {
-        setReadingIndex((i) => i + 1);
+      if (pageIndex < readingPages.length - 1) {
+        setPageIndex((p) => p + 1);
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
@@ -132,12 +196,13 @@ export default function PlacementPage() {
     setBusy(true);
     setError(null);
     try {
+      // Flush any remaining answered pages first if last page already saved
       const next = await advancePlacementSection(session.attempt_id);
       setSession(next);
       setWritingIndex(0);
       setWritingText("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Cannot advance yet");
+      setError(err instanceof Error ? err.message : "Cannot advance yet — finish Reading");
     } finally {
       setBusy(false);
     }
@@ -156,6 +221,7 @@ export default function PlacementPage() {
       if (writingIndex < writingItems.length - 1) {
         setWritingIndex((i) => i + 1);
         setWritingText("");
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Writing submit failed");
@@ -254,43 +320,77 @@ export default function PlacementPage() {
           </div>
         </div>
 
+        {session?.section === "reading" && (
+          <div className="space-y-2">
+            <div className="flex justify-between text-xs text-stone-500">
+              <span>
+                Page {pageIndex + 1} / {Math.max(readingPages.length, 1)}
+              </span>
+              <span>
+                Answered {readingAnswered} / {readingItems.length}
+              </span>
+            </div>
+            <div className="h-1.5 overflow-hidden rounded-full bg-stone-200">
+              <div
+                className="h-full bg-stone-800 transition-all"
+                style={{ width: `${readingProgress}%` }}
+              />
+            </div>
+          </div>
+        )}
+
         {error && <p className="text-sm text-red-700">{error}</p>}
 
-        {session?.section === "reading" && currentReading && (
-          <section className="space-y-4">
-            <p className="text-sm text-stone-500">
-              Reading {readingIndex + 1} / {readingItems.length} · {currentReading.toeic_part}
-            </p>
-            {passageBody && (
-              <div className="whitespace-pre-wrap rounded-md bg-white/70 p-4 text-sm leading-relaxed">
-                {passageBody}
+        {session?.section === "reading" && currentPage && (
+          <section className="space-y-5">
+            <p className="text-sm font-medium text-stone-600">{currentPage.label}</p>
+            {currentPage.passage && (
+              <div className="whitespace-pre-wrap rounded-md bg-white/80 p-4 text-sm leading-relaxed shadow-sm">
+                {currentPage.passage}
               </div>
             )}
-            <p className="text-lg">{currentReading.stem}</p>
-            <div className="grid gap-2">
-              {(currentReading.options ?? []).map((opt) => (
-                <button
-                  key={opt}
-                  type="button"
-                  className={`rounded-md border px-3 py-2 text-left text-sm ${
-                    readingAnswers[currentReading.id] === opt
-                      ? "border-stone-900 bg-stone-900 text-white"
-                      : "border-stone-300 bg-white"
-                  }`}
-                  onClick={() =>
-                    setReadingAnswers((prev) => ({ ...prev, [currentReading.id]: opt }))
-                  }
-                >
-                  {opt}
-                </button>
+            <ol className="space-y-6">
+              {currentPage.items.map((item, idx) => (
+                <li key={item.id} className="space-y-2">
+                  <p className="text-base font-medium">
+                    <span className="mr-2 text-stone-400">{idx + 1}.</span>
+                    {item.stem}
+                  </p>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    {(item.options ?? []).map((opt) => (
+                      <button
+                        key={opt}
+                        type="button"
+                        className={`rounded-md border px-3 py-2 text-left text-sm ${
+                          readingAnswers[item.id] === opt
+                            ? "border-stone-900 bg-stone-900 text-white"
+                            : "border-stone-300 bg-white"
+                        }`}
+                        onClick={() =>
+                          setReadingAnswers((prev) => ({ ...prev, [item.id]: opt }))
+                        }
+                      >
+                        {opt}
+                      </button>
+                    ))}
+                  </div>
+                </li>
               ))}
-            </div>
+            </ol>
             <div className="flex flex-wrap gap-2">
-              <Button onClick={saveCurrentReadingAnswer} disabled={busy}>
-                Save & next
+              <Button
+                type="button"
+                variant="outline"
+                disabled={busy || pageIndex === 0}
+                onClick={() => setPageIndex((p) => Math.max(0, p - 1))}
+              >
+                Previous page
               </Button>
-              {readingIndex >= readingItems.length - 1 && (
-                <Button variant="outline" onClick={goWriting} disabled={busy}>
+              <Button onClick={saveReadingPage} disabled={busy}>
+                {pageIndex < readingPages.length - 1 ? "Save page & next" : "Save last page"}
+              </Button>
+              {pageIndex >= readingPages.length - 1 && (
+                <Button variant="secondary" onClick={goWriting} disabled={busy}>
                   Go to Writing
                 </Button>
               )}
@@ -301,7 +401,8 @@ export default function PlacementPage() {
         {session?.section === "writing" && currentWriting && (
           <section className="space-y-4">
             <p className="text-sm text-stone-500">
-              Writing {writingIndex + 1} / {writingItems.length} · {currentWriting.toeic_part}
+              Writing {writingIndex + 1} / {writingItems.length} ·{" "}
+              {currentWriting.toeic_part?.toUpperCase()}
             </p>
             {currentWriting.media_url && (
               // eslint-disable-next-line @next/next/no-img-element
@@ -311,9 +412,9 @@ export default function PlacementPage() {
                 className="max-h-64 rounded-md border border-stone-200 object-contain"
               />
             )}
-            {passageBody && (
-              <div className="whitespace-pre-wrap rounded-md bg-white/70 p-4 text-sm leading-relaxed">
-                {passageBody}
+            {writingPassage && (
+              <div className="whitespace-pre-wrap rounded-md bg-white/80 p-4 text-sm leading-relaxed">
+                {writingPassage}
               </div>
             )}
             <p className="text-lg">{currentWriting.stem}</p>

@@ -27,6 +27,11 @@ export type QuizQuestionRow = {
   question_type: string;
   stem: string;
   passage?: string | null;
+  passage_id?: number | null;
+  toeic_part?: string | null;
+  prompt_words?: string[] | null;
+  media_url?: string | null;
+  task_brief?: Record<string, unknown> | null;
   options?: string[] | null;
   answer: string;
   explanation?: string | null;
@@ -63,6 +68,25 @@ export async function generateSkillQuiz(
   return body.data;
 }
 
+export async function generateSkillWriting(
+  skillId: number,
+  count = 2,
+): Promise<QuizQuestionRow[]> {
+  const res = await authFetch(
+    `/api/v1/admin/quiz/skills/${skillId}/generate-writing`,
+    {
+      method: "POST",
+      body: JSON.stringify({ count }),
+    },
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to generate writing"));
+  }
+  const body = (await res.json()) as { data: QuizQuestionRow[] };
+  return body.data;
+}
+
 export async function listBookQuestions(
   bookId: number,
   statusFilter?: "draft" | "published",
@@ -77,7 +101,9 @@ export async function listBookQuestions(
   return body.data;
 }
 
-export async function publishQuestions(questionIds: number[]): Promise<number> {
+export async function publishQuestions(
+  questionIds: number[],
+): Promise<{ published: number; skipped: number }> {
   const res = await authFetch(`/api/v1/admin/quiz/questions/publish`, {
     method: "POST",
     body: JSON.stringify({ question_ids: questionIds }),
@@ -86,6 +112,11 @@ export async function publishQuestions(questionIds: number[]): Promise<number> {
     const error = await res.json().catch(() => ({}));
     throw new Error(extractErrorMessage(error, "Failed to publish questions"));
   }
-  const body = (await res.json()) as { data: { published: number } };
-  return body.data.published;
+  const body = (await res.json()) as {
+    data: { published: number; skipped?: number };
+  };
+  return {
+    published: body.data.published,
+    skipped: body.data.skipped ?? 0,
+  };
 }

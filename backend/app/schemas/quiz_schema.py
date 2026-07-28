@@ -1,12 +1,16 @@
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
-from app.models.enums import QuizQuestionStatusEnum, QuizQuestionTypeEnum
+from app.models.enums import QuizQuestionStatusEnum, QuizQuestionTypeEnum, ToeicPartEnum
 
 
 class GenerateQuizRequest(BaseModel):
     count: int = Field(default=8, ge=1, le=15)
+
+
+class GenerateWritingRequest(BaseModel):
+    count: int = Field(default=2, ge=1, le=6)
 
 
 class QuizQuestionOut(BaseModel):
@@ -17,6 +21,11 @@ class QuizQuestionOut(BaseModel):
     question_type: QuizQuestionTypeEnum
     stem: str
     passage: Optional[str] = None
+    passage_id: Optional[int] = None
+    toeic_part: Optional[ToeicPartEnum] = None
+    prompt_words: Optional[list[str]] = None
+    media_url: Optional[str] = None
+    task_brief: Optional[dict[str, Any]] = None
     options: Optional[list[str]] = None
     answer: str
     explanation: Optional[str] = None

@@ -9,12 +9,17 @@ from app.models.quiz_question import QuizQuestionDB
 from app.schemas.quiz_schema import (
     GenerateQuizRequest,
     GenerateQuizResponse,
+    GenerateWritingRequest,
     PublishQuizRequest,
     QuizQuestionListResponse,
     QuizQuestionOut,
 )
 from app.services.quiz_generation_service import generate_quiz_for_skill
 from app.services.skill_graph_service import sync_skills_from_preview
+from app.services.writing_generation_service import (
+    generate_writing_for_skill,
+    writing_publishable,
+)
 
 router = APIRouter()
 
@@ -77,6 +82,29 @@ async def admin_generate_quiz(
     return GenerateQuizResponse(data=[QuizQuestionOut.model_validate(r) for r in rows])
 
 
+@router.post(
+    "/skills/{skill_id}/generate-writing",
+    response_model=GenerateQuizResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_generate_writing(
+    skill_id: int,
+    body: GenerateWritingRequest,
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate draft TOEIC Writing W2/W3 tasks for a skill (W1 needs media upload)."""
+    try:
+        rows = await generate_writing_for_skill(db, skill_id, count=body.count)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return GenerateQuizResponse(
+        data=[QuizQuestionOut.model_validate(r) for r in rows],
+        message="Đã tạo writing draft",
+    )
+
+
 @router.get(
     "/books/{book_id}/questions",
     response_model=QuizQuestionListResponse,
@@ -114,7 +142,14 @@ async def admin_publish_questions(
         .scalars()
         .all()
     )
+    published = 0
+    skipped = 0
     for row in rows:
+        part = row.toeic_part.value if row.toeic_part else None
+        if part in {"w1", "w2", "w3"} and not writing_publishable(row):
+            skipped += 1
+            continue
         row.status = QuizQuestionStatusEnum.published
+        published += 1
     await db.commit()
-    return {"data": {"published": len(rows)}}
+    return {"data": {"published": published, "skipped": skipped}}

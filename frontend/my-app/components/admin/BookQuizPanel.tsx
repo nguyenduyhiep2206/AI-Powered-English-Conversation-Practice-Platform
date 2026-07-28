@@ -5,6 +5,7 @@ import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   generateSkillQuiz,
+  generateSkillWriting,
   listBookQuestions,
   publishQuestions,
   syncBookSkills,
@@ -29,6 +30,9 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
   );
   const [syncing, setSyncing] = useState(false);
   const [generatingSkillId, setGeneratingSkillId] = useState<number | null>(null);
+  const [generatingWritingSkillId, setGeneratingWritingSkillId] = useState<number | null>(
+    null,
+  );
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [drafts, setDrafts] = useState<QuizQuestionRow[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
@@ -107,7 +111,7 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
     try {
       const questions = await generateSkillQuiz(skillId);
       setStatusMessage(
-        `Created ${questions.length} draft question(s) for “${unitTitle}”.`,
+        `Created ${questions.length} Reading draft(s) for “${unitTitle}”.`,
       );
       await refreshDrafts();
     } catch (err) {
@@ -117,13 +121,34 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
     }
   }
 
+  async function handleGenerateWriting(skillId: number, unitTitle: string) {
+    setGeneratingWritingSkillId(skillId);
+    onError(null);
+    setStatusMessage(null);
+    try {
+      const questions = await generateSkillWriting(skillId);
+      setStatusMessage(
+        `Created ${questions.length} Writing draft(s) for “${unitTitle}”.`,
+      );
+      await refreshDrafts();
+    } catch (err) {
+      onError(err instanceof Error ? err.message : "Failed to generate writing");
+    } finally {
+      setGeneratingWritingSkillId(null);
+    }
+  }
+
   async function handlePublish() {
     if (selectedIds.size === 0) return;
     setPublishing(true);
     onError(null);
     try {
-      const n = await publishQuestions([...selectedIds]);
-      setStatusMessage(`Published ${n} question(s).`);
+      const { published, skipped } = await publishQuestions([...selectedIds]);
+      setStatusMessage(
+        skipped > 0
+          ? `Published ${published}; skipped ${skipped} (e.g. W1 missing media).`
+          : `Published ${published} question(s).`,
+      );
       await refreshDrafts();
     } catch (err) {
       onError(err instanceof Error ? err.message : "Failed to publish");
@@ -244,19 +269,42 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
                       </td>
                       <td className="px-3 py-2.5 text-right">
                         {canGenerate && (
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={generatingSkillId === source.skill_id}
-                            onClick={() => handleGenerate(source.skill_id, unit.title)}
-                          >
-                            {generatingSkillId === source.skill_id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              "Generate"
-                            )}
-                          </Button>
+                          <div className="flex justify-end gap-1">
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                generatingSkillId === source.skill_id ||
+                                generatingWritingSkillId === source.skill_id
+                              }
+                              onClick={() => handleGenerate(source.skill_id, unit.title)}
+                            >
+                              {generatingSkillId === source.skill_id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Generate Reading"
+                              )}
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              disabled={
+                                generatingSkillId === source.skill_id ||
+                                generatingWritingSkillId === source.skill_id
+                              }
+                              onClick={() =>
+                                handleGenerateWriting(source.skill_id, unit.title)
+                              }
+                            >
+                              {generatingWritingSkillId === source.skill_id ? (
+                                <Loader2 className="h-4 w-4 animate-spin" />
+                              ) : (
+                                "Generate Writing"
+                              )}
+                            </Button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -319,7 +367,7 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
 
         {drafts.length === 0 ? (
           <p className="text-sm text-[#787774]">
-            No drafts yet. Sync skills, then generate quiz for a unit.
+            No drafts yet. Sync skills, then Generate Reading or Generate Writing.
           </p>
         ) : (
           <ul className="max-h-80 space-y-2 overflow-y-auto">
@@ -337,6 +385,7 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
                 <div className="min-w-0 flex-1">
                   <p className="font-mono text-[11px] text-[#787774]">
                     #{q.id} · skill {q.skill_id} · {q.question_type}
+                    {q.toeic_part ? ` · ${q.toeic_part}` : ""}
                   </p>
                   {q.passage ? (
                     <p className="mt-1 line-clamp-3 whitespace-pre-wrap text-xs leading-relaxed text-[#787774]">
