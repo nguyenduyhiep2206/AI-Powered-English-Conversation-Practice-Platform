@@ -1,7 +1,7 @@
 # Design: Survey onboarding kiểu Busuu (Option C)
 
 **Date:** 2026-07-28  
-**Status:** Approved for planning  
+**Status:** Implemented  
 **Scope:** Survey questions + submit API + onboarding FE wizard + level fork  
 **Non-scope:** Drop DB columns `occupation` / `weak_point`; habit reminders; change placement engine
 

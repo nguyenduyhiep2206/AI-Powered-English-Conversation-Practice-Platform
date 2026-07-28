@@ -52,8 +52,8 @@ function computeTotalSteps(
 ): number {
   if (knowEnglish === "beginner") return 3;
   if (knowEnglish === "know_some") {
-    if (levelFork === "self_selected") return 5;
-    return 4;
+    if (levelFork === "placement") return 4;
+    return 5;
   }
   return 5;
 }
