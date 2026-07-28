@@ -55,7 +55,7 @@ export default function StartOnboardingPage() {
     {
       icon: ClipboardList,
       title: "Quick Survey",
-      desc: "Occupation, learning goal, self-rated weak point & daily study time",
+      desc: "Why you learn, daily study time, and how we place your level",
     },
     {
       icon: PencilLine,
@@ -102,7 +102,7 @@ export default function StartOnboardingPage() {
             <p className="max-w-lg text-sm text-muted-foreground md:text-base">
               {isContinue
                 ? "Pick up right where you left off — we saved your progress."
-                : "A quick survey, then a short placement test — so we can place you at the right CEFR level and generate your roadmap."}
+                : "A short setup — then lessons at the right level (placement only if you need it)."}
             </p>
           </div>
 

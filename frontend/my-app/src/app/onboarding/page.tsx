@@ -1,30 +1,109 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
+import { assembleRoadmap } from "@/lib/roadmap";
 import {
   fetchSurveyQuestions,
   submitSurvey,
+  type LevelResolution,
   type SurveyAnswerPayload,
   type SurveyQuestion,
 } from "@/lib/survey";
 
-type AnswerState = Record<number, string>;
+type WizardStep = "why" | "time" | "know_english" | "level_fork" | "pick_cefr";
+type KnowEnglishChoice = "beginner" | "know_some";
+type LevelForkChoice = "self_selected" | "placement";
+type CefrLevel = "A1" | "A2" | "B1" | "B2" | "C1";
+
+const CEFR_LEVELS: CefrLevel[] = ["A1", "A2", "B1", "B2", "C1"];
+
+const KNOW_ENGLISH_OPTIONS: { value: KnowEnglishChoice; label: string; hint: string }[] = [
+  { value: "beginner", label: "I'm just starting out", hint: "We'll place you at A1" },
+  { value: "know_some", label: "I know some English", hint: "Pick your level or take a short test" },
+];
+
+const LEVEL_FORK_OPTIONS: { value: LevelForkChoice; label: string; hint: string }[] = [
+  { value: "self_selected", label: "I know my level", hint: "Choose A1–C1 yourself" },
+  { value: "placement", label: "Help me find my level", hint: "Short adaptive placement test" },
+];
+
+function splitQuestions(questions: SurveyQuestion[]) {
+  const why = questions.find((q) =>
+    (q.options ?? []).some((o) => o.value === "work" || o.value === "travel"),
+  );
+  const time = questions.find((q) =>
+    (q.options ?? []).some((o) => o.value === "10" || o.value === "25"),
+  );
+  if (!why || !time) {
+    throw new Error("Survey is not configured for Busuu-style onboarding");
+  }
+  return { why, time };
+}
+
+function computeTotalSteps(
+  knowEnglish: KnowEnglishChoice | null,
+  levelFork: LevelForkChoice | null,
+): number {
+  if (knowEnglish === "beginner") return 3;
+  if (knowEnglish === "know_some") {
+    if (levelFork === "self_selected") return 5;
+    return 4;
+  }
+  return 5;
+}
+
+function stepIndex(step: WizardStep): number {
+  const order: WizardStep[] = ["why", "time", "know_english", "level_fork", "pick_cefr"];
+  return order.indexOf(step) + 1;
+}
+
+function cardClass(selected: boolean): string {
+  return `rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
+    selected
+      ? "border-primary bg-primary/15 text-foreground"
+      : "border-border bg-background/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+  }`;
+}
 
 export default function OnboardingSurveyPage() {
   const router = useRouter();
-  const [questions, setQuestions] = useState<SurveyQuestion[]>([]);
-  const [answers, setAnswers] = useState<AnswerState>({});
+  const [whyQuestion, setWhyQuestion] = useState<SurveyQuestion | null>(null);
+  const [timeQuestion, setTimeQuestion] = useState<SurveyQuestion | null>(null);
+  const [step, setStep] = useState<WizardStep>("why");
+  const [whyAnswer, setWhyAnswer] = useState<string | null>(null);
+  const [timeAnswer, setTimeAnswer] = useState<string | null>(null);
+  const [knowEnglish, setKnowEnglish] = useState<KnowEnglishChoice | null>(null);
+  const [levelFork, setLevelFork] = useState<LevelForkChoice | null>(null);
+  const [cefrLevel, setCefrLevel] = useState<CefrLevel | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const totalSteps = computeTotalSteps(knowEnglish, levelFork);
+  const progress = stepIndex(step) / totalSteps;
+
+  const canContinue = useMemo(() => {
+    switch (step) {
+      case "why":
+        return Boolean(whyAnswer);
+      case "time":
+        return Boolean(timeAnswer);
+      case "know_english":
+        return Boolean(knowEnglish);
+      case "level_fork":
+        return Boolean(levelFork);
+      case "pick_cefr":
+        return Boolean(cefrLevel);
+      default:
+        return false;
+    }
+  }, [step, whyAnswer, timeAnswer, knowEnglish, levelFork, cefrLevel]);
 
   useEffect(() => {
     async function load() {
@@ -35,12 +114,16 @@ export default function OnboardingSurveyPage() {
           return;
         }
         if (status.survey_done) {
-          router.replace("/onboarding/placement");
+          router.replace(
+            status.placement_done ? "/dashboard" : "/onboarding/placement",
+          );
           return;
         }
 
         const qs = await fetchSurveyQuestions();
-        setQuestions(qs);
+        const { why, time } = splitQuestions(qs);
+        setWhyQuestion(why);
+        setTimeQuestion(time);
       } catch (err) {
         if (err instanceof Error && err.message === "SURVEY_ALREADY_DONE") {
           router.replace("/onboarding/placement");
@@ -54,35 +137,46 @@ export default function OnboardingSurveyPage() {
     load();
   }, [router]);
 
-  function setAnswer(questionId: number, value: string) {
-    setAnswers((prev) => ({ ...prev, [questionId]: value }));
-    setError(null);
+  function buildPayload(): SurveyAnswerPayload[] {
+    if (!whyQuestion || !timeQuestion || !whyAnswer || !timeAnswer) {
+      throw new Error("Please answer all survey questions");
+    }
+    return [
+      { question_id: whyQuestion.id, answer: { value: whyAnswer } },
+      { question_id: timeQuestion.id, answer: { value: timeAnswer } },
+    ];
   }
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    setError(null);
-
-    const missing = questions.filter((q) => q.is_required && !answers[q.id]?.trim());
-    if (missing.length > 0) {
-      setError("Please answer all required questions");
-      return;
+  function buildLevelResolution(): LevelResolution {
+    if (knowEnglish === "beginner") {
+      return { mode: "beginner" };
     }
+    if (levelFork === "placement") {
+      return { mode: "placement" };
+    }
+    if (levelFork === "self_selected" && cefrLevel) {
+      return { mode: "self_selected", cefr_level: cefrLevel };
+    }
+    throw new Error("Please complete level selection");
+  }
 
-    const payload: SurveyAnswerPayload[] = questions
-      .filter((q) => answers[q.id])
-      .map((q) => ({
-        question_id: q.id,
-        answer:
-          q.question_type === "text"
-            ? { text: answers[q.id] }
-            : { value: answers[q.id] },
-      }));
-
+  async function finishSurvey() {
+    setError(null);
     setSubmitting(true);
     try {
-      await submitSurvey(payload);
-      router.replace("/onboarding/placement");
+      const payload = buildPayload();
+      const levelResolution = buildLevelResolution();
+      const result = await submitSurvey(payload, levelResolution);
+      if (result.next_step === "placement") {
+        router.replace("/onboarding/placement");
+      } else {
+        try {
+          await assembleRoadmap();
+        } catch {
+          // non-blocking; dashboard can assemble later
+        }
+        router.replace("/dashboard");
+      }
       router.refresh();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to submit survey");
@@ -91,10 +185,85 @@ export default function OnboardingSurveyPage() {
     }
   }
 
+  function handleContinue() {
+    setError(null);
+    if (step === "why") {
+      setStep("time");
+      return;
+    }
+    if (step === "time") {
+      setStep("know_english");
+      return;
+    }
+    if (step === "know_english") {
+      if (knowEnglish === "beginner") {
+        void finishSurvey();
+        return;
+      }
+      setStep("level_fork");
+      return;
+    }
+    if (step === "level_fork") {
+      if (levelFork === "placement") {
+        void finishSurvey();
+        return;
+      }
+      setStep("pick_cefr");
+      return;
+    }
+    if (step === "pick_cefr") {
+      void finishSurvey();
+    }
+  }
+
+  function handleBack() {
+    setError(null);
+    if (step === "time") {
+      setStep("why");
+      return;
+    }
+    if (step === "know_english") {
+      setStep("time");
+      return;
+    }
+    if (step === "level_fork") {
+      setLevelFork(null);
+      setStep("know_english");
+      return;
+    }
+    if (step === "pick_cefr") {
+      setCefrLevel(null);
+      setStep("level_fork");
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-background">
         <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (!whyQuestion || !timeQuestion) {
+    return (
+      <div className="min-h-screen bg-background text-foreground">
+        <header className="border-b border-border">
+          <div className="mx-auto flex items-center justify-between px-6 py-4">
+            <Link href="/start-onboarding" className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
+                <Sparkles className="h-4 w-4 text-black" />
+              </div>
+              <span className="font-semibold tracking-tight">EnglishFlow</span>
+            </Link>
+            <LogoutButton />
+          </div>
+        </header>
+        <main className="mx-auto max-w-2xl px-6 py-10">
+          <p className="text-sm text-destructive" role="alert">
+            {error ?? "Survey is not configured for Busuu-style onboarding"}
+          </p>
+        </main>
       </div>
     );
   }
@@ -114,87 +283,187 @@ export default function OnboardingSurveyPage() {
       </header>
 
       <main className="mx-auto max-w-2xl px-6 py-10">
-        <div className="mb-8">
-          <p className="text-sm text-muted-foreground">Step 1 of 2</p>
-          <h1 className="mt-1 text-2xl font-semibold tracking-tight">Quick Survey</h1>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Help us personalize your placement test and learning plan.
+        <div className="mb-6">
+          <div
+            className="h-1.5 w-full overflow-hidden rounded-full bg-muted"
+            role="progressbar"
+            aria-valuenow={Math.round(progress * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          >
+            <div
+              className="h-full rounded-full bg-primary transition-all duration-300"
+              style={{ width: `${Math.round(progress * 100)}%` }}
+            />
+          </div>
+          <p className="mt-2 text-xs text-muted-foreground">
+            Step {stepIndex(step)} of {totalSteps}
           </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-8">
-          {questions.map((question, index) => (
-            <fieldset
-              key={question.id}
-              className="ef-card rounded-xl border border-border bg-card/60 p-6"
-            >
-              <legend className="px-1 text-sm font-medium">
-                {index + 1}. {question.prompt}
-                {question.is_required && <span className="text-destructive"> *</span>}
-              </legend>
+        <section className="ef-card rounded-xl border border-border bg-card/60 p-6">
+          {step === "why" ? (
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">{whyQuestion.prompt}</h1>
+              <div className="mt-5 grid gap-2">
+                {(whyQuestion.options ?? []).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setWhyAnswer(option.value);
+                      setError(null);
+                    }}
+                    className={cardClass(whyAnswer === option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
 
-              {question.question_type === "text" ? (
-                <div className="mt-4">
-                  <Label htmlFor={`q-${question.id}`} className="sr-only">
-                    {question.prompt}
-                  </Label>
-                  <Input
-                    id={`q-${question.id}`}
-                    value={answers[question.id] ?? ""}
-                    onChange={(e) => setAnswer(question.id, e.target.value)}
-                    placeholder="Your answer"
-                    className="mt-2"
-                  />
-                </div>
-              ) : (
-                <div className="mt-4 grid gap-2">
-                  {(question.options ?? []).map((option) => {
-                    const selected = answers[question.id] === option.value;
-                    return (
-                      <button
-                        key={option.value}
-                        type="button"
-                        onClick={() => setAnswer(question.id, option.value)}
-                        className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
-                          selected
-                            ? "border-primary bg-primary/15 text-foreground"
-                            : "border-border bg-background/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                        }`}
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-            </fieldset>
-          ))}
+          {step === "time" ? (
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">{timeQuestion.prompt}</h1>
+              <div className="mt-5 grid gap-2">
+                {(timeQuestion.options ?? []).map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setTimeAnswer(option.value);
+                      setError(null);
+                    }}
+                    className={cardClass(timeAnswer === option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
 
-          {error && (
-            <p className="text-sm text-destructive" role="alert">
+          {step === "know_english" ? (
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">
+                How much English do you know?
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                We&apos;ll use this to place you at the right level.
+              </p>
+              <div className="mt-5 grid gap-2">
+                {KNOW_ENGLISH_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setKnowEnglish(option.value);
+                      setLevelFork(null);
+                      setCefrLevel(null);
+                      setError(null);
+                    }}
+                    className={cardClass(knowEnglish === option.value)}
+                  >
+                    <span className="block font-medium text-foreground">{option.label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {option.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {step === "level_fork" ? (
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">
+                How should we set your level?
+              </h1>
+              <div className="mt-5 grid gap-2">
+                {LEVEL_FORK_OPTIONS.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => {
+                      setLevelFork(option.value);
+                      setCefrLevel(null);
+                      setError(null);
+                    }}
+                    className={cardClass(levelFork === option.value)}
+                  >
+                    <span className="block font-medium text-foreground">{option.label}</span>
+                    <span className="mt-0.5 block text-xs text-muted-foreground">
+                      {option.hint}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {step === "pick_cefr" ? (
+            <>
+              <h1 className="text-xl font-semibold tracking-tight">
+                Which level fits you best?
+              </h1>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Pick the CEFR level that matches your current ability.
+              </p>
+              <div className="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {CEFR_LEVELS.map((level) => (
+                  <button
+                    key={level}
+                    type="button"
+                    onClick={() => {
+                      setCefrLevel(level);
+                      setError(null);
+                    }}
+                    className={cardClass(cefrLevel === level)}
+                  >
+                    {level}
+                  </button>
+                ))}
+              </div>
+            </>
+          ) : null}
+
+          {error ? (
+            <p className="mt-4 text-sm text-destructive" role="alert">
               {error}
             </p>
-          )}
+          ) : null}
 
-          <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-            <Button type="button" variant="ghost" asChild>
-              <Link href="/start-onboarding">Back</Link>
-            </Button>
-            <Button type="submit" size="lg" disabled={submitting}>
+          <div className="mt-6 flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+            {step !== "why" ? (
+              <Button type="button" variant="ghost" onClick={handleBack} disabled={submitting}>
+                Back
+              </Button>
+            ) : (
+              <Button type="button" variant="ghost" asChild>
+                <Link href="/start-onboarding">Back</Link>
+              </Button>
+            )}
+            <Button
+              type="button"
+              size="lg"
+              disabled={submitting || !canContinue}
+              onClick={handleContinue}
+            >
               {submitting ? (
                 <>
                   <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Saving...
+                  Saving…
                 </>
               ) : (
                 <>
-                  Continue to placement test
+                  Continue
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </>
               )}
             </Button>
           </div>
-        </form>
+        </section>
       </main>
     </div>
   );
