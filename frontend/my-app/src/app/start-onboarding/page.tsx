@@ -60,7 +60,7 @@ export default function StartOnboardingPage() {
     {
       icon: PencilLine,
       title: "Placement Test",
-      desc: "Adaptive 6–15 questions — we adjust difficulty as you answer",
+      desc: "Adaptive test if you need help finding your CEFR level",
     },
     {
       icon: Target,

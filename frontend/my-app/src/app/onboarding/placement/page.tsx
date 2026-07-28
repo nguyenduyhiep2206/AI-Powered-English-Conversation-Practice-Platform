@@ -197,6 +197,9 @@ export default function PlacementPage() {
                 Placement Test
               </h1>
               <p className="mt-2 text-sm text-muted-foreground">
+                Based on your survey, we&apos;ll find your CEFR level.
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
                 Adaptive test ({minQ}–{maxQ} questions). We stop early when we are
                 confident about your level.
               </p>
