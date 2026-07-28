@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import PlacementAttemptStatusEnum
@@ -45,7 +45,7 @@ class _GradedAnswer:
 
 RETAKE_COOLDOWN_DAYS = 7
 INSUFFICIENT_ADAPTIVE_BANK_MSG = (
-    "Không còn câu hỏi published phù hợp cho placement adaptive."
+    "No published questions found for placement adaptive."
 )
 
 
@@ -91,14 +91,50 @@ async def _require_survey_done(db: AsyncSession, user_id: int) -> UserProfileDB:
 
 
 async def _get_in_progress(db: AsyncSession, user_id: int) -> PlacementAttemptDB | None:
+    """Return the preferred in-progress attempt (most questions, then newest).
+
+    Callers must tolerate legacy duplicates: use ``_abandon_in_progress`` to
+    clear extras. Never use ``scalar_one_or_none`` here — concurrent starts can
+    leave more than one ``in_progress`` row per user.
+    """
     return (
         await db.execute(
-            select(PlacementAttemptDB).where(
+            select(PlacementAttemptDB)
+            .where(
                 PlacementAttemptDB.user_id == user_id,
                 PlacementAttemptDB.status == PlacementAttemptStatusEnum.in_progress,
             )
+            .order_by(
+                PlacementAttemptDB.questions_asked.desc(),
+                PlacementAttemptDB.started_at.desc(),
+                PlacementAttemptDB.id.desc(),
+            )
+            .limit(1)
         )
     ).scalar_one_or_none()
+
+
+async def _abandon_in_progress(
+    db: AsyncSession,
+    user_id: int,
+    *,
+    keep_id: int | None = None,
+) -> None:
+    """Mark every in-progress attempt abandoned, optionally keeping one."""
+    stmt = (
+        update(PlacementAttemptDB)
+        .where(
+            PlacementAttemptDB.user_id == user_id,
+            PlacementAttemptDB.status == PlacementAttemptStatusEnum.in_progress,
+        )
+        .values(
+            status=PlacementAttemptStatusEnum.abandoned,
+            current_question_id=None,
+        )
+    )
+    if keep_id is not None:
+        stmt = stmt.where(PlacementAttemptDB.id != keep_id)
+    await db.execute(stmt)
 
 
 async def _last_completed_at(db: AsyncSession, user_id: int) -> datetime | None:
@@ -281,19 +317,14 @@ async def _create_attempt(db: AsyncSession, profile: UserProfileDB) -> Placement
     return attempt
 
 
-async def _abandon_in_progress(db: AsyncSession, user_id: int) -> None:
-    current = await _get_in_progress(db, user_id)
-    if current is None:
-        return
-    current.status = PlacementAttemptStatusEnum.abandoned
-    current.current_question_id = None
-
-
 async def get_current_session(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
     await _require_survey_done(db, user_id)
     attempt = await _get_in_progress(db, user_id)
     if attempt is None:
         return None
+    await _abandon_in_progress(db, user_id, keep_id=int(attempt.id))
+    await db.commit()
+    await db.refresh(attempt)
     return await _session_payload(db, attempt, done=False)
 
 
@@ -301,14 +332,18 @@ async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, A
     profile = await _require_survey_done(db, user_id)
     current = await _get_in_progress(db, user_id)
     if current is not None:
+        await _abandon_in_progress(db, user_id, keep_id=int(current.id))
+        await db.commit()
+        await db.refresh(current)
         return await _session_payload(db, current, done=False)
 
     if profile.placement_score is not None:
         status = await get_retake_status(db, user_id)
         if not status["allowed"]:
             raise RuntimeError("Chưa đến lúc làm lại placement")
-        await _abandon_in_progress(db, user_id)
 
+    # Always clear leftovers (including race duplicates) before creating.
+    await _abandon_in_progress(db, user_id)
     attempt = await _create_attempt(db, profile)
     question = await _serve_next_question(db, attempt, profile.weak_point)
     await db.commit()
@@ -416,6 +451,8 @@ async def _complete_attempt(
     attempt.result_sublevel = sub
     profile.current_level = level
     profile.placement_score = sub
+    # Drop any concurrent in_progress leftovers so resume does not reopen them.
+    await _abandon_in_progress(db, int(profile.user_id))
     # Re-eval / first placement both start from a fresh path after assemble.
     await clear_user_roadmap(db, int(profile.user_id))
     await db.commit()

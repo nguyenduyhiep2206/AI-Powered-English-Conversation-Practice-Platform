@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowRight, Loader2, Sparkles } from "lucide-react";
@@ -31,8 +31,12 @@ export default function PlacementPage() {
   const [assembling, setAssembling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<PlacementSession | null>(null);
+  const loadStarted = useRef(false);
 
   useEffect(() => {
+    if (loadStarted.current) return;
+    loadStarted.current = true;
+
     async function load() {
       try {
         const status = await fetchOnboardingStatus();

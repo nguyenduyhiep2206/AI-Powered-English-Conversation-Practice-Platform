@@ -43,11 +43,20 @@ async function parseSession(res: Response, fallback: string): Promise<PlacementS
   return body.data;
 }
 
+/** Dedup concurrent POSTs (double-click / React Strict Mode remount). */
+let startSessionInFlight: Promise<PlacementSession> | null = null;
+
 export async function startPlacementSession(): Promise<PlacementSession> {
-  const res = await authFetch("/api/v1/onboarding/placement/sessions", {
-    method: "POST",
+  if (startSessionInFlight) return startSessionInFlight;
+  startSessionInFlight = (async () => {
+    const res = await authFetch("/api/v1/onboarding/placement/sessions", {
+      method: "POST",
+    });
+    return parseSession(res, "Failed to start placement session");
+  })().finally(() => {
+    startSessionInFlight = null;
   });
-  return parseSession(res, "Failed to start placement session");
+  return startSessionInFlight;
 }
 
 export async function getCurrentPlacementSession(): Promise<PlacementSession | null> {

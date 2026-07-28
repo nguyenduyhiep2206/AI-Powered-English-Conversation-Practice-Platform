@@ -22,6 +22,7 @@ export default function StartOnboardingPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("survey");
   const [ready, setReady] = useState(false);
+  const [navigating, setNavigating] = useState(false);
 
   useEffect(() => {
     fetchOnboardingStatus()
@@ -42,6 +43,12 @@ export default function StartOnboardingPage() {
   if (!ready) return null;
 
   const isContinue = currentStep === "placement";
+
+  function handleContinue() {
+    if (navigating) return;
+    setNavigating(true);
+    router.push(isContinue ? "/onboarding/placement" : "/onboarding");
+  }
 
   // Survey preferences + adaptive placement (6–15 questions) → level + roadmap
   const steps = [
@@ -73,12 +80,6 @@ export default function StartOnboardingPage() {
             <span className="font-semibold tracking-tight text-foreground">EnglishFlow</span>
           </Link>
           <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/40 p-1 backdrop-blur-sm">
-            <Link
-              href="/dashboard"
-              className="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground"
-            >
-              Skip for now
-            </Link>
             <div className="mx-0.5 h-4 w-px bg-border/70" aria-hidden />
             <LogoutButton />
           </div>
@@ -143,11 +144,21 @@ export default function StartOnboardingPage() {
           </div>
 
           <div className="flex flex-col-reverse justify-center items-center gap-3 border-t border-border px-6 py-6 md:flex-row md:px-10">
-            <Button asChild size="lg" className="w-full md:w-auto">
-              <Link href={isContinue ? "/onboarding/placement" : "/onboarding"}>
-                {isContinue ? "Continue Placement Test" : "Start Onboarding"}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
+            <Button
+              size="lg"
+              className="w-full md:w-auto"
+              disabled={navigating}
+              aria-busy={navigating}
+              onClick={handleContinue}
+            >
+              {navigating
+                ? isContinue
+                  ? "Opening placement…"
+                  : "Starting…"
+                : isContinue
+                  ? "Continue Placement Test"
+                  : "Start Onboarding"}
+              {!navigating ? <ArrowRight className="ml-1.5 h-4 w-4" /> : null}
             </Button>
           </div>
         </div>
