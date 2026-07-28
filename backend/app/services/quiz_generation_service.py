@@ -33,21 +33,43 @@ from app.services.cefr_descriptors import (
 )
 from app.services.llm_client import chat_json
 
-SYSTEM_PROMPT = """You are an expert TOEIC Reading item writer for English courses.
-Write items ONLY from the provided textbook EXCERPT.
-Use TOEIC Reading formats only:
-- r5: incomplete sentence (stem is one sentence with a blank); 4 options; no long passage.
-- r6: text completion — include a short passage grounded in the EXCERPT with a blank; 4 options.
-- r7: reading comprehension — include a passage grounded in the EXCERPT; stem asks about it; 4 options.
-Do not invent facts absent from the excerpt. Do not use cloze or fix_grammar types.
-Do not copy answer keys; write new stems.
+SYSTEM_PROMPT = """You are an expert TOEIC Reading (RC) item writer.
+Write items ONLY from the provided textbook EXCERPT (business/workplace English tone like official TOEIC RC).
+Follow official TOEIC Reading form exactly — Parts 5, 6, and 7 only. Never use cloze or fix_grammar.
+
+PART 5 (toeic_part=r5) — Incomplete Sentences:
+- One standalone sentence with a single blank marked exactly as: -------
+- Four short options (word / phrase / word-form variants). Do NOT prefix options with (A)/(B)/(C)/(D) in the JSON.
+- Target: grammar (word form, tense, pronoun), vocabulary, preposition, or connector.
+- No passage field (null/omit). No multi-sentence stem.
+
+PART 6 (toeic_part=r6) — Text Completion:
+- One short workplace document (email, letter, memo, flyer, or notice), ~80–140 words, grounded in the EXCERPT.
+- Put 3–4 blanks inside the passage, each marked like: ------- (1)  then ------- (2) etc.
+- Start the passage with a document cue line when helpful, e.g. "E-mail" / "Memo" / "Flyer:" and headers (To/From/Subject) for emails.
+- For EACH blank, emit a separate question item with the SAME passage text and SAME passage_group.
+- Stem examples: "Choose the best answer for blank (1)." (match blank numbers).
+- Options: mix types across the set — at least one full-sentence insertion, plus word form / vocab / transition / pronoun as appropriate.
+- Four options each; answer must match one option exactly.
+
+PART 7 (toeic_part=r7) — Reading Comprehension:
+- One short text (notice, e-mail, memo, article excerpt, advertisement) grounded in the EXCERPT.
+- Prefatory style in passage is fine: "Notice:" / "E-mail:" with To/From/Subject when relevant.
+- Several MCQ items may share the same passage via the same passage_group.
+- Stems: purpose/main idea, detail (who/when/what), or inference ("What is suggested about...?").
+- Four plausible options; only one correct; distractors may reuse words from the text.
+
 Return JSON: {"questions":[...]} with fields:
-type (must be "mcq"), toeic_part (r5|r6|r7), passage (string, required for r6/r7),
+type (must be "mcq"), toeic_part (r5|r6|r7),
+passage (string; required for r6/r7; null for r5),
 stem, options (exactly 4 strings), answer, explanation,
 skill, difficulty (easy|medium|hard), cefr_focus (string),
-passage_group (optional string — same value for items sharing one passage).
-For mcq, answer must exactly match one option.
+passage_group (required string for r6/r7 items that share one text; omit for r5).
+For mcq, answer must exactly match one option string.
 Follow the item blueprint order, toeic_part, and cefr_focus exactly.
+For r6/r7 passages: adapt the EXCERPT into a TOEIC notice/email/memo — keep the same
+topic and reuse concrete vocabulary/names from the EXCERPT (paraphrase OK). Do not invent
+an unrelated corporate story with zero words from the EXCERPT.
 """
 
 _ALLOWED_READING_TYPES = {"mcq"}
@@ -56,6 +78,58 @@ _LEGACY_REJECTED_TYPES = {"cloze", "fix_grammar"}
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 PASSAGE_GROUNDING_RATIO = 0.55
+# Soft theme check for TOEIC-style paraphrase of the excerpt.
+_PASSAGE_MIN_OVERLAP_WORDS = 4
+_PASSAGE_MIN_OVERLAP_RATIO = 0.12
+_STOPWORDS = frozenset(
+    {
+        "about",
+        "after",
+        "again",
+        "also",
+        "been",
+        "before",
+        "being",
+        "between",
+        "could",
+        "does",
+        "from",
+        "have",
+        "into",
+        "just",
+        "more",
+        "most",
+        "other",
+        "over",
+        "same",
+        "should",
+        "some",
+        "such",
+        "than",
+        "that",
+        "their",
+        "them",
+        "then",
+        "there",
+        "these",
+        "they",
+        "this",
+        "those",
+        "through",
+        "under",
+        "very",
+        "were",
+        "what",
+        "when",
+        "where",
+        "which",
+        "while",
+        "will",
+        "with",
+        "would",
+        "your",
+    }
+)
 CONTEXT_CHAR_CAP = 8000
 
 
@@ -103,14 +177,17 @@ def build_generation_prompt(
         f"Skill type: {skill_type or 'grammar'}",
         f"Book type: {book_type or 'freeform'}",
         f"Can-do target: {can_do or get_can_do(level, skill_type or 'grammar')}",
-        f"Passage length for each item: about {min_chars}-{max_chars} characters "
-        f"(stay within that band).",
+        f"For r6/r7 passages, aim about {min_chars}-{max_chars} characters "
+        f"(stay within that band). r5 has no passage.",
+        "Match official TOEIC RC layout: Part 5 = one sentence + ------- blank; "
+        "Part 6 = document with numbered blanks + options below; "
+        "Part 7 = notice/email/article + comprehension questions.",
         f"Generate exactly {count} questions matching the blueprint below.",
     ]
     if blueprint:
         parts.append(blueprint_as_prompt_lines(blueprint))
     else:
-        parts.append("Prefer mcq; include at most 1 cloze.")
+        parts.append("Prefer TOEIC mcq parts r5/r6/r7 only.")
     parts.append(f"\nEXCERPT:\n{context}\n")
     return "\n".join(parts)
 
@@ -119,15 +196,37 @@ def _normalize_text(text: str) -> str:
     return _NON_ALNUM.sub(" ", text.lower()).strip()
 
 
+def _content_tokens(text: str) -> set[str]:
+    return {
+        tok
+        for tok in _normalize_text(text).split()
+        if len(tok) >= 4 and tok not in _STOPWORDS
+    }
+
+
+def passage_theme_overlap(passage: str, excerpt: str) -> bool:
+    """True if passage reuses enough content words from the excerpt (TOEIC paraphrase)."""
+    p_toks = _content_tokens(passage)
+    e_toks = _content_tokens(excerpt)
+    if not p_toks or not e_toks:
+        return False
+    overlap = p_toks & e_toks
+    if len(overlap) < _PASSAGE_MIN_OVERLAP_WORDS:
+        return False
+    return (len(overlap) / len(p_toks)) >= _PASSAGE_MIN_OVERLAP_RATIO
+
+
 def passage_grounded(
     passage: str, excerpt: str, *, min_ratio: float = PASSAGE_GROUNDING_RATIO
 ) -> bool:
-    """True if passage appears in excerpt (substring) or fuzzy-matches a window."""
+    """True if passage appears in excerpt, fuzzy-matches a window, or shares theme words."""
     needle = _normalize_text(passage)
     haystack = _normalize_text(excerpt)
     if not needle or not haystack:
         return False
     if needle in haystack:
+        return True
+    if passage_theme_overlap(passage, excerpt):
         return True
     target = max(20, len(needle))
     lo = max(20, int(target * 0.8))
@@ -198,14 +297,13 @@ def validate_generated_questions(
         passage_raw = item.get("passage")
         passage = (passage_raw or "").strip() if isinstance(passage_raw, str) else ""
 
-        requires_passage = False
-        if blueprint is not None:
+        # Prefer the item's declared part for passage rules (LLM may reorder vs blueprint).
+        requires_passage = toeic_part in {"r6", "r7"}
+        if not requires_passage and blueprint is not None and toeic_part is None:
             if index < len(blueprint):
                 requires_passage = bool(blueprint[index].get("requires_passage"))
             else:
                 requires_passage = any(bool(b.get("requires_passage")) for b in blueprint)
-        elif toeic_part in {"r6", "r7"}:
-            requires_passage = True
 
         if requires_passage:
             if not passage or excerpt is None:
@@ -214,6 +312,10 @@ def validate_generated_questions(
                 continue
             if not passage_length_ok(passage, cefr_level):
                 continue
+        elif toeic_part == "r5":
+            if "-------" not in stem:
+                continue
+            passage = ""  # Part 5 never stores a passage
         elif passage and excerpt is not None:
             if not passage_grounded(passage, excerpt):
                 continue
@@ -304,33 +406,49 @@ def _request_validated_items(
     skill_type = skill.skill_type or SkillTypeEnum.grammar
     book_type = book.book_type or BookTypeEnum.freeform
     blueprint = blueprint_for(book_type, skill_type, count)
-
-    payload = chat_json(
-        SYSTEM_PROMPT,
-        build_generation_prompt(
-            primary.unit_title or skill.title,
-            cefr.value if hasattr(cefr, "value") else str(cefr),
-            ctx["text"],
-            count,
-            can_do=get_can_do(cefr, skill_type),
-            blueprint=blueprint,
-            skill_type=skill_type.value if hasattr(skill_type, "value") else str(skill_type),
-            book_type=book_type.value if hasattr(book_type, "value") else str(book_type),
-        ),
-    )
-    raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
-    if not isinstance(raw_questions, list):
-        raise ValueError("LLM didn't return a list of questions.")
-
-    validated = validate_generated_questions(
-        raw_questions,
-        excerpt=ctx["text"],
+    user_prompt = build_generation_prompt(
+        primary.unit_title or skill.title,
+        cefr.value if hasattr(cefr, "value") else str(cefr),
+        ctx["text"],
+        count,
+        can_do=get_can_do(cefr, skill_type),
         blueprint=blueprint,
-        cefr_level=cefr,
+        skill_type=skill_type.value if hasattr(skill_type, "value") else str(skill_type),
+        book_type=book_type.value if hasattr(book_type, "value") else str(book_type),
     )
-    if not validated:
+
+    best: list[dict[str, Any]] = []
+    for attempt in range(2):
+        prompt = user_prompt
+        if attempt > 0:
+            prompt += (
+                f"\nRETRY: previous attempt kept only {len(best)}/{count} valid items. "
+                "Return exactly the full set. For every r6/r7 item include a passage that "
+                "reuses topic words from the EXCERPT. Every r5 stem must contain ------- .\n"
+            )
+        payload = chat_json(SYSTEM_PROMPT, prompt)
+        raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
+        if not isinstance(raw_questions, list):
+            continue
+        validated = validate_generated_questions(
+            raw_questions,
+            excerpt=ctx["text"],
+            blueprint=blueprint,
+            cefr_level=cefr,
+        )
+        if len(validated) > len(best):
+            best = validated
+        if len(best) >= count:
+            break
+
+    if not best:
         raise ValueError("No valid questions after validation.")
-    return validated
+    if len(best) < max(2, count // 2):
+        raise ValueError(
+            f"Only {len(best)}/{count} questions passed validation "
+            "(passages must reuse EXCERPT vocabulary; r5 needs -------). Try again."
+        )
+    return best[:count]
 
 
 def _build_draft_row(

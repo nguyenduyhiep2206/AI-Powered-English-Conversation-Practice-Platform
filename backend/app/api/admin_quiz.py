@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import require_permission
 from app.core.database import get_db
 from app.models.enums import QuizQuestionStatusEnum
+from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.schemas.quiz_schema import (
     GenerateQuizRequest,
@@ -131,7 +132,7 @@ async def admin_publish_questions(
     db: AsyncSession = Depends(get_db),
 ):
     if not body.question_ids:
-        return {"data": {"published": 0}}
+        return {"data": {"published": 0, "skipped": 0, "passages_published": 0}}
 
     rows = list(
         (
@@ -144,6 +145,7 @@ async def admin_publish_questions(
     )
     published = 0
     skipped = 0
+    passage_ids: set[int] = set()
     for row in rows:
         part = row.toeic_part.value if row.toeic_part else None
         if part in {"w1", "w2", "w3"} and not writing_publishable(row):
@@ -151,5 +153,30 @@ async def admin_publish_questions(
             continue
         row.status = QuizQuestionStatusEnum.published
         published += 1
+        if row.passage_id is not None:
+            passage_ids.add(int(row.passage_id))
+
+    passages_published = 0
+    if passage_ids:
+        passages = list(
+            (
+                await db.execute(
+                    select(QuizPassageDB).where(QuizPassageDB.id.in_(passage_ids))
+                )
+            )
+            .scalars()
+            .all()
+        )
+        for passage in passages:
+            if passage.status != QuizQuestionStatusEnum.published:
+                passage.status = QuizQuestionStatusEnum.published
+                passages_published += 1
+
     await db.commit()
-    return {"data": {"published": published, "skipped": skipped}}
+    return {
+        "data": {
+            "published": published,
+            "skipped": skipped,
+            "passages_published": passages_published,
+        }
+    }

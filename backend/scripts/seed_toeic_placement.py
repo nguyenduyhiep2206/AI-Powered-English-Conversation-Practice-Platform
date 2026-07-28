@@ -25,55 +25,55 @@ from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.placement.quotas import READING_QUOTA, WRITING_QUOTA
 
-# Realistic Part 5 stems (cycle through for quota).
+# Realistic Part 5 stems (cycle through for quota) — blank as ------- like official RC.
 _R5_BANK: list[tuple[str, list[str], str]] = [
     (
-        "The marketing team ____ the campaign results before Friday.",
+        "The marketing team ------- the campaign results before Friday.",
         ["will review", "reviewing", "have review", "to review"],
         "will review",
     ),
     (
-        "Please submit your expense report ____ the end of the month.",
+        "Please submit your expense report ------- the end of the month.",
         ["by", "until", "during", "since"],
         "by",
     ),
     (
-        "Ms. Chen is responsible ____ coordinating the vendor contracts.",
+        "Ms. Chen is responsible ------- coordinating the vendor contracts.",
         ["for", "to", "of", "with"],
         "for",
     ),
     (
-        "The new software is ____ more efficient than the previous version.",
+        "The new software is ------- more efficient than the previous version.",
         ["considerably", "considerable", "consider", "considered"],
         "considerably",
     ),
     (
-        "Neither the manager nor the assistants ____ available this afternoon.",
+        "Neither the manager nor the assistants ------- available this afternoon.",
         ["are", "is", "be", "been"],
         "are",
     ),
     (
-        "Customers who purchase online will receive a discount ____ shipping.",
+        "Customers who purchase online will receive a discount ------- shipping.",
         ["on", "at", "for", "to"],
         "on",
     ),
     (
-        "The conference room has been reserved ____ 2 p.m. to 4 p.m.",
+        "The conference room has been reserved ------- 2 p.m. to 4 p.m.",
         ["from", "since", "until", "by"],
         "from",
     ),
     (
-        "If the shipment ____ delayed, please notify the warehouse supervisor.",
+        "If the shipment ------- delayed, please notify the warehouse supervisor.",
         ["is", "will", "be", "were being"],
         "is",
     ),
     (
-        "Dr. Patel asked that the laboratory ____ locked after hours.",
+        "Dr. Patel asked that the laboratory ------- locked after hours.",
         ["be", "is", "being", "was"],
         "be",
     ),
     (
-        "The brochure explains the benefits of the membership ____ detail.",
+        "The brochure explains the benefits of the membership ------- detail.",
         ["in", "on", "at", "for"],
         "in",
     ),
@@ -85,40 +85,35 @@ _R6_SETS: list[dict] = [
             "MEMO\nTo: All Staff\nFrom: Facilities\nRe: Parking garage repairs\n\n"
             "Beginning Monday, the south entrance of the parking garage will be closed "
             "for resurfacing. Employees should use the north entrance and allow extra "
-            "time. The work is expected to last ____(1)____ two weeks. Shuttle service "
-            "from the overflow lot will run every ____(2)____ minutes during peak hours. "
-            "Questions may be directed to facilities@example.com."
+            "time. The work is expected to last ------- (1) two weeks. Shuttle service "
+            "from the overflow lot will run every ------- (2) minutes during peak hours. "
+            "------- (3) ------- (4) Questions may be directed to facilities@example.com."
         ),
         "items": [
             (
-                "Select the best word for blank (1).",
+                "Choose the best answer for blank (1).",
                 ["approximately", "approximate", "approximation", "approximating"],
                 "approximately",
             ),
             (
-                "Select the best word for blank (2).",
+                "Choose the best answer for blank (2).",
                 ["fifteen", "fifteenth", "fifteens", "fifteenthly"],
                 "fifteen",
             ),
             (
-                "What is the main purpose of the memo?",
+                "Choose the best answer for blank (3).",
                 [
-                    "To announce temporary parking changes",
-                    "To sell shuttle tickets",
-                    "To hire facility workers",
-                    "To close the company for two weeks",
+                    "Please park only in marked spaces.",
+                    "Overtime pay will increase next month.",
+                    "The cafeteria menu changes daily.",
+                    "New ID badges are required for visitors.",
                 ],
-                "To announce temporary parking changes",
+                "Please park only in marked spaces.",
             ),
             (
-                "Where should questions be sent?",
-                [
-                    "facilities@example.com",
-                    "the south entrance",
-                    "the overflow lot only",
-                    "HR payroll",
-                ],
-                "facilities@example.com",
+                "Choose the best answer for blank (4).",
+                ["Additionally", "However", "Instead", "Otherwise"],
+                "Additionally",
             ),
         ],
     },
@@ -127,40 +122,41 @@ _R6_SETS: list[dict] = [
             "Dear Ms. Alvarez,\n\nThank you for your interest in the customer-support role. "
             "We were impressed with your experience in retail and would like to invite you "
             "to a second interview next Thursday at 10:00 a.m. Please bring a list of "
-            "professional references. If this time is inconvenient, let us know so we can "
-            "____(1)____ another appointment. We look forward to ____(2)____ with you.\n\n"
+            "professional references. ------- (1) If this time is inconvenient, let us know "
+            "so we can ------- (2) another appointment. We look forward to ------- (3) with you. "
+            "------- (4)\n\n"
             "Sincerely,\nJordan Lee\nHiring Coordinator"
         ),
         "items": [
             (
-                "Best choice for blank (1):",
+                "Choose the best answer for blank (1).",
+                [
+                    "We will also ask you to complete a short skills questionnaire.",
+                    "The parking garage is closed on weekends.",
+                    "Our office sells office supplies.",
+                    "Please ignore previous messages.",
+                ],
+                "We will also ask you to complete a short skills questionnaire.",
+            ),
+            (
+                "Choose the best answer for blank (2).",
                 ["arrange", "arranging", "arrangement", "arranges"],
                 "arrange",
             ),
             (
-                "Best choice for blank (2):",
+                "Choose the best answer for blank (3).",
                 ["speaking", "speak", "spoken", "spoke"],
                 "speaking",
             ),
             (
-                "What should Ms. Alvarez bring?",
+                "Choose the best answer for blank (4).",
                 [
-                    "A list of professional references",
-                    "A product sample",
-                    "Parking tickets",
-                    "A company laptop",
+                    "Thank you again for considering this opportunity.",
+                    "Please cancel your application immediately.",
+                    "Ship the package by Friday.",
+                    "The store opens at noon.",
                 ],
-                "A list of professional references",
-            ),
-            (
-                "When is the proposed interview?",
-                [
-                    "Next Thursday at 10:00 a.m.",
-                    "This Monday at noon",
-                    "Friday evening",
-                    "Anytime next month",
-                ],
-                "Next Thursday at 10:00 a.m.",
+                "Thank you again for considering this opportunity.",
             ),
         ],
     },
@@ -238,12 +234,12 @@ _R7_SETS: list[dict] = [
     },
 ]
 
-_W1_PROMPTS: list[tuple[list[str], str]] = [
-    (["laptop", "desk"], "https://placehold.co/640x400/png?text=Office+desk"),
-    (["customer", "counter"], "https://placehold.co/640x400/png?text=Service+counter"),
-    (["presentation", "screen"], "https://placehold.co/640x400/png?text=Meeting+room"),
-    (["warehouse", "boxes"], "https://placehold.co/640x400/png?text=Warehouse"),
-    (["airport", "suitcase"], "https://placehold.co/640x400/png?text=Travel"),
+_W1_PROMPTS: list[list[str]] = [
+    ["laptop", "desk"],
+    ["customer", "counter"],
+    ["presentation", "screen"],
+    ["warehouse", "boxes"],
+    ["airport", "suitcase"],
 ]
 
 _W2_EMAILS: list[dict] = [
@@ -414,7 +410,7 @@ async def seed(*, force: bool = False) -> None:
                 )
                 r7_made += 1
 
-        for words, media in _W1_PROMPTS[: WRITING_QUOTA["w1"]]:
+        for words in _W1_PROMPTS[: WRITING_QUOTA["w1"]]:
             db.add(
                 QuizQuestionDB(
                     skill_id=skill_id,
@@ -422,9 +418,12 @@ async def seed(*, force: bool = False) -> None:
                     unit_id=unit_id,
                     question_type=QuizQuestionTypeEnum.writing,
                     toeic_part=ToeicPartEnum.w1,
-                    stem="Write one sentence about the picture using the two words (any order).",
+                    stem=(
+                        "Write one sentence using the two words below "
+                        "(any order; you may change word forms)."
+                    ),
                     prompt_words=words,
-                    media_url=media,
+                    media_url=None,
                     answer="",
                     status=QuizQuestionStatusEnum.published,
                     difficulty="medium",

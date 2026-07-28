@@ -27,17 +27,38 @@ def test_validate_w3_sets_min_words():
     assert ok[0]["task_brief"]["min_words"] == 300
 
 
-def test_w1_not_publishable_without_media():
+def test_w1_publishable_with_prompt_words_only():
     row = QuizQuestionDB(
         skill_id=1,
         book_id=1,
         unit_id=1,
         question_type=QuizQuestionTypeEnum.writing,
         toeic_part=ToeicPartEnum.w1,
-        stem="Write a sentence",
-        prompt_words=["to", "whiteboard"],
+        stem="Write one sentence using the two words below.",
+        prompt_words=["laptop", "desk"],
         answer="",
     )
-    assert writing_publishable(row) is False
-    row.media_url = "https://example.com/pic.png"
     assert writing_publishable(row) is True
+    row.prompt_words = ["laptop"]
+    assert writing_publishable(row) is False
+
+
+def test_validate_w1_requires_two_words():
+    assert (
+        validate_writing_tasks(
+            [{"toeic_part": "w1", "stem": "Write", "prompt_words": ["only"]}]
+        )
+        == []
+    )
+    ok = validate_writing_tasks(
+        [
+            {
+                "toeic_part": "w1",
+                "stem": "Write one sentence using the two words below.",
+                "prompt_words": ["meeting", "agenda"],
+            }
+        ]
+    )
+    assert len(ok) == 1
+    assert ok[0]["prompt_words"] == ["meeting", "agenda"]
+    assert ok[0]["task_brief"]["must_use_both_words"] is True

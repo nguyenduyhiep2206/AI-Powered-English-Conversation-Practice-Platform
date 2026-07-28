@@ -568,14 +568,6 @@ export default function PlacementPage() {
               Writing {writingIndex + 1} / {writingItems.length} ·{" "}
               {currentWriting.toeic_part?.toUpperCase()}
             </p>
-            {currentWriting.media_url && (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img
-                src={currentWriting.media_url}
-                alt="Writing prompt"
-                className="max-h-64 rounded-md border border-stone-200 object-contain"
-              />
-            )}
             {writingPassage && (
               <div className="whitespace-pre-wrap rounded-md bg-white/80 p-4 text-sm leading-relaxed">
                 {writingPassage}
@@ -583,7 +575,7 @@ export default function PlacementPage() {
             )}
             <p className="text-lg">{currentWriting.stem}</p>
             {currentWriting.prompt_words && (
-              <p className="text-sm text-stone-600">
+              <p className="rounded-md border border-stone-200 bg-stone-50 px-3 py-2 font-medium tracking-wide">
                 Words: {currentWriting.prompt_words.join(" / ")}
               </p>
             )}

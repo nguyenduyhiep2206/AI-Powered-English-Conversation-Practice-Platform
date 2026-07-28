@@ -146,7 +146,7 @@ export function BookQuizPanel({ bookId, units, onError }: BookQuizPanelProps) {
       const { published, skipped } = await publishQuestions([...selectedIds]);
       setStatusMessage(
         skipped > 0
-          ? `Published ${published}; skipped ${skipped} (e.g. W1 missing media).`
+          ? `Published ${published}; skipped ${skipped} (e.g. incomplete W1/W2).`
           : `Published ${published} question(s).`,
       );
       await refreshDrafts();

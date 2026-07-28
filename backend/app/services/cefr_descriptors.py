@@ -112,10 +112,10 @@ _READING_PATTERN: list[tuple[str, str, bool, str]] = [
     ("mcq", "r7", True, "main_idea"),
     ("mcq", "r7", True, "detail"),
     ("mcq", "r6", True, "text_completion"),
-    ("mcq", "r7", True, "vocab_in_context"),
-    ("mcq", "r7", True, "inference"),
     ("mcq", "r6", True, "text_completion"),
-    ("mcq", "r7", True, "detail"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r5", False, "incomplete_sentence"),
     ("mcq", "r5", False, "incomplete_sentence"),
 ]
 
@@ -208,11 +208,22 @@ def blueprint_for(
 
 def blueprint_as_prompt_lines(items: list[BlueprintItem] | list[dict[str, Any]]) -> str:
     """Human-readable blueprint block for the LLM user prompt."""
-    lines = ["Item blueprint (follow order, toeic_part, and focus):"]
+    lines = [
+        "Item blueprint (follow order, toeic_part, and focus):",
+        "Format reminders: r5 stem uses ------- blank; r6 shared passage with "
+        "------- (n) blanks + same passage_group; r7 shared passage + comprehension stems.",
+    ]
     for i, item in enumerate(items, start=1):
+        part = item.get("toeic_part")
+        hint = {
+            "r5": "one sentence + ------- ; 4 word/phrase options",
+            "r6": "document blank set; stem = blank (n); include sentence-insert option when focus allows",
+            "r7": "notice/email/article; purpose/detail/inference stem",
+        }.get(str(part), "")
         lines.append(
-            f"{i}. type={item['type']}; toeic_part={item.get('toeic_part')}; "
+            f"{i}. type={item['type']}; toeic_part={part}; "
             f"requires_passage={item['requires_passage']}; "
             f"cefr_focus={item['cefr_focus']}"
+            + (f" — {hint}" if hint else "")
         )
     return "\n".join(lines)

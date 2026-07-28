@@ -5,17 +5,11 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
-
-from app.models.book import BookDB
-from app.models.book_skill_source import BookSkillSourceDB
 from app.models.enums import (
     QuizQuestionStatusEnum,
     QuizQuestionTypeEnum,
     ToeicPartEnum,
 )
-from app.models.learning_skill import LearningSkillDB
 from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.llm_client import chat_json
@@ -25,16 +19,34 @@ from app.services.quiz_generation_service import (
     _require_source_book,
     _resolve_primary_source,
 )
+from sqlalchemy.ext.asyncio import AsyncSession
 
 SYSTEM_PROMPT = """You write TOEIC Writing practice tasks grounded in a textbook EXCERPT.
+No images / picture descriptions — never invent media_url or picture prompts.
+
 Return JSON: {"tasks":[...]} where each task has:
-toeic_part (w2|w3 only in this endpoint),
+toeic_part (w1|w2|w3),
 stem (instructions for the learner),
-passage (for w2: the inbound email body; for w3: null),
+prompt_words (for w1 only: exactly TWO English words/phrases the learner must use),
+passage (for w2: the inbound email/request body; for w1/w3: null),
 task_brief (object):
+  w1: {must_use_both_words: true}
   w2: {role, must_ask, must_provide} with integer counts
   w3: {min_words: 300, prompt_focus: string}
-Do not invent company facts absent from the excerpt when possible; otherwise use generic business names.
+
+W1 — Write a sentence based on two cue words (no picture):
+- stem like: "Write one sentence using the two words below (any order; you may change word forms)."
+- prompt_words: two workplace-related words from or inspired by the EXCERPT.
+
+W2 — Respond to a written request (email):
+- passage = full inbound email with To/From/Subject/body.
+- stem tells the learner role and constraints (ask N questions / provide M pieces of information).
+
+W3 — Opinion essay:
+- stem is the essay prompt; recommend supporting with reasons and examples.
+- task_brief.min_words default 300.
+
+Use generic business names when the excerpt lacks specifics.
 """
 
 
@@ -43,11 +55,29 @@ def validate_writing_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for item in tasks:
         part = str(item.get("toeic_part") or "").strip()
         stem = (item.get("stem") or "").strip()
-        if part not in {"w2", "w3"} or not stem:
+        if part not in {"w1", "w2", "w3"} or not stem:
             continue
         brief = item.get("task_brief") if isinstance(item.get("task_brief"), dict) else {}
         passage = item.get("passage")
         passage_text = passage.strip() if isinstance(passage, str) else ""
+        prompt_words = item.get("prompt_words")
+        if part == "w1":
+            if not isinstance(prompt_words, list) or len(prompt_words) != 2:
+                continue
+            words = [str(w).strip() for w in prompt_words if str(w).strip()]
+            if len(words) != 2:
+                continue
+            brief = {**brief, "must_use_both_words": True}
+            valid.append(
+                {
+                    "toeic_part": part,
+                    "stem": stem,
+                    "passage": None,
+                    "prompt_words": words,
+                    "task_brief": brief,
+                }
+            )
+            continue
         if part == "w2" and not passage_text:
             continue
         if part == "w3":
@@ -57,6 +87,7 @@ def validate_writing_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "toeic_part": part,
                 "stem": stem,
                 "passage": passage_text or None,
+                "prompt_words": None,
                 "task_brief": brief,
             }
         )
@@ -66,7 +97,7 @@ def validate_writing_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
 async def generate_writing_for_skill(
     db: AsyncSession, skill_id: int, *, count: int = 2
 ) -> list[QuizQuestionDB]:
-    """Create draft W2/W3 writing items (W1 requires media_url — admin upload separately)."""
+    """Create draft W1 (cue words only) / W2 / W3 writing items — no images."""
     if count < 1:
         raise ValueError("count must be >= 1")
     skill = await _require_skill(db, skill_id)
@@ -77,7 +108,7 @@ async def generate_writing_for_skill(
     payload = chat_json(
         SYSTEM_PROMPT,
         f"Unit: {primary.unit_title or skill.title}\n"
-        f"Generate exactly {count} writing tasks (mix w2 and w3).\n"
+        f"Generate exactly {count} writing tasks (prefer a mix of w1, w2, w3 when count>=2).\n"
         f"EXCERPT:\n{ctx['text']}\n",
     )
     raw = payload.get("tasks") if isinstance(payload, dict) else payload
@@ -112,6 +143,8 @@ async def generate_writing_for_skill(
                 stem=item["stem"],
                 passage=item.get("passage"),
                 passage_id=passage_id,
+                prompt_words=item.get("prompt_words"),
+                media_url=None,
                 task_brief=item.get("task_brief"),
                 options=None,
                 answer="",
@@ -130,10 +163,11 @@ async def generate_writing_for_skill(
 
 
 def writing_publishable(item: QuizQuestionDB) -> bool:
-    """W1 requires media_url before publish; W2/W3 need stem (+ passage for W2)."""
+    """W1 needs stem + two prompt_words (no image); W2/W3 as before."""
     part = item.toeic_part.value if item.toeic_part else None
     if part == "w1":
-        return bool(item.media_url) and bool(item.stem) and bool(item.prompt_words)
+        words = item.prompt_words if isinstance(item.prompt_words, list) else []
+        return bool(item.stem) and len(words) == 2
     if part == "w2":
         return bool(item.stem) and bool(item.passage or item.passage_id)
     if part == "w3":

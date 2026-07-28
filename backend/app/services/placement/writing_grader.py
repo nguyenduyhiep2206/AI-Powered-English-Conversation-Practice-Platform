@@ -10,7 +10,7 @@ _PART_MAX = {"w1": 3, "w2": 4, "w3": 5}
 
 _SYSTEM = """You are a TOEIC Writing rater. Score holistically using the official-style criteria.
 Return JSON only with keys: score (number), ai_scores (object of criterion→number), feedback (2-4 short English sentences).
-Part w1 (0-3): grammar, relevance to the picture (and use of prompt words when given).
+Part w1 (0-3): grammar and natural sentence; learner MUST use both prompt_words (word forms may change). No picture — ignore media.
 Part w2 (0-4): quality and variety of sentences, vocabulary, organization; check task_brief constraints.
 Part w3 (0-5): opinion supported with reasons/examples, grammar, vocabulary, organization.
 Be strict but fair. Empty or off-task responses score 0.
@@ -46,7 +46,6 @@ def grade_writing_task(
         f"stem: {stem}\n"
         f"task_brief: {task_brief or {}}\n"
         f"prompt_words: {prompt_words or []}\n"
-        f"media_url: {media_url or ''}\n"
         f"learner_text:\n{cleaned}\n"
     )
     try:
