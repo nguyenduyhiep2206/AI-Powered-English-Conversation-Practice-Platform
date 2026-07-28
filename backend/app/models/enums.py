@@ -184,6 +184,7 @@ class QuizQuestionTypeEnum(str, enum.Enum):
     mcq = "mcq"
     cloze = "cloze"
     fix_grammar = "fix_grammar"
+    writing = "writing"
 
 
 class QuizQuestionStatusEnum(str, enum.Enum):
@@ -199,6 +200,15 @@ class SkillTypeEnum(str, enum.Enum):
     functional = "functional"
 
 
+class ToeicPartEnum(str, enum.Enum):
+    r5 = "r5"
+    r6 = "r6"
+    r7 = "r7"
+    w1 = "w1"
+    w2 = "w2"
+    w3 = "w3"
+
+
 quiz_question_type_enum = SAEnum(
     QuizQuestionTypeEnum, name="quiz_question_type_enum", create_type=True
 )
@@ -206,6 +216,7 @@ quiz_question_status_enum = SAEnum(
     QuizQuestionStatusEnum, name="quiz_question_status_enum", create_type=True
 )
 skill_type_enum = SAEnum(SkillTypeEnum, name="skill_type_enum", create_type=True)
+toeic_part_enum = SAEnum(ToeicPartEnum, name="toeic_part_enum", create_type=True)
 
 
 class PlacementAttemptStatusEnum(str, enum.Enum):
