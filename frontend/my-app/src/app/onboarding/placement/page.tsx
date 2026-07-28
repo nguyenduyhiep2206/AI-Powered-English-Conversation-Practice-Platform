@@ -61,6 +61,12 @@ function buildReadingPages(
   const pages: ReadingPage[] = [];
   let i = 0;
   let r5Buffer: PlacementFormItem[] = [];
+  const seenIds = new Set<number>();
+  const uniqueItems = items.filter((it) => {
+    if (seenIds.has(it.id)) return false;
+    seenIds.add(it.id);
+    return true;
+  });
 
   const flushR5 = () => {
     while (r5Buffer.length > 0) {
@@ -74,8 +80,8 @@ function buildReadingPages(
     }
   };
 
-  while (i < items.length) {
-    const item = items[i];
+  while (i < uniqueItems.length) {
+    const item = uniqueItems[i];
     const part = item.toeic_part ?? "";
     if (part === "r5" || !item.passage_id) {
       r5Buffer.push(item);
@@ -85,8 +91,8 @@ function buildReadingPages(
     flushR5();
     const pid = item.passage_id;
     const group: PlacementFormItem[] = [];
-    while (i < items.length && items[i].passage_id === pid) {
-      group.push(items[i]);
+    while (i < uniqueItems.length && uniqueItems[i].passage_id === pid) {
+      group.push(uniqueItems[i]);
       i += 1;
     }
     pages.push({
@@ -430,8 +436,8 @@ export default function PlacementPage() {
           </p>
           {session.writing_feedback && session.writing_feedback.length > 0 && (
             <ul className="space-y-2 text-sm text-stone-700">
-              {session.writing_feedback.map((f) => (
-                <li key={f.item_id} className="border-l-2 border-stone-300 pl-3">
+              {session.writing_feedback.map((f, fi) => (
+                <li key={`${f.item_id}-${fi}`} className="border-l-2 border-stone-300 pl-3">
                   Task {f.item_id}: {f.score} — {f.feedback}
                 </li>
               ))}
@@ -505,15 +511,15 @@ export default function PlacementPage() {
             )}
             <ol className="space-y-6">
               {currentPage.items.map((item, idx) => (
-                <li key={item.id} className="space-y-2">
+                <li key={`${item.id}-${idx}`} className="space-y-2">
                   <p className="text-base font-medium">
                     <span className="mr-2 text-stone-400">{idx + 1}.</span>
                     {item.stem}
                   </p>
                   <div className="grid gap-2 sm:grid-cols-2">
-                    {(item.options ?? []).map((opt) => (
+                    {(item.options ?? []).map((opt, oi) => (
                       <button
-                        key={opt}
+                        key={`${item.id}-opt-${oi}-${opt}`}
                         type="button"
                         className={`rounded-md border px-3 py-2 text-left text-sm ${
                           readingAnswers[item.id] === opt

@@ -217,7 +217,15 @@ def _section_ends_at(minutes: int, now: datetime | None = None) -> datetime:
 
 
 def _collect_writing_feedback(snap: dict[str, Any]) -> list[dict[str, Any]]:
-    return list(snap.get("_writing_feedback") or [])
+    raw = list(snap.get("_writing_feedback") or [])
+    by_id: dict[int, dict[str, Any]] = {}
+    for row in raw:
+        try:
+            iid = int(row.get("item_id"))
+        except (TypeError, ValueError):
+            continue
+        by_id[iid] = row
+    return list(by_id.values())
 
 
 async def _load_saved_answers(db: AsyncSession, attempt_id: int) -> dict[str, str]:
@@ -427,13 +435,19 @@ async def submit_writing_answer(
         ai_feedback=graded.get("ai_feedback"),
     )
     feedback = list(snap.get("_writing_feedback") or [])
-    feedback.append(
-        {
-            "item_id": item_id,
-            "score": graded["score"],
-            "feedback": graded.get("ai_feedback"),
-        }
-    )
+    entry = {
+        "item_id": item_id,
+        "score": graded["score"],
+        "feedback": graded.get("ai_feedback"),
+    }
+    replaced = False
+    for i, row in enumerate(feedback):
+        if int(row.get("item_id") or -1) == item_id:
+            feedback[i] = entry
+            replaced = True
+            break
+    if not replaced:
+        feedback.append(entry)
     snap["_writing_feedback"] = feedback
     attempt.form_snapshot = snap
     flag_modified(attempt, "form_snapshot")

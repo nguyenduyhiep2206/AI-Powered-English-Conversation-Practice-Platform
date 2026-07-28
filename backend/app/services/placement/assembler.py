@@ -59,6 +59,8 @@ def assemble_form(
         for pid in used_passage_ids
         if pid in passages
     }
+    reading_items = _dedupe_by_id(reading_items)
+    writing_items = _dedupe_by_id(writing_items)
     return {
         "reading_items": [_public_item(i, include_answer=False) for i in reading_items],
         "writing_items": [_public_item(i, include_answer=False) for i in writing_items],
@@ -71,9 +73,22 @@ def assemble_form(
     }
 
 
+def _dedupe_by_id(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    seen: set[int] = set()
+    out: list[dict[str, Any]] = []
+    for item in items:
+        iid = int(item["id"])
+        if iid in seen:
+            continue
+        seen.add(iid)
+        out.append(item)
+    return out
+
+
 def _pick_flat(
     pool: list[dict[str, Any]], need: int, *, rng: Random
 ) -> tuple[list[dict[str, Any]], set[int]]:
+    pool = _dedupe_by_id(pool)
     if len(pool) < need:
         return pool, {int(i["passage_id"]) for i in pool if i.get("passage_id") is not None}
     chosen = rng.sample(pool, need)
@@ -84,6 +99,7 @@ def _pick_flat(
 def _pick_passage_groups(
     pool: list[dict[str, Any]], need: int, *, rng: Random
 ) -> tuple[list[dict[str, Any]], set[int]]:
+    pool = _dedupe_by_id(pool)
     by_passage: dict[Any, list[dict[str, Any]]] = defaultdict(list)
     orphans: list[dict[str, Any]] = []
     for item in pool:
@@ -114,8 +130,7 @@ def _pick_passage_groups(
     if len(selected) > need:
         # Prefer keeping full groups; trim from the end only if oversized
         selected = selected[:need]
-    return selected, pids
-
+    return _dedupe_by_id(selected), pids
 
 def _public_item(item: dict[str, Any], *, include_answer: bool) -> dict[str, Any]:
     out = {
