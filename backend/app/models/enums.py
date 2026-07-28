@@ -27,6 +27,12 @@ class GoalEnum(str, enum.Enum):
     travel              = "travel"
     ielts               = "ielts"
     business            = "business"
+    work                = "work"
+    school              = "school"
+    culture             = "culture"
+    family              = "family"
+    challenge           = "challenge"
+    other               = "other"
 
 
 class WeakPointEnum(str, enum.Enum):

@@ -28,6 +28,12 @@ GOAL_TO_CATEGORY: dict[GoalEnum, ScenarioCategoryEnum] = {
     GoalEnum.travel: ScenarioCategoryEnum.travel,
     GoalEnum.ielts: ScenarioCategoryEnum.custom,
     GoalEnum.business: ScenarioCategoryEnum.job_interview,
+    GoalEnum.work: ScenarioCategoryEnum.job_interview,
+    GoalEnum.school: ScenarioCategoryEnum.custom,
+    GoalEnum.culture: ScenarioCategoryEnum.small_talk,
+    GoalEnum.family: ScenarioCategoryEnum.small_talk,
+    GoalEnum.challenge: ScenarioCategoryEnum.small_talk,
+    GoalEnum.other: ScenarioCategoryEnum.small_talk,
 }
 
 DEFAULT_DIFFICULTY = 5
