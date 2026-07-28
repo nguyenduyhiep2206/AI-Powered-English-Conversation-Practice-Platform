@@ -6,6 +6,7 @@ export type SkillQuizQuestion = {
   question_type: string;
   stem: string;
   passage?: string | null;
+  toeic_part?: string | null;
   options?: string[] | null;
   difficulty?: string | null;
 };

@@ -1,60 +1,38 @@
-"""Adaptive placement sessions: start / resume / answer / retake."""
+"""TOEIC Reading + Writing placement sessions (timed form)."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from random import Random
 from typing import Any
 
+from sqlalchemy.orm.attributes import flag_modified
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.enums import PlacementAttemptStatusEnum
-from app.models.learning_skill import LearningSkillDB
+from app.models.enums import CEFRLevel, PlacementAttemptStatusEnum, QuizQuestionStatusEnum
 from app.models.placement_attempt import PlacementAttemptAnswerDB, PlacementAttemptDB
 from app.models.profile import UserProfileDB
+from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.mastery_service import apply_answer
-from app.services.placement.adaptive_engine import (
-    MAX_QUESTIONS,
-    MIN_QUESTIONS,
-    cefr_index,
-    map_ability_to_profile,
-    pick_next_candidate,
-    should_stop,
-    update_ability,
+from app.services.placement.assembler import BankTooSmallError, assemble_form
+from app.services.placement.bank import grade_placement_answer
+from app.services.placement.quotas import READING_MINUTES, WRITING_MINUTES
+from app.services.placement.score_map import (
+    blend_to_cefr,
+    placement_sublevel,
+    reading_scale,
+    writing_scale,
 )
-from app.services.placement.bank import (
-    PlacementCandidate,
-    grade_placement_answer,
-    load_published_candidates,
-    placement_public_dict,
-    row_to_candidate,
-)
+from app.services.placement.writing_grader import grade_writing_task
 from app.services.roadmap_assembler_service import clear_user_roadmap
 
-
-@dataclass(frozen=True)
-class _GradedAnswer:
-    question: PlacementCandidate
-    given_answer: str
-    is_correct: bool
-    ability_after: float
-    confidence_after: float
-    questions_asked: int
-
 RETAKE_COOLDOWN_DAYS = 7
-INSUFFICIENT_ADAPTIVE_BANK_MSG = (
-    "No published questions found for placement adaptive."
-)
-
-
-def progress_dict(asked: int) -> dict[str, int]:
-    return {
-        "asked": int(asked),
-        "min_questions": MIN_QUESTIONS,
-        "max_questions": MAX_QUESTIONS,
-    }
+INSUFFICIENT_BANK_MSG = "Placement bank not ready: not enough published TOEIC items."
+# Back-compat alias for API mapping
+INSUFFICIENT_ADAPTIVE_BANK_MSG = INSUFFICIENT_BANK_MSG
 
 
 def retake_allowed(
@@ -91,12 +69,6 @@ async def _require_survey_done(db: AsyncSession, user_id: int) -> UserProfileDB:
 
 
 async def _get_in_progress(db: AsyncSession, user_id: int) -> PlacementAttemptDB | None:
-    """Return the preferred in-progress attempt (most questions, then newest).
-
-    Callers must tolerate legacy duplicates: use ``_abandon_in_progress`` to
-    clear extras. Never use ``scalar_one_or_none`` here — concurrent starts can
-    leave more than one ``in_progress`` row per user.
-    """
     return (
         await db.execute(
             select(PlacementAttemptDB)
@@ -104,33 +76,22 @@ async def _get_in_progress(db: AsyncSession, user_id: int) -> PlacementAttemptDB
                 PlacementAttemptDB.user_id == user_id,
                 PlacementAttemptDB.status == PlacementAttemptStatusEnum.in_progress,
             )
-            .order_by(
-                PlacementAttemptDB.questions_asked.desc(),
-                PlacementAttemptDB.started_at.desc(),
-                PlacementAttemptDB.id.desc(),
-            )
+            .order_by(PlacementAttemptDB.started_at.desc(), PlacementAttemptDB.id.desc())
             .limit(1)
         )
     ).scalar_one_or_none()
 
 
 async def _abandon_in_progress(
-    db: AsyncSession,
-    user_id: int,
-    *,
-    keep_id: int | None = None,
+    db: AsyncSession, user_id: int, *, keep_id: int | None = None
 ) -> None:
-    """Mark every in-progress attempt abandoned, optionally keeping one."""
     stmt = (
         update(PlacementAttemptDB)
         .where(
             PlacementAttemptDB.user_id == user_id,
             PlacementAttemptDB.status == PlacementAttemptStatusEnum.in_progress,
         )
-        .values(
-            status=PlacementAttemptStatusEnum.abandoned,
-            current_question_id=None,
-        )
+        .values(status=PlacementAttemptStatusEnum.abandoned, current_question_id=None)
     )
     if keep_id is not None:
         stmt = stmt.where(PlacementAttemptDB.id != keep_id)
@@ -138,7 +99,7 @@ async def _abandon_in_progress(
 
 
 async def _last_completed_at(db: AsyncSession, user_id: int) -> datetime | None:
-    row = (
+    return (
         await db.execute(
             select(PlacementAttemptDB.completed_at)
             .where(
@@ -149,7 +110,6 @@ async def _last_completed_at(db: AsyncSession, user_id: int) -> datetime | None:
             .limit(1)
         )
     ).scalar_one_or_none()
-    return row
 
 
 def _retake_allowed_for_profile(
@@ -189,150 +149,107 @@ async def get_retake_status(db: AsyncSession, user_id: int) -> dict[str, Any]:
     }
 
 
-async def _used_skill_ids(db: AsyncSession, attempt_id: int) -> set[int]:
-    rows = (
-        await db.execute(
-            select(PlacementAttemptAnswerDB.skill_id).where(
-                PlacementAttemptAnswerDB.attempt_id == attempt_id
+def _question_to_item(q: QuizQuestionDB) -> dict[str, Any]:
+    part = q.toeic_part.value if q.toeic_part else None
+    cefr = q.cefr_level.value if q.cefr_level else None
+    qtype = q.question_type.value if hasattr(q.question_type, "value") else str(q.question_type)
+    return {
+        "id": int(q.id),
+        "toeic_part": part,
+        "stem": q.stem,
+        "options": q.options,
+        "answer": q.answer,
+        "skill_id": int(q.skill_id) if q.skill_id else None,
+        "cefr_level": cefr,
+        "passage_id": int(q.passage_id) if q.passage_id else None,
+        "prompt_words": q.prompt_words,
+        "media_url": q.media_url,
+        "task_brief": q.task_brief,
+        "question_type": qtype,
+        "passage": q.passage,
+    }
+
+
+async def _load_published_toeic_pool(
+    db: AsyncSession,
+) -> tuple[dict[str, list[dict[str, Any]]], dict[int, dict[str, Any]]]:
+    rows = list(
+        (
+            await db.execute(
+                select(QuizQuestionDB).where(
+                    QuizQuestionDB.status == QuizQuestionStatusEnum.published,
+                    QuizQuestionDB.toeic_part.is_not(None),
+                )
             )
         )
-    ).scalars().all()
-    return {int(s) for s in rows}
-
-
-def _seen_ids(attempt: PlacementAttemptDB) -> set[int]:
-    raw = attempt.seen_question_ids or []
-    return {int(x) for x in raw}
-
-
-async def _serve_next_question(
-    db: AsyncSession,
-    attempt: PlacementAttemptDB,
-) -> PlacementCandidate:
-    candidates = await load_published_candidates(db)
-    used = await _used_skill_ids(db, int(attempt.id)) if attempt.id else set()
-    try:
-        picked = pick_next_candidate(
-            candidates,
-            ability_index=float(attempt.ability_index),
-            seen_ids=_seen_ids(attempt),
-            used_skill_ids=used,
-        )
-    except ValueError as exc:
-        raise ValueError(INSUFFICIENT_ADAPTIVE_BANK_MSG) from exc
-
-    seen = list(_seen_ids(attempt))
-    if int(picked.id) not in seen:
-        seen.append(int(picked.id))
-    attempt.seen_question_ids = seen
-    attempt.current_question_id = int(picked.id)
-    return picked
-
-
-async def _load_question_candidate(
-    db: AsyncSession, question_id: int
-) -> PlacementCandidate:
-    row = (
-        await db.execute(
-            select(QuizQuestionDB, LearningSkillDB)
-            .join(LearningSkillDB, LearningSkillDB.id == QuizQuestionDB.skill_id)
-            .where(QuizQuestionDB.id == question_id)
-        )
-    ).one_or_none()
-    if row is None:
-        raise ValueError("Câu hỏi không tồn tại")
-    question, skill = row
-    return row_to_candidate(question, skill)
-
-
-def _mid_payload(attempt: PlacementAttemptDB, question: PlacementCandidate) -> dict[str, Any]:
-    return {
-        "done": False,
-        "attempt_id": int(attempt.id),
-        "question": placement_public_dict(question),
-        "progress": progress_dict(int(attempt.questions_asked)),
-    }
-
-
-def _done_payload(attempt: PlacementAttemptDB, profile: UserProfileDB) -> dict[str, Any]:
-    level = profile.current_level
-    return {
-        "done": True,
-        "attempt_id": int(attempt.id),
-        "placement_score": int(profile.placement_score or 0),
-        "current_level": level.value if hasattr(level, "value") else str(level),
-        "questions_asked": int(attempt.questions_asked),
-        "onboarding_complete": True,
-    }
-
-
-async def _session_payload(
-    db: AsyncSession, attempt: PlacementAttemptDB, *, done: bool = False
-) -> dict[str, Any]:
-    if done:
-        profile = await _get_profile(db, int(attempt.user_id))
-        if profile is None:
-            raise RuntimeError("Profile missing")
-        return _done_payload(attempt, profile)
-
-    qid = attempt.current_question_id
-    if qid is None:
-        raise RuntimeError("Attempt thiếu current_question_id")
-    question = await _load_question_candidate(db, int(qid))
-    return _mid_payload(attempt, question)
-
-
-async def _create_attempt(db: AsyncSession, profile: UserProfileDB) -> PlacementAttemptDB:
-    attempt = PlacementAttemptDB(
-        user_id=int(profile.user_id),
-        status=PlacementAttemptStatusEnum.in_progress,
-        ability_index=1.0,
-        confidence=0.0,
-        questions_asked=0,
-        seen_question_ids=[],
-        current_question_id=None,
-        weak_point_bias=None,
+        .scalars()
+        .all()
     )
-    db.add(attempt)
-    await db.flush()
-    return attempt
+    by_part: dict[str, list[dict[str, Any]]] = defaultdict(list)
+    passage_ids: set[int] = set()
+    for q in rows:
+        item = _question_to_item(q)
+        if not item["toeic_part"]:
+            continue
+        by_part[item["toeic_part"]].append(item)
+        if item["passage_id"]:
+            passage_ids.add(item["passage_id"])
+
+    passages: dict[int, dict[str, Any]] = {}
+    if passage_ids:
+        prow = (
+            await db.execute(select(QuizPassageDB).where(QuizPassageDB.id.in_(passage_ids)))
+        ).scalars().all()
+        for p in prow:
+            part = p.toeic_part.value if p.toeic_part else None
+            passages[int(p.id)] = {
+                "id": int(p.id),
+                "body": p.body,
+                "toeic_part": part,
+                "media_url": p.media_url,
+            }
+    return by_part, passages
 
 
-async def get_current_session(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
-    await _require_survey_done(db, user_id)
-    attempt = await _get_in_progress(db, user_id)
-    if attempt is None:
-        return None
-    await _abandon_in_progress(db, user_id, keep_id=int(attempt.id))
-    await db.commit()
-    await db.refresh(attempt)
-    return await _session_payload(db, attempt, done=False)
+def _section_ends_at(minutes: int, now: datetime | None = None) -> datetime:
+    current = now or datetime.now(timezone.utc)
+    return current + timedelta(minutes=minutes)
 
 
-async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, Any]:
-    profile = await _require_survey_done(db, user_id)
-    current = await _get_in_progress(db, user_id)
-    if current is not None:
-        await _abandon_in_progress(db, user_id, keep_id=int(current.id))
-        await db.commit()
-        await db.refresh(current)
-        return await _session_payload(db, current, done=False)
+def _public_session(attempt: PlacementAttemptDB, *, done: bool = False) -> dict[str, Any]:
+    snap = attempt.form_snapshot or {}
+    public_snap = {
+        "reading_items": snap.get("reading_items") or [],
+        "writing_items": snap.get("writing_items") or [],
+        "passages": snap.get("passages") or {},
+    }
+    return {
+        "done": done,
+        "attempt_id": int(attempt.id),
+        "section": attempt.section,
+        "section_ends_at": attempt.section_ends_at,
+        "form": public_snap,
+        "reading_raw": attempt.reading_raw,
+        "reading_scale": attempt.reading_scale,
+        "writing_raw": attempt.writing_raw,
+        "writing_scale": attempt.writing_scale,
+        "placement_score": attempt.result_sublevel,
+        "current_level": (
+            attempt.result_level.value
+            if attempt.result_level and hasattr(attempt.result_level, "value")
+            else attempt.result_level
+        ),
+        "writing_feedback": _collect_writing_feedback(snap),
+        "onboarding_complete": done,
+    }
 
-    if profile.placement_score is not None:
-        status = await get_retake_status(db, user_id)
-        if not status["allowed"]:
-            raise RuntimeError("Chưa đến lúc làm lại placement")
 
-    # Always clear leftovers (including race duplicates) before creating.
-    await _abandon_in_progress(db, user_id)
-    attempt = await _create_attempt(db, profile)
-    question = await _serve_next_question(db, attempt)
-    await db.commit()
-    await db.refresh(attempt)
-    return _mid_payload(attempt, question)
+def _collect_writing_feedback(snap: dict[str, Any]) -> list[dict[str, Any]]:
+    # Filled after answers exist — session payload may enrich later
+    return list(snap.get("_writing_feedback") or [])
 
 
-async def _require_in_progress_owned(
+async def _require_owner_attempt(
     db: AsyncSession, user_id: int, attempt_id: int
 ) -> PlacementAttemptDB:
     attempt = (
@@ -340,141 +257,372 @@ async def _require_in_progress_owned(
             select(PlacementAttemptDB).where(PlacementAttemptDB.id == attempt_id)
         )
     ).scalar_one_or_none()
-    if attempt is None:
-        raise ValueError("Attempt không tồn tại")
-    if int(attempt.user_id) != int(user_id):
-        raise PermissionError("Attempt không thuộc user")
+    if attempt is None or int(attempt.user_id) != user_id:
+        raise PermissionError("Placement attempt không hợp lệ")
     if attempt.status != PlacementAttemptStatusEnum.in_progress:
-        raise RuntimeError("Attempt không còn in_progress")
+        raise RuntimeError("Placement attempt không còn in_progress")
     return attempt
 
 
-def _require_current_question(attempt: PlacementAttemptDB, question_id: int) -> None:
-    if attempt.current_question_id is None or int(attempt.current_question_id) != int(
-        question_id
-    ):
-        raise ValueError("question_id không khớp câu hiện tại")
+def _now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
-async def _grade_current_answer(
-    db: AsyncSession,
-    attempt: PlacementAttemptDB,
-    answer: str,
-) -> _GradedAnswer:
-    question = await _load_question_candidate(db, int(attempt.current_question_id))
-    ok = grade_placement_answer(question.answer, answer)
-    ability, confidence = update_ability(
-        float(attempt.ability_index),
-        float(attempt.confidence),
-        item_level=float(cefr_index(question.cefr_level)),
-        correct=ok,
+def _timed_out(attempt: PlacementAttemptDB, now: datetime | None = None) -> bool:
+    ends = attempt.section_ends_at
+    if ends is None:
+        return False
+    current = now or _now()
+    if ends.tzinfo is None:
+        ends = ends.replace(tzinfo=timezone.utc)
+    return current >= ends
+
+
+async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, Any]:
+    profile = await _require_survey_done(db, user_id)
+    existing = await _get_in_progress(db, user_id)
+    if existing is not None:
+        await _abandon_in_progress(db, user_id, keep_id=int(existing.id))
+        await db.commit()
+        return _public_session(existing)
+
+    now = _now()
+    last_done = await _last_completed_at(db, user_id)
+    if profile.placement_score is not None and not retake_allowed(last_done, now):
+        raise RuntimeError("Chưa đến hạn làm lại placement")
+
+    by_part, passages = await _load_published_toeic_pool(db)
+    try:
+        snapshot = assemble_form(by_part, passages, rng=Random())
+    except BankTooSmallError as exc:
+        raise ValueError(INSUFFICIENT_BANK_MSG) from exc
+
+    attempt = PlacementAttemptDB(
+        user_id=user_id,
+        status=PlacementAttemptStatusEnum.in_progress,
+        form_snapshot=snapshot,
+        section="reading",
+        section_ends_at=_section_ends_at(READING_MINUTES, now),
+        questions_asked=0,
+        seen_question_ids=[],
     )
-    return _GradedAnswer(
-        question=question,
-        given_answer=str(answer),
-        is_correct=ok,
-        ability_after=ability,
-        confidence_after=confidence,
-        questions_asked=int(attempt.questions_asked) + 1,
-    )
+    db.add(attempt)
+    await db.commit()
+    await db.refresh(attempt)
+    return _public_session(attempt)
 
 
-def _apply_graded_to_attempt(attempt: PlacementAttemptDB, graded: _GradedAnswer) -> None:
-    attempt.ability_index = graded.ability_after
-    attempt.confidence = graded.confidence_after
-    attempt.questions_asked = graded.questions_asked
+async def get_current_session(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
+    await _require_survey_done(db, user_id)
+    attempt = await _get_in_progress(db, user_id)
+    if attempt is None:
+        return None
+    return _public_session(attempt)
 
 
-def _record_answer(
+async def submit_reading_answers(
     db: AsyncSession,
-    attempt: PlacementAttemptDB,
-    graded: _GradedAnswer,
-) -> None:
-    q = graded.question
-    db.add(
-        PlacementAttemptAnswerDB(
+    user_id: int,
+    attempt_id: int,
+    answers: list[dict[str, Any]],
+) -> dict[str, Any]:
+    attempt = await _require_owner_attempt(db, user_id, attempt_id)
+    if attempt.section != "reading":
+        raise ValueError("Không còn ở section Reading")
+    snap = dict(attempt.form_snapshot or {})
+    answer_key = snap.get("_answers") or {}
+    reading_ids = set(snap.get("_reading_ids") or [])
+    items = snap.get("_items") or {}
+
+    for row in answers:
+        qid = int(row["item_id"])
+        given = str(row.get("given_answer") or "")
+        if qid not in reading_ids:
+            raise ValueError(f"item_id {qid} không thuộc đề Reading")
+        expected = str(answer_key.get(str(qid)) or "")
+        correct = grade_placement_answer(expected, given)
+        meta = items.get(str(qid)) or {}
+        await _upsert_answer(
+            db,
             attempt_id=int(attempt.id),
-            question_id=int(q.id),
-            skill_id=int(q.skill_id),
-            cefr_level=q.cefr_level,
-            given_answer=graded.given_answer,
-            is_correct=graded.is_correct,
-            ability_after=graded.ability_after,
-            confidence_after=graded.confidence_after,
+            question_id=qid,
+            skill_id=meta.get("skill_id"),
+            cefr_level=meta.get("cefr_level"),
+            given_answer=given,
+            is_correct=correct,
+            score=1.0 if correct else 0.0,
         )
+
+    await db.commit()
+    await db.refresh(attempt)
+    return _public_session(attempt)
+
+
+async def submit_writing_answer(
+    db: AsyncSession,
+    user_id: int,
+    attempt_id: int,
+    item_id: int,
+    text: str,
+) -> dict[str, Any]:
+    attempt = await _require_owner_attempt(db, user_id, attempt_id)
+    if attempt.section != "writing":
+        raise ValueError("Chưa vào section Writing")
+    snap = dict(attempt.form_snapshot or {})
+    writing_ids = set(snap.get("_writing_ids") or [])
+    if item_id not in writing_ids:
+        raise ValueError(f"item_id {item_id} không thuộc đề Writing")
+    meta = (snap.get("_items") or {}).get(str(item_id)) or {}
+    part = str(meta.get("toeic_part") or "")
+    graded = grade_writing_task(
+        part=part,
+        stem=str(meta.get("stem") or ""),
+        task_brief=meta.get("task_brief"),
+        prompt_words=meta.get("prompt_words"),
+        media_url=meta.get("media_url"),
+        text=text,
     )
+    await _upsert_answer(
+        db,
+        attempt_id=int(attempt.id),
+        question_id=item_id,
+        skill_id=meta.get("skill_id"),
+        cefr_level=meta.get("cefr_level"),
+        given_answer=text,
+        is_correct=None,
+        score=float(graded["score"]),
+        ai_scores=graded.get("ai_scores"),
+        ai_feedback=graded.get("ai_feedback"),
+    )
+    feedback = list(snap.get("_writing_feedback") or [])
+    feedback.append(
+        {
+            "item_id": item_id,
+            "score": graded["score"],
+            "feedback": graded.get("ai_feedback"),
+        }
+    )
+    snap["_writing_feedback"] = feedback
+    attempt.form_snapshot = snap
+    flag_modified(attempt, "form_snapshot")
+    await db.commit()
+    await db.refresh(attempt)
+    return _public_session(attempt)
 
 
-async def _seed_attempt_mastery(
-    db: AsyncSession, user_id: int, attempt_id: int
+async def advance_section(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
+    attempt = await _require_owner_attempt(db, user_id, attempt_id)
+    if attempt.section != "reading":
+        raise ValueError("Chỉ advance từ Reading sang Writing")
+    snap = attempt.form_snapshot or {}
+    reading_ids = list(snap.get("_reading_ids") or [])
+    answered = await _answered_question_ids(db, int(attempt.id))
+    if not _timed_out(attempt) and not set(reading_ids).issubset(answered):
+        raise ValueError("Chưa trả lời hết Reading (hoặc chờ hết giờ)")
+
+    await _fill_missing_reading_wrong(db, attempt, reading_ids, answered)
+    correct = await _count_reading_correct(db, int(attempt.id))
+    attempt.reading_raw = correct
+    attempt.reading_scale = reading_scale(correct, total=len(reading_ids) or 100)
+    attempt.section = "writing"
+    attempt.section_ends_at = _section_ends_at(WRITING_MINUTES)
+    await db.commit()
+    await db.refresh(attempt)
+    return _public_session(attempt)
+
+
+async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
+    attempt = await _require_owner_attempt(db, user_id, attempt_id)
+    if attempt.section == "reading":
+        raise ValueError("Hãy advance sang Writing trước khi complete")
+    if attempt.section == "done":
+        return _public_session(attempt, done=True)
+
+    snap = attempt.form_snapshot or {}
+    writing_ids = list(snap.get("_writing_ids") or [])
+    answered = await _answered_question_ids(db, int(attempt.id))
+    if not _timed_out(attempt) and not set(writing_ids).issubset(answered):
+        raise ValueError("Chưa nộp hết Writing (hoặc chờ hết giờ)")
+
+    await _fill_missing_writing_zero(db, attempt, writing_ids, answered)
+    raw = await _sum_writing_scores(db, int(attempt.id), writing_ids)
+    attempt.writing_raw = raw
+    attempt.writing_scale = writing_scale(raw)
+
+    r_scale = int(attempt.reading_scale or reading_scale(int(attempt.reading_raw or 0)))
+    w_scale = int(attempt.writing_scale or 0)
+    cefr = blend_to_cefr(r_scale, w_scale)
+    sub = placement_sublevel(r_scale, w_scale, cefr)
+    attempt.result_level = CEFRLevel(cefr)
+    attempt.result_sublevel = sub
+    attempt.section = "done"
+    attempt.status = PlacementAttemptStatusEnum.completed
+    attempt.completed_at = _now()
+
+    profile = await _require_survey_done(db, user_id)
+    was_retake = profile.placement_score is not None
+    profile.current_level = CEFRLevel(cefr)
+    profile.placement_score = sub
+    if was_retake:
+        await clear_user_roadmap(db, user_id)
+
+    await _seed_reading_mastery(db, user_id, int(attempt.id))
+    await db.commit()
+    await db.refresh(attempt)
+    return _public_session(attempt, done=True)
+
+
+async def _upsert_answer(
+    db: AsyncSession,
+    *,
+    attempt_id: int,
+    question_id: int,
+    skill_id: int | None,
+    cefr_level: str | None,
+    given_answer: str,
+    is_correct: bool | None,
+    score: float | None = None,
+    ai_scores: dict | None = None,
+    ai_feedback: str | None = None,
 ) -> None:
-    answers = (
+    existing = (
         await db.execute(
             select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id,
+                PlacementAttemptAnswerDB.question_id == question_id,
+            )
+        )
+    ).scalar_one_or_none()
+    level = None
+    if cefr_level:
+        try:
+            level = CEFRLevel(cefr_level)
+        except ValueError:
+            level = None
+    if existing is None:
+        db.add(
+            PlacementAttemptAnswerDB(
+                attempt_id=attempt_id,
+                question_id=question_id,
+                skill_id=skill_id,
+                cefr_level=level,
+                given_answer=given_answer,
+                is_correct=is_correct,
+                score=score,
+                ai_scores=ai_scores,
+                ai_feedback=ai_feedback,
+            )
+        )
+    else:
+        existing.given_answer = given_answer
+        existing.is_correct = is_correct
+        existing.score = score
+        existing.ai_scores = ai_scores
+        existing.ai_feedback = ai_feedback
+
+
+async def _answered_question_ids(db: AsyncSession, attempt_id: int) -> set[int]:
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB.question_id).where(
                 PlacementAttemptAnswerDB.attempt_id == attempt_id
             )
         )
     ).scalars().all()
-    for ans in answers:
-        await apply_answer(db, user_id, int(ans.skill_id), bool(ans.is_correct))
+    return {int(x) for x in rows}
 
 
-async def _complete_attempt(
+async def _fill_missing_reading_wrong(
     db: AsyncSession,
-    profile: UserProfileDB,
     attempt: PlacementAttemptDB,
+    reading_ids: list[int],
+    answered: set[int],
 ) -> None:
-    level, sub = map_ability_to_profile(float(attempt.ability_index))
-    attempt.status = PlacementAttemptStatusEnum.completed
-    attempt.completed_at = datetime.now(timezone.utc)
-    attempt.current_question_id = None
-    attempt.result_level = level
-    attempt.result_sublevel = sub
-    profile.current_level = level
-    profile.placement_score = sub
-    # Drop any concurrent in_progress leftovers so resume does not reopen them.
-    await _abandon_in_progress(db, int(profile.user_id))
-    # Re-eval / first placement both start from a fresh path after assemble.
-    await clear_user_roadmap(db, int(profile.user_id))
-    await db.commit()
-    await _seed_attempt_mastery(db, int(profile.user_id), int(attempt.id))
+    snap = attempt.form_snapshot or {}
+    items = snap.get("_items") or {}
+    for qid in reading_ids:
+        if qid in answered:
+            continue
+        meta = items.get(str(qid)) or {}
+        await _upsert_answer(
+            db,
+            attempt_id=int(attempt.id),
+            question_id=qid,
+            skill_id=meta.get("skill_id"),
+            cefr_level=meta.get("cefr_level"),
+            given_answer="",
+            is_correct=False,
+            score=0.0,
+        )
 
 
-async def _finish_session(
+async def _fill_missing_writing_zero(
     db: AsyncSession,
-    profile: UserProfileDB,
     attempt: PlacementAttemptDB,
-) -> dict[str, Any]:
-    await _complete_attempt(db, profile, attempt)
-    await db.refresh(profile)
-    await db.refresh(attempt)
-    return _done_payload(attempt, profile)
+    writing_ids: list[int],
+    answered: set[int],
+) -> None:
+    snap = attempt.form_snapshot or {}
+    items = snap.get("_items") or {}
+    for qid in writing_ids:
+        if qid in answered:
+            continue
+        meta = items.get(str(qid)) or {}
+        await _upsert_answer(
+            db,
+            attempt_id=int(attempt.id),
+            question_id=qid,
+            skill_id=meta.get("skill_id"),
+            cefr_level=meta.get("cefr_level"),
+            given_answer="",
+            is_correct=None,
+            score=0.0,
+            ai_feedback="No response submitted.",
+        )
 
 
-async def _advance_session(
-    db: AsyncSession,
-    profile: UserProfileDB,
-    attempt: PlacementAttemptDB,
-) -> dict[str, Any]:
-    next_q = await _serve_next_question(db, attempt)
-    await db.commit()
-    await db.refresh(attempt)
-    return _mid_payload(attempt, next_q)
+async def _count_reading_correct(db: AsyncSession, attempt_id: int) -> int:
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id,
+                PlacementAttemptAnswerDB.is_correct.is_(True),
+            )
+        )
+    ).scalars().all()
+    return len(list(rows))
 
 
-async def submit_session_answer(
-    db: AsyncSession,
-    user_id: int,
-    attempt_id: int,
-    question_id: int,
-    answer: str,
-) -> dict[str, Any]:
-    profile = await _require_survey_done(db, user_id)
-    attempt = await _require_in_progress_owned(db, user_id, attempt_id)
-    _require_current_question(attempt, question_id)
-    graded = await _grade_current_answer(db, attempt, answer)
-    _apply_graded_to_attempt(attempt, graded)
-    _record_answer(db, attempt, graded)
-    if should_stop(graded.questions_asked, graded.confidence_after):
-        return await _finish_session(db, profile, attempt)
-    return await _advance_session(db, profile, attempt)
+async def _sum_writing_scores(
+    db: AsyncSession, attempt_id: int, writing_ids: list[int]
+) -> float:
+    if not writing_ids:
+        return 0.0
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id,
+                PlacementAttemptAnswerDB.question_id.in_(writing_ids),
+            )
+        )
+    ).scalars().all()
+    return float(sum(float(r.score or 0) for r in rows))
+
+
+async def _seed_reading_mastery(db: AsyncSession, user_id: int, attempt_id: int) -> None:
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id,
+                PlacementAttemptAnswerDB.is_correct.is_(True),
+                PlacementAttemptAnswerDB.skill_id.is_not(None),
+            )
+        )
+    ).scalars().all()
+    for row in rows:
+        await apply_answer(db, user_id, int(row.skill_id), correct=True)
+
+
+# Deprecated adaptive name kept for any leftover imports during migration
+async def submit_session_answer(*_args, **_kwargs) -> dict[str, Any]:
+    raise RuntimeError("Adaptive placement answers are removed; use reading/writing endpoints")

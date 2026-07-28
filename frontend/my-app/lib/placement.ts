@@ -1,30 +1,38 @@
 import { authFetch, extractErrorMessage } from "@/lib/api";
 
-export type PlacementQuestion = {
+export type PlacementFormItem = {
   id: number;
-  skill_id: number;
-  cefr_level: string;
-  question_type: string;
-  stem: string;
-  passage?: string | null;
+  toeic_part?: string | null;
+  stem?: string | null;
   options?: string[] | null;
-  difficulty: string;
+  skill_id?: number | null;
+  cefr_level?: string | null;
+  passage_id?: number | null;
+  prompt_words?: string[] | null;
+  media_url?: string | null;
+  task_brief?: Record<string, unknown> | null;
+  question_type?: string | null;
 };
 
-export type PlacementProgress = {
-  asked: number;
-  min_questions: number;
-  max_questions: number;
+export type PlacementForm = {
+  reading_items: PlacementFormItem[];
+  writing_items: PlacementFormItem[];
+  passages: Record<string, { id?: number; body?: string; media_url?: string | null }>;
 };
 
 export type PlacementSession = {
   done: boolean;
   attempt_id: number;
-  question?: PlacementQuestion | null;
-  progress?: PlacementProgress | null;
+  section?: string | null;
+  section_ends_at?: string | null;
+  form?: PlacementForm | null;
+  reading_raw?: number | null;
+  reading_scale?: number | null;
+  writing_raw?: number | null;
+  writing_scale?: number | null;
   placement_score?: number | null;
   current_level?: string | null;
-  questions_asked?: number | null;
+  writing_feedback?: Array<{ item_id: number; score: number; feedback?: string }> | null;
   onboarding_complete?: boolean | null;
 };
 
@@ -43,7 +51,6 @@ async function parseSession(res: Response, fallback: string): Promise<PlacementS
   return body.data;
 }
 
-/** Dedup concurrent POSTs (double-click / React Strict Mode remount). */
 let startSessionInFlight: Promise<PlacementSession> | null = null;
 
 export async function startPlacementSession(): Promise<PlacementSession> {
@@ -65,18 +72,48 @@ export async function getCurrentPlacementSession(): Promise<PlacementSession | n
   return parseSession(res, "Failed to load placement session");
 }
 
-export async function submitPlacementAnswer(
+export async function submitReadingAnswers(
   attemptId: number,
-  payload: { question_id: number; answer: string },
+  answers: Array<{ item_id: number; given_answer: string }>,
 ): Promise<PlacementSession> {
   const res = await authFetch(
-    `/api/v1/onboarding/placement/sessions/${attemptId}/answers`,
+    `/api/v1/onboarding/placement/sessions/${attemptId}/reading-answers`,
+    {
+      method: "POST",
+      body: JSON.stringify({ answers }),
+    },
+  );
+  return parseSession(res, "Failed to submit reading answers");
+}
+
+export async function submitWritingAnswer(
+  attemptId: number,
+  payload: { item_id: number; text: string },
+): Promise<PlacementSession> {
+  const res = await authFetch(
+    `/api/v1/onboarding/placement/sessions/${attemptId}/writing-answers`,
     {
       method: "POST",
       body: JSON.stringify(payload),
     },
   );
-  return parseSession(res, "Failed to submit placement answer");
+  return parseSession(res, "Failed to submit writing answer");
+}
+
+export async function advancePlacementSection(attemptId: number): Promise<PlacementSession> {
+  const res = await authFetch(
+    `/api/v1/onboarding/placement/sessions/${attemptId}/advance-section`,
+    { method: "POST" },
+  );
+  return parseSession(res, "Failed to advance section");
+}
+
+export async function completePlacementSession(attemptId: number): Promise<PlacementSession> {
+  const res = await authFetch(
+    `/api/v1/onboarding/placement/sessions/${attemptId}/complete`,
+    { method: "POST" },
+  );
+  return parseSession(res, "Failed to complete placement");
 }
 
 export async function fetchRetakeStatus(): Promise<PlacementRetakeStatus> {

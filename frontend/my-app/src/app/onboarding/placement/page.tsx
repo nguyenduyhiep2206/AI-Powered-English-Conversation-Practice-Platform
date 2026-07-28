@@ -1,37 +1,75 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
+import { ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
 import {
+  advancePlacementSection,
+  completePlacementSession,
   fetchRetakeStatus,
   getCurrentPlacementSession,
   startPlacementSession,
-  submitPlacementAnswer,
-  type PlacementProgress,
-  type PlacementQuestion,
+  submitReadingAnswers,
+  submitWritingAnswer,
+  type PlacementFormItem,
   type PlacementSession,
 } from "@/lib/placement";
 import { assembleRoadmap } from "@/lib/roadmap";
 
+function useCountdown(endsAt: string | null | undefined) {
+  const [left, setLeft] = useState<number | null>(null);
+  useEffect(() => {
+    if (!endsAt) {
+      setLeft(null);
+      return;
+    }
+    const tick = () => {
+      const ms = new Date(endsAt).getTime() - Date.now();
+      setLeft(Math.max(0, Math.floor(ms / 1000)));
+    };
+    tick();
+    const id = window.setInterval(tick, 1000);
+    return () => window.clearInterval(id);
+  }, [endsAt]);
+  return left;
+}
+
+function formatTime(sec: number | null) {
+  if (sec == null) return "--:--";
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+
 export default function PlacementPage() {
   const router = useRouter();
-  const [attemptId, setAttemptId] = useState<number | null>(null);
-  const [question, setQuestion] = useState<PlacementQuestion | null>(null);
-  const [progress, setProgress] = useState<PlacementProgress | null>(null);
-  const [answer, setAnswer] = useState("");
+  const [session, setSession] = useState<PlacementSession | null>(null);
+  const [readingAnswers, setReadingAnswers] = useState<Record<number, string>>({});
+  const [readingIndex, setReadingIndex] = useState(0);
+  const [writingIndex, setWritingIndex] = useState(0);
+  const [writingText, setWritingText] = useState("");
   const [loading, setLoading] = useState(true);
-  const [submitting, setSubmitting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [assembling, setAssembling] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [result, setResult] = useState<PlacementSession | null>(null);
   const loadStarted = useRef(false);
+  const left = useCountdown(session?.section_ends_at);
+
+  const readingItems = session?.form?.reading_items ?? [];
+  const writingItems = session?.form?.writing_items ?? [];
+  const passages = session?.form?.passages ?? {};
+  const currentReading = readingItems[readingIndex] as PlacementFormItem | undefined;
+  const currentWriting = writingItems[writingIndex] as PlacementFormItem | undefined;
+
+  const passageBody = useMemo(() => {
+    const item = session?.section === "writing" ? currentWriting : currentReading;
+    if (!item?.passage_id) return null;
+    return passages[String(item.passage_id)]?.body ?? null;
+  }, [session?.section, currentReading, currentWriting, passages]);
 
   useEffect(() => {
     if (loadStarted.current) return;
@@ -44,7 +82,6 @@ export default function PlacementPage() {
           router.replace("/onboarding");
           return;
         }
-
         const retake = await fetchRetakeStatus().catch(() => null);
         const canEnter =
           !status.placement_done ||
@@ -54,19 +91,9 @@ export default function PlacementPage() {
           router.replace("/dashboard");
           return;
         }
-
-        let session = await getCurrentPlacementSession();
-        if (!session) {
-          session = await startPlacementSession();
-        }
-        if (session.done) {
-          setResult(session);
-          return;
-        }
-        setAttemptId(session.attempt_id);
-        setQuestion(session.question ?? null);
-        setProgress(session.progress ?? null);
-        setAnswer("");
+        let next = await getCurrentPlacementSession();
+        if (!next) next = await startPlacementSession();
+        setSession(next);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load placement");
       } finally {
@@ -76,44 +103,89 @@ export default function PlacementPage() {
     load();
   }, [router]);
 
-  async function handleSubmitAnswer() {
-    if (!attemptId || !question || !answer.trim()) {
-      setError("Please answer before continuing");
+  async function saveCurrentReadingAnswer() {
+    if (!session || !currentReading) return;
+    const given = readingAnswers[currentReading.id] ?? "";
+    if (!given) {
+      setError("Select an answer first");
       return;
     }
-    setSubmitting(true);
+    setBusy(true);
     setError(null);
     try {
-      const session = await submitPlacementAnswer(attemptId, {
-        question_id: question.id,
-        answer: answer.trim(),
-      });
-      if (session.done) {
-        setResult(session);
-        router.refresh();
-        return;
+      const next = await submitReadingAnswers(session.attempt_id, [
+        { item_id: currentReading.id, given_answer: given },
+      ]);
+      setSession(next);
+      if (readingIndex < readingItems.length - 1) {
+        setReadingIndex((i) => i + 1);
       }
-      setAttemptId(session.attempt_id);
-      setQuestion(session.question ?? null);
-      setProgress(session.progress ?? null);
-      setAnswer("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to submit answer");
+      setError(err instanceof Error ? err.message : "Submit failed");
     } finally {
-      setSubmitting(false);
+      setBusy(false);
     }
   }
 
-  async function goToRoadmap() {
+  async function goWriting() {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await advancePlacementSection(session.attempt_id);
+      setSession(next);
+      setWritingIndex(0);
+      setWritingText("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Cannot advance yet");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveWriting() {
+    if (!session || !currentWriting) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await submitWritingAnswer(session.attempt_id, {
+        item_id: currentWriting.id,
+        text: writingText,
+      });
+      setSession(next);
+      if (writingIndex < writingItems.length - 1) {
+        setWritingIndex((i) => i + 1);
+        setWritingText("");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Writing submit failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function finish() {
+    if (!session) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const next = await completePlacementSession(session.attempt_id);
+      setSession(next);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Complete failed");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleAssembleRoadmap() {
     setAssembling(true);
     setError(null);
     try {
       await assembleRoadmap();
       router.push("/dashboard");
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : "Failed to create your learning path",
-      );
+      setError(err instanceof Error ? err.message : "Failed to assemble roadmap");
     } finally {
       setAssembling(false);
     }
@@ -121,183 +193,154 @@ export default function PlacementPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-background">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
+      <main className="flex min-h-screen items-center justify-center bg-[#f7f4ef] text-[#1c1917]">
+        <Loader2 className="h-6 w-6 animate-spin" />
+      </main>
     );
   }
 
-  const asked = progress?.asked ?? 0;
-  const maxQ = progress?.max_questions ?? 15;
-  const minQ = progress?.min_questions ?? 6;
+  if (session?.done) {
+    return (
+      <main className="min-h-screen bg-[#f7f4ef] px-6 py-10 text-[#1c1917]">
+        <div className="mx-auto max-w-xl space-y-6">
+          <div className="flex justify-end">
+            <LogoutButton />
+          </div>
+          <h1 className="font-serif text-3xl">Placement complete</h1>
+          <p className="text-stone-600">
+            Level <strong>{session.current_level}</strong> · sub-level{" "}
+            <strong>{session.placement_score}</strong>
+          </p>
+          <p className="text-sm text-stone-600">
+            Reading {session.reading_scale} · Writing {session.writing_scale}
+          </p>
+          {session.writing_feedback && session.writing_feedback.length > 0 && (
+            <ul className="space-y-2 text-sm text-stone-700">
+              {session.writing_feedback.map((f) => (
+                <li key={f.item_id} className="border-l-2 border-stone-300 pl-3">
+                  Task {f.item_id}: {f.score} — {f.feedback}
+                </li>
+              ))}
+            </ul>
+          )}
+          {error && <p className="text-sm text-red-700">{error}</p>}
+          <div className="flex gap-3">
+            <Button onClick={handleAssembleRoadmap} disabled={assembling}>
+              {assembling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Build roadmap"}
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/dashboard">Dashboard</Link>
+            </Button>
+          </div>
+        </div>
+      </main>
+    );
+  }
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border">
-        <div className="mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/start-onboarding" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
-              <Sparkles className="h-4 w-4 text-black" />
-            </div>
-            <span className="font-semibold tracking-tight">EnglishFlow</span>
-          </Link>
-          <LogoutButton />
+    <main className="min-h-screen bg-[#f7f4ef] px-6 py-8 text-[#1c1917]">
+      <div className="mx-auto max-w-3xl space-y-6">
+        <div className="flex items-center justify-between gap-4">
+          <div>
+            <p className="text-xs uppercase tracking-wide text-stone-500">
+              TOEIC-style placement · {session?.section ?? "—"}
+            </p>
+            <h1 className="font-serif text-2xl">Reading + Writing</h1>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="font-mono text-sm tabular-nums">{formatTime(left)}</span>
+            <LogoutButton />
+          </div>
         </div>
-      </header>
 
-      <main className="mx-auto max-w-2xl px-6 py-10">
-        {result?.done ? (
-          <section className="ef-card space-y-6 rounded-xl border border-border bg-card/60 p-8 text-center">
-            <p className="text-sm text-muted-foreground">Placement complete</p>
-            <h1 className="text-3xl font-semibold tracking-tight">
-              Your level: {result.current_level}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              Sub-level {result.placement_score}/10 · {result.questions_asked} questions
+        {error && <p className="text-sm text-red-700">{error}</p>}
+
+        {session?.section === "reading" && currentReading && (
+          <section className="space-y-4">
+            <p className="text-sm text-stone-500">
+              Reading {readingIndex + 1} / {readingItems.length} · {currentReading.toeic_part}
             </p>
-            <p className="text-sm text-muted-foreground">
-              Create a personalized weekly path from skills in your zone, or go to
-              the dashboard and build it later. Retaking placement later will reset
-              your current path.
-            </p>
-            {error ? (
-              <p className="text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-            <div className="flex flex-col items-stretch gap-3 sm:items-center">
-              <Button
-                type="button"
-                size="lg"
-                disabled={assembling}
-                onClick={goToRoadmap}
-              >
-                {assembling ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating path…
-                  </>
-                ) : (
-                  <>
-                    Create my path
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </>
-                )}
+            {passageBody && (
+              <div className="whitespace-pre-wrap rounded-md bg-white/70 p-4 text-sm leading-relaxed">
+                {passageBody}
+              </div>
+            )}
+            <p className="text-lg">{currentReading.stem}</p>
+            <div className="grid gap-2">
+              {(currentReading.options ?? []).map((opt) => (
+                <button
+                  key={opt}
+                  type="button"
+                  className={`rounded-md border px-3 py-2 text-left text-sm ${
+                    readingAnswers[currentReading.id] === opt
+                      ? "border-stone-900 bg-stone-900 text-white"
+                      : "border-stone-300 bg-white"
+                  }`}
+                  onClick={() =>
+                    setReadingAnswers((prev) => ({ ...prev, [currentReading.id]: opt }))
+                  }
+                >
+                  {opt}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={saveCurrentReadingAnswer} disabled={busy}>
+                Save & next
               </Button>
-              <Button asChild variant="ghost" size="lg" disabled={assembling}>
-                <Link href="/dashboard">Go to dashboard</Link>
-              </Button>
+              {readingIndex >= readingItems.length - 1 && (
+                <Button variant="outline" onClick={goWriting} disabled={busy}>
+                  Go to Writing
+                </Button>
+              )}
             </div>
           </section>
-        ) : (
-          <>
-            <div className="mb-8">
-              <p className="text-sm text-muted-foreground">Step 2 of 2</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight">
-                Placement Test
-              </h1>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Based on your survey, we&apos;ll find your CEFR level.
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Adaptive test ({minQ}–{maxQ} questions). We stop early when we are
-                confident about your level.
-              </p>
-            </div>
-
-            {error && !question ? (
-              <p className="mb-4 text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            {question ? (
-              <section className="ef-card rounded-xl border border-border bg-card/60 p-6">
-                <div className="mb-4 flex flex-wrap items-center gap-2">
-                  <Badge variant="secondary">
-                    Answered {asked} / max {maxQ}
-                  </Badge>
-                  <Badge variant="outline">{question.cefr_level}</Badge>
-                  <Badge variant="outline">{question.question_type}</Badge>
-                </div>
-                {question.passage ? (
-                  <div className="mb-5 border-l-2 border-primary/40 pl-4">
-                    <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                      Passage
-                    </p>
-                    <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-                      {question.passage}
-                    </p>
-                  </div>
-                ) : null}
-                <p className="text-base font-medium leading-relaxed">{question.stem}</p>
-
-                {question.question_type === "mcq" && question.options?.length ? (
-                  <div className="mt-5 grid gap-2">
-                    {question.options.map((option) => {
-                      const selected = answer === option;
-                      return (
-                        <button
-                          key={option}
-                          type="button"
-                          onClick={() => {
-                            setAnswer(option);
-                            setError(null);
-                          }}
-                          className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
-                            selected
-                              ? "border-primary bg-primary/15 text-foreground"
-                              : "border-border bg-background/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                          }`}
-                        >
-                          {option}
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <Input
-                    className="mt-5"
-                    value={answer}
-                    onChange={(e) => {
-                      setAnswer(e.target.value);
-                      setError(null);
-                    }}
-                    placeholder="Your answer"
-                  />
-                )}
-
-                {error ? (
-                  <p className="mt-4 text-sm text-destructive" role="alert">
-                    {error}
-                  </p>
-                ) : null}
-
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    type="button"
-                    size="lg"
-                    disabled={submitting || !answer.trim()}
-                    onClick={handleSubmitAnswer}
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Checking…
-                      </>
-                    ) : (
-                      <>
-                        Continue
-                        <ArrowRight className="ml-2 h-4 w-4" />
-                      </>
-                    )}
-                  </Button>
-                </div>
-              </section>
-            ) : null}
-          </>
         )}
-      </main>
-    </div>
+
+        {session?.section === "writing" && currentWriting && (
+          <section className="space-y-4">
+            <p className="text-sm text-stone-500">
+              Writing {writingIndex + 1} / {writingItems.length} · {currentWriting.toeic_part}
+            </p>
+            {currentWriting.media_url && (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={currentWriting.media_url}
+                alt="Writing prompt"
+                className="max-h-64 rounded-md border border-stone-200 object-contain"
+              />
+            )}
+            {passageBody && (
+              <div className="whitespace-pre-wrap rounded-md bg-white/70 p-4 text-sm leading-relaxed">
+                {passageBody}
+              </div>
+            )}
+            <p className="text-lg">{currentWriting.stem}</p>
+            {currentWriting.prompt_words && (
+              <p className="text-sm text-stone-600">
+                Words: {currentWriting.prompt_words.join(" / ")}
+              </p>
+            )}
+            <textarea
+              className="min-h-40 w-full rounded-md border border-stone-300 bg-white p-3 text-sm"
+              value={writingText}
+              onChange={(e) => setWritingText(e.target.value)}
+              placeholder="Write your response…"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={saveWriting} disabled={busy || !writingText.trim()}>
+                Submit response
+              </Button>
+              {writingIndex >= writingItems.length - 1 && (
+                <Button variant="outline" onClick={finish} disabled={busy}>
+                  Finish placement
+                </Button>
+              )}
+            </div>
+          </section>
+        )}
+      </div>
+    </main>
   );
 }

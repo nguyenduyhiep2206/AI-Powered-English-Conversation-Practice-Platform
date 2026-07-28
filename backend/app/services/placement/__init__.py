@@ -1,4 +1,4 @@
-"""Placement assessment: quiz bank helpers, adaptive engine, session orchestrator."""
+"""Placement assessment: quiz bank helpers + TOEIC session orchestrator."""
 
 from app.services.placement.bank import (
     CEFR_ORDER,
@@ -9,10 +9,13 @@ from app.services.placement.bank import (
     row_to_candidate,
 )
 from app.services.placement.session_service import (
+    advance_section,
+    complete_session,
     get_current_session,
     get_retake_status,
     start_or_resume_session,
-    submit_session_answer,
+    submit_reading_answers,
+    submit_writing_answer,
 )
 
 __all__ = [
@@ -25,5 +28,8 @@ __all__ = [
     "get_current_session",
     "get_retake_status",
     "start_or_resume_session",
-    "submit_session_answer",
+    "submit_reading_answers",
+    "submit_writing_answer",
+    "advance_section",
+    "complete_session",
 ]

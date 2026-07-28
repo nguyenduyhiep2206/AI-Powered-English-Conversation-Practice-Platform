@@ -52,6 +52,9 @@ async def list_published_questions(
                 else r.question_type,
                 "stem": r.stem,
                 "passage": r.passage,
+                "toeic_part": r.toeic_part.value
+                if getattr(r, "toeic_part", None) and hasattr(r.toeic_part, "value")
+                else (r.toeic_part if getattr(r, "toeic_part", None) else None),
                 "options": r.options,
                 "difficulty": r.difficulty,
             }

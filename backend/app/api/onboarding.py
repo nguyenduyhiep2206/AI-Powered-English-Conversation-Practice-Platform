@@ -6,13 +6,13 @@ from app.core.database import get_db
 from app.models.user import UserDB
 from app.schemas.onboarding_schema import (
     OnboardingStatusResponse,
-    PlacementAnswerRequest,
-    PlacementProgressOut,
-    PlacementQuestionOut,
+    PlacementFormOut,
     PlacementRetakeStatusData,
     PlacementRetakeStatusResponse,
     PlacementSessionData,
     PlacementSessionResponse,
+    ReadingAnswersRequest,
+    WritingAnswerRequest,
 )
 from app.schemas.survey_schema import (
     SubmitSurveyData,
@@ -23,11 +23,14 @@ from app.schemas.survey_schema import (
 )
 from app.services.onboarding_service import get_onboarding_status
 from app.services.placement.session_service import (
-    INSUFFICIENT_ADAPTIVE_BANK_MSG,
+    INSUFFICIENT_BANK_MSG,
+    advance_section,
+    complete_session,
     get_current_session,
     get_retake_status,
     start_or_resume_session,
-    submit_session_answer,
+    submit_reading_answers,
+    submit_writing_answer,
 )
 from app.services.survey_service import (
     LevelResolutionError,
@@ -39,20 +42,22 @@ router = APIRouter()
 
 
 def _session_data(payload: dict) -> PlacementSessionData:
-    question = None
-    if payload.get("question"):
-        question = PlacementQuestionOut(**payload["question"])
-    progress = None
-    if payload.get("progress"):
-        progress = PlacementProgressOut(**payload["progress"])
+    form = None
+    if payload.get("form"):
+        form = PlacementFormOut(**payload["form"])
     return PlacementSessionData(
         done=bool(payload["done"]),
         attempt_id=int(payload["attempt_id"]),
-        question=question,
-        progress=progress,
+        section=payload.get("section"),
+        section_ends_at=payload.get("section_ends_at"),
+        form=form,
+        reading_raw=payload.get("reading_raw"),
+        reading_scale=payload.get("reading_scale"),
+        writing_raw=payload.get("writing_raw"),
+        writing_scale=payload.get("writing_scale"),
         placement_score=payload.get("placement_score"),
         current_level=payload.get("current_level"),
-        questions_asked=payload.get("questions_asked"),
+        writing_feedback=payload.get("writing_feedback"),
         onboarding_complete=payload.get("onboarding_complete"),
     )
 
@@ -64,7 +69,7 @@ def _map_placement_exc(exc: Exception) -> HTTPException:
         return HTTPException(status_code=409, detail=str(exc))
     if isinstance(exc, ValueError):
         msg = str(exc)
-        status = 503 if msg == INSUFFICIENT_ADAPTIVE_BANK_MSG else 400
+        status = 503 if msg == INSUFFICIENT_BANK_MSG else 400
         return HTTPException(status_code=status, detail=msg)
     return HTTPException(status_code=500, detail="Internal error")
 
@@ -74,7 +79,6 @@ async def onboarding_status(
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Check whether the user has completed survey and placement test."""
     data = await get_onboarding_status(db, int(current_user.id))
     return OnboardingStatusResponse(data=data)
 
@@ -113,7 +117,6 @@ async def placement_start_session(
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start or resume an adaptive placement session."""
     try:
         payload = await start_or_resume_session(db, int(current_user.id))
     except (PermissionError, RuntimeError, ValueError) as exc:
@@ -126,7 +129,6 @@ async def placement_current_session(
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resume in-progress adaptive placement, or 404 if none."""
     try:
         payload = await get_current_session(db, int(current_user.id))
     except (PermissionError, RuntimeError, ValueError) as exc:
@@ -138,23 +140,90 @@ async def placement_current_session(
 
 @router.post(
     "/placement/sessions/{attempt_id}/answers",
+    status_code=410,
+)
+async def placement_session_answer_deprecated(
+    attempt_id: int,
+    current_user: UserDB = Depends(get_current_active_user),
+):
+    raise HTTPException(
+        status_code=410,
+        detail="Adaptive placement removed. Use reading-answers / writing-answers.",
+    )
+
+
+@router.post(
+    "/placement/sessions/{attempt_id}/reading-answers",
     response_model=PlacementSessionResponse,
 )
-async def placement_session_answer(
+async def placement_reading_answers(
     attempt_id: int,
-    payload: PlacementAnswerRequest,
+    payload: ReadingAnswersRequest,
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Grade one adaptive answer; return next question or final result."""
     try:
-        result = await submit_session_answer(
+        result = await submit_reading_answers(
             db,
             int(current_user.id),
             attempt_id,
-            payload.question_id,
-            payload.answer,
+            [a.model_dump() for a in payload.answers],
         )
+    except (PermissionError, RuntimeError, ValueError) as exc:
+        raise _map_placement_exc(exc) from exc
+    return PlacementSessionResponse(data=_session_data(result))
+
+
+@router.post(
+    "/placement/sessions/{attempt_id}/writing-answers",
+    response_model=PlacementSessionResponse,
+)
+async def placement_writing_answers(
+    attempt_id: int,
+    payload: WritingAnswerRequest,
+    current_user: UserDB = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await submit_writing_answer(
+            db,
+            int(current_user.id),
+            attempt_id,
+            payload.item_id,
+            payload.text,
+        )
+    except (PermissionError, RuntimeError, ValueError) as exc:
+        raise _map_placement_exc(exc) from exc
+    return PlacementSessionResponse(data=_session_data(result))
+
+
+@router.post(
+    "/placement/sessions/{attempt_id}/advance-section",
+    response_model=PlacementSessionResponse,
+)
+async def placement_advance_section(
+    attempt_id: int,
+    current_user: UserDB = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await advance_section(db, int(current_user.id), attempt_id)
+    except (PermissionError, RuntimeError, ValueError) as exc:
+        raise _map_placement_exc(exc) from exc
+    return PlacementSessionResponse(data=_session_data(result))
+
+
+@router.post(
+    "/placement/sessions/{attempt_id}/complete",
+    response_model=PlacementSessionResponse,
+)
+async def placement_complete(
+    attempt_id: int,
+    current_user: UserDB = Depends(get_current_active_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        result = await complete_session(db, int(current_user.id), attempt_id)
     except (PermissionError, RuntimeError, ValueError) as exc:
         raise _map_placement_exc(exc) from exc
     return PlacementSessionResponse(data=_session_data(result))
