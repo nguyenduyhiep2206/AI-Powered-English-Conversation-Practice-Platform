@@ -34,14 +34,20 @@ const LEVEL_FORK_OPTIONS: { value: LevelForkChoice; label: string; hint: string 
 ];
 
 function splitQuestions(questions: SurveyQuestion[]) {
-  const why = questions.find((q) =>
-    (q.options ?? []).some((o) => o.value === "work" || o.value === "travel"),
-  );
-  const time = questions.find((q) =>
-    (q.options ?? []).some((o) => o.value === "10" || o.value === "25"),
-  );
+  const why =
+    questions.find((q) => q.maps_to_profile_field === "goal") ??
+    questions.find((q) =>
+      (q.options ?? []).some((o) => o.value === "work" || o.value === "travel"),
+    );
+  const time =
+    questions.find((q) => q.maps_to_profile_field === "daily_time_min") ??
+    questions.find((q) =>
+      (q.options ?? []).some((o) => o.value === "10" || o.value === "25"),
+    );
   if (!why || !time) {
-    throw new Error("Survey is not configured for Busuu-style onboarding");
+    throw new Error(
+      "Survey is not configured for Busuu-style onboarding. Run alembic upgrade head so only goal + daily_time questions are active.",
+    );
   }
   return { why, time };
 }

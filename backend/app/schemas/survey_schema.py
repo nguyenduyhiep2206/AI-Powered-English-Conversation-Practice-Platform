@@ -4,6 +4,8 @@ from pydantic import BaseModel, Field, model_validator
 
 from app.models.enums import CEFRLevel, GoalEnum, SurveyQuestionTypeEnum, WeakPointEnum
 
+ProfileFieldName = Literal["occupation", "goal", "weak_point", "daily_time_min"]
+
 
 class LevelResolution(BaseModel):
     mode: Literal["beginner", "self_selected", "placement"]
@@ -27,6 +29,7 @@ class SurveyQuestionPublic(BaseModel):
     question_type: SurveyQuestionTypeEnum
     options: Optional[list[SurveyOption]] = None
     is_required: bool
+    maps_to_profile_field: Optional[ProfileFieldName] = None
 
     model_config = {"from_attributes": True}
 
@@ -62,9 +65,6 @@ class SubmitSurveyData(BaseModel):
 class SubmitSurveyResponse(BaseModel):
     success: bool = True
     data: SubmitSurveyData
-
-
-ProfileFieldName = Literal["occupation", "goal", "weak_point", "daily_time_min"]
 
 
 class SurveyQuestionAdmin(BaseModel):

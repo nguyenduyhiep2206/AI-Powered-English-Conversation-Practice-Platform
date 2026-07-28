@@ -13,6 +13,7 @@ export type SurveyQuestion = {
   question_type: SurveyQuestionType;
   options?: SurveyOption[] | null;
   is_required: boolean;
+  maps_to_profile_field?: "occupation" | "goal" | "weak_point" | "daily_time_min" | null;
 };
 
 type SurveyQuestionsResponse = {
