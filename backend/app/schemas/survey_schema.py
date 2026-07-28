@@ -1,8 +1,19 @@
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from app.models.enums import GoalEnum, SurveyQuestionTypeEnum, WeakPointEnum
+from app.models.enums import CEFRLevel, GoalEnum, SurveyQuestionTypeEnum, WeakPointEnum
+
+
+class LevelResolution(BaseModel):
+    mode: Literal["beginner", "self_selected", "placement"]
+    cefr_level: Optional[CEFRLevel] = None
+
+    @model_validator(mode="after")
+    def _require_cefr_when_self(self):
+        if self.mode == "self_selected" and self.cefr_level is None:
+            raise ValueError("cefr_level is required when mode is self_selected")
+        return self
 
 
 class SurveyOption(BaseModel):
@@ -39,10 +50,12 @@ class SurveyAnswerItem(BaseModel):
 
 class SubmitSurveyRequest(BaseModel):
     answers: list[SurveyAnswerItem]
+    level_resolution: LevelResolution
 
 
 class SubmitSurveyData(BaseModel):
     survey_done: bool = True
+    next_step: Literal["placement", "completed"]
     message: str = "Survey submitted successfully"
 
 

@@ -29,7 +29,11 @@ from app.services.placement.session_service import (
     start_or_resume_session,
     submit_session_answer,
 )
-from app.services.survey_service import get_survey_questions_for_user, submit_survey
+from app.services.survey_service import (
+    LevelResolutionError,
+    get_survey_questions_for_user,
+    submit_survey,
+)
 
 router = APIRouter()
 
@@ -90,8 +94,18 @@ async def submit_survey_answers(
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
-    await submit_survey(db, int(current_user.id), payload.answers)
-    return SubmitSurveyResponse(data=SubmitSurveyData())
+    try:
+        result = await submit_survey(
+            db,
+            int(current_user.id),
+            payload.answers,
+            payload.level_resolution,
+        )
+    except LevelResolutionError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return SubmitSurveyResponse(
+        data=SubmitSurveyData(next_step=result["next_step"])
+    )
 
 
 @router.post("/placement/sessions", response_model=PlacementSessionResponse)

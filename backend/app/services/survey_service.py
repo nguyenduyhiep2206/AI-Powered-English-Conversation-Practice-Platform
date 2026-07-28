@@ -1,4 +1,4 @@
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import HTTPException, status
 from sqlalchemy import select
@@ -8,11 +8,33 @@ from app.models.enums import CEFRLevel, GoalEnum, SurveyQuestionTypeEnum, WeakPo
 from app.models.profile import UserProfileDB
 from app.models.survey import SurveyQuestionDB
 from app.schemas.survey_schema import (
+    LevelResolution,
     SurveyAnswerItem,
     SurveyQuestionCreate,
     SurveyQuestionPublic,
     SurveyQuestionUpdate,
 )
+
+
+class LevelResolutionError(ValueError):
+    pass
+
+
+def resolve_level_for_survey(
+    raw: dict,
+) -> tuple[CEFRLevel | None, int | None, Literal["placement", "completed"]]:
+    mode = raw.get("mode")
+    if mode == "beginner":
+        return CEFRLevel.A1, 1, "completed"
+    if mode == "self_selected":
+        cefr = raw.get("cefr_level")
+        if cefr is None:
+            raise LevelResolutionError("cefr_level is required when mode is self_selected")
+        level = cefr if isinstance(cefr, CEFRLevel) else CEFRLevel(str(cefr))
+        return level, 5, "completed"
+    if mode == "placement":
+        return None, None, "placement"
+    raise LevelResolutionError(f"Unknown level mode: {mode}")
 
 
 PROFILE_FIELDS = frozenset({"occupation", "goal", "weak_point", "daily_time_min"})
@@ -195,7 +217,8 @@ async def submit_survey(
     db: AsyncSession,
     user_id: int,
     answers: list[SurveyAnswerItem],
-) -> None:
+    level_resolution: LevelResolution,
+) -> dict:
     profile = await _get_user_profile(db, user_id)
     _require_survey_not_done(profile)
 
@@ -206,8 +229,17 @@ async def submit_survey(
     profile = _ensure_profile(db, user_id, profile)
     _apply_answers_to_profile(profile, active_questions, answers_by_question)
 
+    level, score, next_step = resolve_level_for_survey(
+        level_resolution.model_dump()
+    )
+    if level is not None:
+        profile.current_level = level
+    if score is not None:
+        profile.placement_score = score
+
     profile.survey_done = True
     await db.commit()
+    return {"survey_done": True, "next_step": next_step}
 
 
 async def list_all_survey_questions(db: AsyncSession) -> list[SurveyQuestionDB]:
