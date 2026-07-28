@@ -189,19 +189,6 @@ async def get_retake_status(db: AsyncSession, user_id: int) -> dict[str, Any]:
     }
 
 
-async def _skill_types_map(db: AsyncSession, skill_ids: set[int]) -> dict[int, str]:
-    if not skill_ids:
-        return {}
-    rows = (
-        await db.execute(select(LearningSkillDB).where(LearningSkillDB.id.in_(skill_ids)))
-    ).scalars().all()
-    out: dict[int, str] = {}
-    for row in rows:
-        st = row.skill_type
-        out[int(row.id)] = st.value if hasattr(st, "value") else str(st)
-    return out
-
-
 async def _used_skill_ids(db: AsyncSession, attempt_id: int) -> set[int]:
     rows = (
         await db.execute(
@@ -221,10 +208,8 @@ def _seen_ids(attempt: PlacementAttemptDB) -> set[int]:
 async def _serve_next_question(
     db: AsyncSession,
     attempt: PlacementAttemptDB,
-    weak_point: Any,
 ) -> PlacementCandidate:
     candidates = await load_published_candidates(db)
-    skill_types = await _skill_types_map(db, {int(c.skill_id) for c in candidates})
     used = await _used_skill_ids(db, int(attempt.id)) if attempt.id else set()
     try:
         picked = pick_next_candidate(
@@ -232,8 +217,6 @@ async def _serve_next_question(
             ability_index=float(attempt.ability_index),
             seen_ids=_seen_ids(attempt),
             used_skill_ids=used,
-            weak_point=weak_point,
-            skill_types_by_skill_id=skill_types,
         )
     except ValueError as exc:
         raise ValueError(INSUFFICIENT_ADAPTIVE_BANK_MSG) from exc
@@ -300,8 +283,6 @@ async def _session_payload(
 
 
 async def _create_attempt(db: AsyncSession, profile: UserProfileDB) -> PlacementAttemptDB:
-    wp = profile.weak_point
-    wp_value = wp.value if wp is not None and hasattr(wp, "value") else (str(wp) if wp else None)
     attempt = PlacementAttemptDB(
         user_id=int(profile.user_id),
         status=PlacementAttemptStatusEnum.in_progress,
@@ -310,7 +291,7 @@ async def _create_attempt(db: AsyncSession, profile: UserProfileDB) -> Placement
         questions_asked=0,
         seen_question_ids=[],
         current_question_id=None,
-        weak_point_bias=wp_value,
+        weak_point_bias=None,
     )
     db.add(attempt)
     await db.flush()
@@ -345,7 +326,7 @@ async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, A
     # Always clear leftovers (including race duplicates) before creating.
     await _abandon_in_progress(db, user_id)
     attempt = await _create_attempt(db, profile)
-    question = await _serve_next_question(db, attempt, profile.weak_point)
+    question = await _serve_next_question(db, attempt)
     await db.commit()
     await db.refresh(attempt)
     return _mid_payload(attempt, question)
@@ -475,7 +456,7 @@ async def _advance_session(
     profile: UserProfileDB,
     attempt: PlacementAttemptDB,
 ) -> dict[str, Any]:
-    next_q = await _serve_next_question(db, attempt, profile.weak_point)
+    next_q = await _serve_next_question(db, attempt)
     await db.commit()
     await db.refresh(attempt)
     return _mid_payload(attempt, next_q)

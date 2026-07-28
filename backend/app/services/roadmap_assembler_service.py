@@ -13,7 +13,6 @@ from app.models.enums import (
     GoalEnum,
     ProgressStatusEnum,
     ScenarioCategoryEnum,
-    WeakPointEnum,
 )
 from app.models.learning_skill import LearningSkillDB, SkillEdgeDB
 from app.models.profile import UserProfileDB
@@ -86,7 +85,6 @@ def select_skills_for_roadmap(
     placement_score: int | None,
     prereq_from_by_to: dict[int, list[int]],
     max_steps: int = 10,
-    weak_point: WeakPointEnum | str | None = None,
 ) -> list[dict[str, Any]]:
     """Build an ordered curriculum path of weak skills.
 
@@ -95,9 +93,8 @@ def select_skills_for_roadmap(
     are satisfied by known skills (strong mastery or below the floor) **or** by
     skills already placed in earlier weeks — so a prerequisite chain unfolds into
     consecutive weeks instead of collapsing to a single unlockable skill.
-    Difficulty orders the path; weak-point matches break ties.
+    Difficulty orders the path; mastery then id break ties.
     """
-    wp = weak_point.value if hasattr(weak_point, "value") else (weak_point or "")
     floor = _clamp_placement_score(placement_score)
     max_steps = max(0, int(max_steps))
 
@@ -121,10 +118,8 @@ def select_skills_for_roadmap(
     def prereqs_satisfied(sid: int) -> bool:
         return all(from_id in known for from_id in prereq_from_by_to.get(sid, []))
 
-    def order_key(sid: int) -> tuple[int, int, float, int]:
-        skill = by_id[sid]
-        matches_weak = 0 if wp and skill.get("skill_type") == wp else 1
-        return (difficulty_of(sid), matches_weak, float(mastery.get(sid, DEFAULT_PRIOR)), sid)
+    def order_key(sid: int) -> tuple[int, float, int]:
+        return (difficulty_of(sid), float(mastery.get(sid, DEFAULT_PRIOR)), sid)
 
     selected: list[dict[str, Any]] = []
     while len(selected) < max_steps:
@@ -373,7 +368,6 @@ async def plan_next_steps(
         placement_score=profile.placement_score,
         prereq_from_by_to=prereq_from_by_to,
         max_steps=horizon,
-        weak_point=profile.weak_point,
     )
     return selected, mastery, profile, target_level
 
@@ -396,7 +390,6 @@ async def _select_roadmap_skills(
         placement_score=profile.placement_score,
         prereq_from_by_to=prereq_from_by_to,
         max_steps=max_steps,
-        weak_point=profile.weak_point,
     )
     if not selected:
         raise ValueError("No weak skills left to assemble the roadmap at this level.")

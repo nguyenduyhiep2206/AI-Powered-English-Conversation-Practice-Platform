@@ -1,22 +1,13 @@
-from app.models.enums import CEFRLevel, WeakPointEnum
+from app.models.enums import CEFRLevel
 from app.services.placement.adaptive_engine import (
     MAX_QUESTIONS,
     MIN_QUESTIONS,
     map_ability_to_profile,
     pick_next_candidate,
-    preferred_skill_types,
     should_stop,
     update_ability,
 )
 from app.services.placement.bank import PlacementCandidate
-
-
-def test_preferred_skill_types_mapping():
-    assert "grammar" in preferred_skill_types(WeakPointEnum.grammar)
-    assert "vocabulary" in preferred_skill_types(WeakPointEnum.vocabulary)
-    assert "functional" in preferred_skill_types(WeakPointEnum.writing)
-    assert preferred_skill_types(WeakPointEnum.confidence) == frozenset()
-    assert preferred_skill_types(None) == frozenset()
 
 
 def test_update_ability_correct_increases():
@@ -62,22 +53,19 @@ def _cand(id_: int, skill_id: int, level: CEFRLevel) -> PlacementCandidate:
     )
 
 
-def test_pick_next_prefers_target_cefr_and_weak_point():
+def test_pick_next_prefers_target_cefr_and_unused_skill():
     cands = [
         _cand(1, 10, CEFRLevel.A1),
         _cand(2, 11, CEFRLevel.A2),
         _cand(3, 12, CEFRLevel.A2),
         _cand(4, 13, CEFRLevel.B1),
     ]
-    skill_types = {10: "grammar", 11: "vocabulary", 12: "grammar", 13: "grammar"}
     picked = pick_next_candidate(
         cands,
         ability_index=1.0,
         seen_ids=set(),
-        used_skill_ids=set(),
-        weak_point=WeakPointEnum.grammar,
-        skill_types_by_skill_id=skill_types,
+        used_skill_ids={11},
         rng_seed=1,
     )
     assert picked.cefr_level == CEFRLevel.A2
-    assert skill_types[picked.skill_id] == "grammar"
+    assert picked.skill_id == 12

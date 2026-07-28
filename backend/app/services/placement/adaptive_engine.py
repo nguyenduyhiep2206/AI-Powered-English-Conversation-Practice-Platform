@@ -6,7 +6,7 @@ import math
 import random
 from typing import Sequence
 
-from app.models.enums import CEFRLevel, WeakPointEnum
+from app.models.enums import CEFRLevel
 from app.services.placement.bank import CEFR_ORDER, PlacementCandidate
 
 MIN_QUESTIONS = 6
@@ -15,19 +15,6 @@ CONFIDENCE_STOP = 0.85
 ABILITY_STEP = 0.45
 
 _CEFR_INDEX = {lvl: i for i, lvl in enumerate(CEFR_ORDER)}
-
-
-def preferred_skill_types(weak_point: WeakPointEnum | str | None) -> frozenset[str]:
-    if weak_point is None:
-        return frozenset()
-    value = weak_point.value if hasattr(weak_point, "value") else str(weak_point)
-    mapping = {
-        "grammar": frozenset({"grammar"}),
-        "vocabulary": frozenset({"vocabulary"}),
-        "writing": frozenset({"functional"}),
-        "confidence": frozenset(),
-    }
-    return mapping.get(value, frozenset())
 
 
 def cefr_index(level: CEFRLevel) -> int:
@@ -89,12 +76,10 @@ def pick_next_candidate(
     ability_index: float,
     seen_ids: set[int],
     used_skill_ids: set[int],
-    weak_point: WeakPointEnum | str | None,
-    skill_types_by_skill_id: dict[int, str],
     rng_seed: int | None = None,
 ) -> PlacementCandidate:
+    """Pick next item near ability CEFR; prefer unused skills; no weak_point bias."""
     rng = random.Random(rng_seed)
-    preferred = preferred_skill_types(weak_point)
     target_idx = max(0, min(4, int(round(float(ability_index)))))
     pool = [c for c in candidates if int(c.id) not in seen_ids]
     if not pool:
@@ -110,9 +95,7 @@ def pick_next_candidate(
         raise ValueError("Không còn câu hỏi published phù hợp cho placement adaptive.")
 
     def sort_key(c: PlacementCandidate) -> tuple:
-        st = skill_types_by_skill_id.get(int(c.skill_id), "")
-        pref = 0 if (preferred and st in preferred) else 1
         unused = 0 if int(c.skill_id) not in used_skill_ids else 1
-        return (pref, unused, rng.random())
+        return (unused, rng.random())
 
     return sorted(window, key=sort_key)[0]

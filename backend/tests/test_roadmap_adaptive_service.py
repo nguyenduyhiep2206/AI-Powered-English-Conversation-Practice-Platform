@@ -54,7 +54,6 @@ def test_plan_next_steps_returns_empty_when_no_candidates():
         profile = MagicMock()
         profile.user_id = 1
         profile.placement_score = 1
-        profile.weak_point = None
         profile.current_level = ras.CEFRLevel.A1
 
         skill = MagicMock()
