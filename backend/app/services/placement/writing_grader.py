@@ -57,14 +57,14 @@ def grade_writing_task(
             return {
                 "score": 0.0,
                 "ai_scores": {},
-                "ai_feedback": "Could not grade; try retake later.",
+                "ai_feedback": "Could not grade; please try again later.",
             }
 
     if not isinstance(payload, dict):
         return {
             "score": 0.0,
             "ai_scores": {},
-            "ai_feedback": "Could not grade; try retake later.",
+            "ai_feedback": "Could not grade; please try again later.",
         }
 
     max_score = _PART_MAX[part]

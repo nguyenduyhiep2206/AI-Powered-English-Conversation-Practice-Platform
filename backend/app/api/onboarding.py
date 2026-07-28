@@ -6,9 +6,9 @@ from app.core.database import get_db
 from app.models.user import UserDB
 from app.schemas.onboarding_schema import (
     OnboardingStatusResponse,
+    PlacementAccessStatusData,
+    PlacementAccessStatusResponse,
     PlacementFormOut,
-    PlacementRetakeStatusData,
-    PlacementRetakeStatusResponse,
     PlacementSessionData,
     PlacementSessionResponse,
     ReadingAnswersRequest,
@@ -27,7 +27,7 @@ from app.services.placement.session_service import (
     advance_section,
     complete_session,
     get_current_session,
-    get_retake_status,
+    get_placement_access_status,
     start_or_resume_session,
     submit_reading_answers,
     submit_writing_answer,
@@ -230,13 +230,13 @@ async def placement_complete(
     return PlacementSessionResponse(data=_session_data(result))
 
 
-@router.get("/placement/retake-status", response_model=PlacementRetakeStatusResponse)
-async def placement_retake_status(
+@router.get("/placement/access-status", response_model=PlacementAccessStatusResponse)
+async def placement_access_status(
     current_user: UserDB = Depends(get_current_active_user),
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        data = await get_retake_status(db, int(current_user.id))
+        data = await get_placement_access_status(db, int(current_user.id))
     except (PermissionError, RuntimeError, ValueError) as exc:
         raise _map_placement_exc(exc) from exc
-    return PlacementRetakeStatusResponse(data=PlacementRetakeStatusData(**data))
+    return PlacementAccessStatusResponse(data=PlacementAccessStatusData(**data))

@@ -37,10 +37,9 @@ export type PlacementSession = {
   onboarding_complete?: boolean | null;
 };
 
-export type PlacementRetakeStatus = {
-  allowed: boolean;
+export type PlacementAccessStatus = {
+  can_start: boolean;
   has_in_progress: boolean;
-  retry_after_at?: string | null;
 };
 
 async function parseSession(res: Response, fallback: string): Promise<PlacementSession> {
@@ -117,12 +116,12 @@ export async function completePlacementSession(attemptId: number): Promise<Place
   return parseSession(res, "Failed to complete placement");
 }
 
-export async function fetchRetakeStatus(): Promise<PlacementRetakeStatus> {
-  const res = await authFetch("/api/v1/onboarding/placement/retake-status");
+export async function fetchPlacementAccessStatus(): Promise<PlacementAccessStatus> {
+  const res = await authFetch("/api/v1/onboarding/placement/access-status");
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, "Failed to load retake status"));
+    throw new Error(extractErrorMessage(error, "Failed to load placement access"));
   }
-  const body = (await res.json()) as { data: PlacementRetakeStatus };
+  const body = (await res.json()) as { data: PlacementAccessStatus };
   return body.data;
 }

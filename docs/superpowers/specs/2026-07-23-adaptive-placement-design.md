@@ -31,7 +31,7 @@ Cần placement đo ability hiệu quả hơn, khóa session, tách CEFR khỏi 
 - Nguồn đề: **chỉ** `quiz_questions` `status=published` join `learning_skills` active (cùng bank MVP).
 - Lưu attempt + từng câu trả lời; khóa session `in_progress` (resume, không chạy song song).
 - Khi xong: ghi `current_level` (CEFR) và `placement_score` (**sub-level 1–10 trong level đó**); seed mastery từ các câu đã làm.
-- Retake: cho phép với cooldown (**1 lần hoàn thành / cửa sổ 7 ngày** sau lần completed gần nhất).
+- Placement: **one-shot** (chỉ resume `in_progress`; không retake sau khi completed).
 - Bias mềm chọn câu chỉ từ **`weak_point`** (ưu tiên `skill_type` khớp khi hòa).
 - FE wizard từng câu; deprecate batch `GET /onboarding/questions` + `POST /onboarding/placement`.
 - Vẫn **không** tự assemble roadmap khi nộp placement xong.
@@ -44,7 +44,8 @@ Cần placement đo ability hiệu quả hơn, khóa session, tách CEFR khỏi 
 - Auto-assemble roadmap sau placement.
 - Partial-credit / chấm mở ngoài `grade_mcq` hiện có.
 - Đổi schema survey / JSON answer động (concern riêng).
-- Level-challenge (+1 CEFR quiz) — **đã bỏ**; đánh giá lại chỉ qua adaptive placement retake (cooldown 7 ngày). Complete retake → clear roadmap hiện tại.
+- Level-challenge (+1 CEFR quiz) — **đã bỏ**.
+- Adaptive placement **retake sau 7 ngày** — **đã bỏ** (2026-07-29): placement one-shot; chỉ resume `in_progress`.
 
 ---
 
@@ -60,9 +61,9 @@ Cần placement đo ability hiệu quả hơn, khóa session, tách CEFR khỏi 
 | Survey → roadmap | **`goal` → scenario**; `weak_point` vẫn tie-break thứ tự skill (đã có) |
 | Output profile | `current_level` = CEFR; `placement_score` = sub-level **1–10** (không còn = số câu đúng) |
 | Lưu attempt | Bảng mới `placement_attempts` + `placement_attempt_answers` |
-| Retake | Cooldown **7 ngày** kể từ lần **completed** gần nhất; `in_progress` thì resume |
-| Sau khi nộp | Level + mastery; **clear roadmap** nếu đang có; user tự assemble lại |
-| Đánh giá lại | **Chỉ adaptive retake** (không level-challenge) |
+| Retake | **Không** — one-shot; `in_progress` thì resume |
+| Sau khi nộp | Level + mastery; user tự assemble roadmap |
+| Đánh giá lại | Không có retake / level-challenge |
 | Điểm legacy | Giữ nguyên `placement_score` cũ (có thể = số đúng cũ); attempt mới ghi sub-level thật |
 
 ---
@@ -92,7 +93,7 @@ Giá trị `WeakPointEnum` (`grammar`, `vocabulary`, `confidence`, `writing`) kh
 ### 5.1 Placement lần đầu (sau survey)
 
 ```text
-survey_done && chưa completed (hoặc được phép retake)
+survey_done && chưa completed
   → POST /placement/sessions
   → UI hiện câu #1
   → lặp:
@@ -101,6 +102,7 @@ survey_done && chưa completed (hoặc được phép retake)
   → Màn kết quả → CTA assemble roadmap / dashboard
 ```
 
+(Nếu có `in_progress`: resume, không tạo attempt mới.)
 ### 5.2 Resume
 
 ```text
@@ -109,15 +111,14 @@ GET /placement/sessions/current
   → không thì 404 / rỗng
 ```
 
-### 5.3 Retake
+### 5.3 Placement access (one-shot)
 
 ```text
-GET retake-status → { allowed, retry_after_at? }
-  → nếu allowed: POST /placement/sessions (abandon in_progress cũ nếu có; tạo mới)
-  → khi completed: ghi đè profile.current_level + placement_score; seed mastery từ attempt mới
+GET access-status → { can_start, has_in_progress }
+  → can_start: chưa từng hoàn thành và không đang in_progress
+  → has_in_progress: resume session hiện có
+  → đã completed: không start mới (không cooldown / không retake)
 ```
-
-Cooldown: `allowed` khi không có `in_progress` cần resume trước, và (chưa từng completed **hoặc** `now - last_completed_at >= 7 days`).
 
 ---
 
@@ -255,11 +256,11 @@ Prefix hiện có: `/api/v1/onboarding`.
 | `POST` | `/placement/sessions` | Bắt đầu attempt; trả `{ attempt_id, question, progress }` |
 | `GET` | `/placement/sessions/current` | Resume `in_progress` |
 | `POST` | `/placement/sessions/{attempt_id}/answers` | Chấm + câu tiếp hoặc kết quả cuối |
-| `GET` | `/placement/retake-status` | `{ allowed, retry_after_at, has_in_progress }` |
+| `GET` | `/placement/access-status` | `{ can_start, has_in_progress }` |
 
 ### 8.1 Start session
 
-Điều kiện: `survey_done`; không có `in_progress` khác (hoặc trả về cái đang có); nếu đã completed thì phải được phép retake.
+Điều kiện: `survey_done`; resume `in_progress` nếu có; nếu đã `placement_score` thì **không** tạo attempt mới.
 
 Shape câu hỏi: tái dùng field `placement_public_dict` (`id`, `skill_id`, `cefr_level`, `question_type`, `stem`, `passage`, `options`, `difficulty`).
 
@@ -272,7 +273,7 @@ Progress: `{ asked, min_questions: 6, max_questions: 15 }`.
 - Ghi answer row; cập nhật ability/confidence; set câu tiếp hoặc clear.
 - Nếu xong: commit profile + mastery; `status = completed`.
 
-Lỗi: 400 sai câu / trùng; 403 chưa survey; 409 cooldown / đã completed chưa được retake; 409 attempt không `in_progress`; 400/503 bank không đủ.
+Lỗi: 400 sai câu / trùng; 403 chưa survey; 409 đã hoàn thành placement; 409 attempt không `in_progress`; 400/503 bank không đủ.
 
 ### 8.3 Deprecate
 
@@ -287,10 +288,10 @@ Sau khi FE chuyển xong, xóa hoặc trả 410:
 
 ## 9. Frontend
 
-- `/onboarding/placement`: wizard 1 câu/màn; start/resume; mỗi lần trả lời POST; progress `asked / max` (ghi chú có thể xong sớm sau 6 câu).
+- `/onboarding/placement`: wizard; start/resume; progress theo section.
 - Màn kết quả: CEFR + sub-level; CTA assemble roadmap (đã có).
-- Entry retake: dashboard/settings dùng `retake-status`.
-- Copy: adaptive 6–15 câu; không hứa cố định 10 câu.
+- Dashboard: chỉ **Resume** khi `access-status.has_in_progress` (không entry retake).
+- Placement one-shot sau khi completed.
 
 ---
 
@@ -306,7 +307,7 @@ Sau khi FE chuyển xong, xóa hoặc trả 410:
 ## 11. Kiểm thử
 
 - Unit: cập nhật ability; confidence; cửa sổ CEFR khi pick; ưu tiên `weak_point`; dừng ở 6+0.85 và ở 15; không dừng trước 6.
-- API: khóa session; sai `question_id`; cooldown retake; resume; bank thiếu.
+- API: khóa session; sai `question_id`; đã completed → không start mới; resume; bank thiếu.
 - FE smoke: lần đầu + resume giữa chừng.
 
 ---
@@ -315,7 +316,7 @@ Sau khi FE chuyển xong, xóa hoặc trả 410:
 
 Theo style orchestrator (`service-orchestrator`):
 
-- `placement_session_service.py` — start / resume / answer / retake-status / side effect khi complete  
+- `placement_session_service.py` — start / resume / answer / access-status / complete  
 - `placement_adaptive_engine.py` — pure: `update_ability`, `pick_next`, `should_stop`, `map_to_profile`  
 - Giữ helper hữu ích trong `placement_service.py` (`PlacementCandidate`, `load_published_candidates`, `grade_placement_answer`, `placement_public_dict`) hoặc tách module dùng chung — plan quyết định split cụ thể, tránh rewrite big-bang.
 
@@ -326,7 +327,7 @@ Theo style orchestrator (`service-orchestrator`):
 - Học viên hoàn thành onboarding qua adaptive session, không cần endpoint batch.
 - User giả lập mạnh/yếu kết thúc trong 6–15 câu với CEFR hợp lý.
 - Assemble roadmap vẫn chạy với `placement_score` sub-level mới.
-- Retake bị chặn trong 7 ngày; được phép sau đó.
+- Placement one-shot (không retake / không cooldown 7 ngày).
 - `goal` không xuất hiện trong code chọn câu placement.
 
 ---

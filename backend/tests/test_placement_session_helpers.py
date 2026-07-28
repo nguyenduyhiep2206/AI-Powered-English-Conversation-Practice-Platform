@@ -1,44 +1,19 @@
-from datetime import datetime, timedelta, timezone
-
-from app.services.placement.session_service import (
-    RETAKE_COOLDOWN_DAYS,
-    _retake_allowed_for_profile,
-    retake_allowed,
-)
+from app.services.placement.session_service import can_start_new_placement
 
 
-def test_retake_allowed_never_completed():
-    assert retake_allowed(last_completed_at=None, now=datetime.now(timezone.utc)) is True
-
-
-def test_retake_cooldown():
-    now = datetime(2026, 7, 23, tzinfo=timezone.utc)
-    assert retake_allowed(now - timedelta(days=6), now) is False
-    assert retake_allowed(now - timedelta(days=7), now) is True
-    assert RETAKE_COOLDOWN_DAYS == 7
-
-
-def test_retake_allowed_for_profile_first_time():
-    now = datetime(2026, 7, 23, tzinfo=timezone.utc)
+def test_can_start_first_placement():
     assert (
-        _retake_allowed_for_profile(
-            has_in_progress=False,
-            last_completed_at=None,
-            placement_score=None,
-            now=now,
-        )
-        is True
+        can_start_new_placement(has_in_progress=False, placement_score=None) is True
     )
 
 
-def test_retake_allowed_for_profile_blocks_in_progress():
-    now = datetime(2026, 7, 23, tzinfo=timezone.utc)
+def test_cannot_start_when_in_progress():
     assert (
-        _retake_allowed_for_profile(
-            has_in_progress=True,
-            last_completed_at=None,
-            placement_score=None,
-            now=now,
-        )
-        is False
+        can_start_new_placement(has_in_progress=True, placement_score=None) is False
+    )
+
+
+def test_cannot_start_after_completed():
+    assert (
+        can_start_new_placement(has_in_progress=False, placement_score=5) is False
     )

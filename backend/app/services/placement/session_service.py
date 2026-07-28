@@ -27,32 +27,20 @@ from app.services.placement.score_map import (
     writing_scale,
 )
 from app.services.placement.writing_grader import grade_writing_task
-from app.services.roadmap_assembler_service import clear_user_roadmap
-
-RETAKE_COOLDOWN_DAYS = 7
 INSUFFICIENT_BANK_MSG = "Placement bank not ready: not enough published TOEIC items."
 # Back-compat alias for API mapping
 INSUFFICIENT_ADAPTIVE_BANK_MSG = INSUFFICIENT_BANK_MSG
 
 
-def retake_allowed(
-    last_completed_at: datetime | None,
-    now: datetime | None = None,
+def can_start_new_placement(
+    *,
+    has_in_progress: bool,
+    placement_score: int | None,
 ) -> bool:
-    if last_completed_at is None:
-        return True
-    current = now or datetime.now(timezone.utc)
-    completed = last_completed_at
-    if completed.tzinfo is None:
-        completed = completed.replace(tzinfo=timezone.utc)
-    return current - completed >= timedelta(days=RETAKE_COOLDOWN_DAYS)
-
-
-def _retry_after_at(last_completed_at: datetime) -> datetime:
-    completed = last_completed_at
-    if completed.tzinfo is None:
-        completed = completed.replace(tzinfo=timezone.utc)
-    return completed + timedelta(days=RETAKE_COOLDOWN_DAYS)
+    """True when the user may begin a first placement (not resume, not retake)."""
+    if has_in_progress:
+        return False
+    return placement_score is None
 
 
 async def _get_profile(db: AsyncSession, user_id: int) -> UserProfileDB | None:
@@ -98,54 +86,15 @@ async def _abandon_in_progress(
     await db.execute(stmt)
 
 
-async def _last_completed_at(db: AsyncSession, user_id: int) -> datetime | None:
-    return (
-        await db.execute(
-            select(PlacementAttemptDB.completed_at)
-            .where(
-                PlacementAttemptDB.user_id == user_id,
-                PlacementAttemptDB.status == PlacementAttemptStatusEnum.completed,
-            )
-            .order_by(PlacementAttemptDB.completed_at.desc())
-            .limit(1)
-        )
-    ).scalar_one_or_none()
-
-
-def _retake_allowed_for_profile(
-    *,
-    has_in_progress: bool,
-    last_completed_at: datetime | None,
-    placement_score: int | None,
-    now: datetime,
-) -> bool:
-    if has_in_progress:
-        return False
-    if placement_score is None:
-        return True
-    return retake_allowed(last_completed_at, now)
-
-
-async def get_retake_status(db: AsyncSession, user_id: int) -> dict[str, Any]:
+async def get_placement_access_status(db: AsyncSession, user_id: int) -> dict[str, Any]:
     profile = await _require_survey_done(db, user_id)
     in_progress = await _get_in_progress(db, user_id)
-    last_done = await _last_completed_at(db, user_id)
-    now = datetime.now(timezone.utc)
-    allowed = _retake_allowed_for_profile(
-        has_in_progress=in_progress is not None,
-        last_completed_at=last_done,
-        placement_score=profile.placement_score,
-        now=now,
-    )
-    retry_after = (
-        _retry_after_at(last_done)
-        if (not allowed and in_progress is None and last_done is not None)
-        else None
-    )
     return {
-        "allowed": allowed,
+        "can_start": can_start_new_placement(
+            has_in_progress=in_progress is not None,
+            placement_score=profile.placement_score,
+        ),
         "has_in_progress": in_progress is not None,
-        "retry_after_at": retry_after,
     }
 
 
@@ -324,9 +273,8 @@ async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, A
         await db.commit()
 
     now = _now()
-    last_done = await _last_completed_at(db, user_id)
-    if profile.placement_score is not None and not retake_allowed(last_done, now):
-        raise RuntimeError("Chưa đến hạn làm lại placement")
+    if profile.placement_score is not None:
+        raise RuntimeError("Bạn đã hoàn thành placement")
 
     by_part, passages = await _load_published_toeic_pool(db)
     try:
@@ -506,11 +454,8 @@ async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> d
     attempt.completed_at = _now()
 
     profile = await _require_survey_done(db, user_id)
-    was_retake = profile.placement_score is not None
     profile.current_level = CEFRLevel(cefr)
     profile.placement_score = sub
-    if was_retake:
-        await clear_user_roadmap(db, user_id)
 
     await _seed_reading_mastery(db, user_id, int(attempt.id))
     await db.commit()

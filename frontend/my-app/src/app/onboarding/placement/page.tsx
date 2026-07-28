@@ -10,7 +10,7 @@ import { fetchOnboardingStatus } from "@/lib/onboarding-status";
 import {
   advancePlacementSection,
   completePlacementSession,
-  fetchRetakeStatus,
+  fetchPlacementAccessStatus,
   getCurrentPlacementSession,
   startPlacementSession,
   submitReadingAnswers,
@@ -278,11 +278,9 @@ export default function PlacementPage() {
           router.replace("/onboarding");
           return;
         }
-        const retake = await fetchRetakeStatus().catch(() => null);
+        const access = await fetchPlacementAccessStatus().catch(() => null);
         const canEnter =
-          !status.placement_done ||
-          Boolean(retake?.allowed) ||
-          Boolean(retake?.has_in_progress);
+          !status.placement_done || Boolean(access?.has_in_progress);
         if (!canEnter) {
           router.replace("/dashboard");
           return;

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
-import { fetchRetakeStatus, type PlacementRetakeStatus } from "@/lib/placement";
+import { fetchPlacementAccessStatus, type PlacementAccessStatus } from "@/lib/placement";
 import {
   assembleRoadmap,
   completeRoadmapStep,
@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const [weeks, setWeeks] = useState<RoadmapWeek[]>([]);
   const [level, setLevel] = useState<string | null>(null);
   const [placementScore, setPlacementScore] = useState<number | null>(null);
-  const [retake, setRetake] = useState<PlacementRetakeStatus | null>(null);
+  const [access, setAccess] = useState<PlacementAccessStatus | null>(null);
   const [loading, setLoading] = useState(true);
   const [assembling, setAssembling] = useState(false);
   const [completingStepId, setCompletingStepId] = useState<number | null>(null);
@@ -28,15 +28,15 @@ export default function DashboardPage() {
   const [actionError, setActionError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
-    const [path, status, retakeStatus] = await Promise.all([
+    const [path, status, accessStatus] = await Promise.all([
       fetchRoadmap(),
       fetchOnboardingStatus(),
-      fetchRetakeStatus().catch(() => null),
+      fetchPlacementAccessStatus().catch(() => null),
     ]);
     setWeeks(path);
     setLevel(status.current_level ?? path[0]?.level ?? null);
     setPlacementScore(status.placement_score ?? null);
-    setRetake(retakeStatus);
+    setAccess(accessStatus);
   }, []);
 
   useEffect(() => {
@@ -100,24 +100,13 @@ export default function DashboardPage() {
             </span>
           </Link>
           <div className="flex items-center gap-2">
-            {retake?.has_in_progress ? (
+            {access?.has_in_progress ? (
               <Link
                 href="/onboarding/placement"
                 className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline"
               >
                 Resume placement
               </Link>
-            ) : retake?.allowed ? (
-              <Link
-                href="/onboarding/placement"
-                className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline"
-              >
-                Retake placement
-              </Link>
-            ) : retake?.retry_after_at ? (
-              <span className="hidden text-xs text-muted-foreground sm:inline">
-                Retake after {new Date(retake.retry_after_at).toLocaleDateString()}
-              </span>
             ) : null}
             <LogoutButton />
           </div>

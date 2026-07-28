@@ -94,12 +94,11 @@ class PlacementAnswerRequest(BaseModel):
     answer: str
 
 
-class PlacementRetakeStatusData(BaseModel):
-    allowed: bool
+class PlacementAccessStatusData(BaseModel):
+    can_start: bool
     has_in_progress: bool
-    retry_after_at: datetime | None = None
 
 
-class PlacementRetakeStatusResponse(BaseModel):
+class PlacementAccessStatusResponse(BaseModel):
     success: bool = True
-    data: PlacementRetakeStatusData
+    data: PlacementAccessStatusData

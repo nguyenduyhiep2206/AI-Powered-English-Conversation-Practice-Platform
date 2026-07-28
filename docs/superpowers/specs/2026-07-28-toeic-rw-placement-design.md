@@ -178,7 +178,7 @@ Attempt: `form_snapshot`, `section`, `section_ends_at`, reading/writing scales (
 | POST | `.../writing-answers` |
 | POST | `.../advance-section` |
 | POST | `.../complete` |
-| GET | `/onboarding/placement/retake-status` |
+| GET | `/onboarding/placement/access-status` |
 
 Adaptive `.../answers` → 410.
 

@@ -43,7 +43,7 @@ Pure planning lives in `plan_next_steps`; replan orchestration in `replan_locked
 | **Initial assemble** | User calls `POST /roadmap/assemble` → clear existing roadmap → `plan_next_steps(horizon=3)` → persist weeks (first `in_progress`, rest `locked`) |
 | **Week complete** | `complete_roadmap_week` marks the week completed → call `replan_locked_tail` → replace locked tail with up to 2 new locked weeks plus ensure one in-progress head |
 
-Replan does **not** run on placement retake or mastery updates alone — only assemble (fresh start) and week completion (rolling tail refresh).
+Replan does **not** run on placement completion or mastery updates alone — only assemble (fresh start) and week completion (rolling tail refresh).
 
 ---
 
