@@ -11,6 +11,7 @@ def test_validate_mcq_hop_le():
     raw = [
         {
             "type": "mcq",
+            "toeic_part": "r5",
             "stem": "Choose the correct form: I ___ here since 2020.",
             "options": ["lived", "have lived", "live", "am living"],
             "answer": "have lived",
@@ -22,7 +23,41 @@ def test_validate_mcq_hop_le():
     ok = validate_generated_questions(raw)
     assert len(ok) == 1
     assert ok[0]["answer"] == "have lived"
+    assert ok[0]["toeic_part"] == "r5"
     assert ok[0].get("passage") is None
+
+
+def test_validate_rejects_cloze():
+    raw = [
+        {
+            "type": "cloze",
+            "toeic_part": "r5",
+            "stem": "I ___ here.",
+            "options": ["am", "is", "are", "be"],
+            "answer": "am",
+        }
+    ]
+    assert validate_generated_questions(raw) == []
+
+
+def test_blueprint_grammar_prefers_r5():
+    from app.services.cefr_descriptors import blueprint_for
+    from app.models.enums import BookTypeEnum, SkillTypeEnum
+
+    bp = blueprint_for(BookTypeEnum.grammar_textbook, SkillTypeEnum.grammar, 4)
+    parts = [b["toeic_part"] for b in bp]
+    assert parts.count("r5") >= 3
+
+
+def test_blueprint_reading_includes_r6_r7():
+    from app.services.cefr_descriptors import blueprint_for
+    from app.models.enums import BookTypeEnum, SkillTypeEnum
+
+    bp = blueprint_for(BookTypeEnum.reading_practice, SkillTypeEnum.reading, 6)
+    parts = {b["toeic_part"] for b in bp}
+    assert "r6" in parts
+    assert "r7" in parts
+    assert all(b["type"] == "mcq" for b in bp)
 
 
 def test_validate_mcq_thieu_option_bi_loai():
@@ -103,10 +138,11 @@ def test_validate_requires_passage_when_blueprint_says_so():
         "Max the cat sat on the mat and watched the birds outside the window. "
         "He wanted to catch one but the glass stopped him."
     )
-    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "detail"}]
+    blueprint = [{"type": "mcq", "toeic_part": "r7", "requires_passage": True, "cefr_focus": "detail"}]
     missing = [
         {
             "type": "mcq",
+            "toeic_part": "r7",
             "stem": "Where did Max sit?",
             "options": ["mat", "roof", "car", "box"],
             "answer": "mat",
@@ -122,6 +158,7 @@ def test_validate_requires_passage_when_blueprint_says_so():
     grounded = [
         {
             "type": "mcq",
+            "toeic_part": "r7",
             "passage": "Max the cat sat on the mat and watched the birds outside the window.",
             "stem": "Where did Max sit?",
             "options": ["mat", "roof", "car", "box"],
@@ -138,10 +175,18 @@ def test_validate_requires_passage_when_blueprint_says_so():
 
 def test_validate_rejects_ungrounded_passage():
     excerpt = "We use the present perfect with since and for."
-    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "grammar_in_context"}]
+    blueprint = [
+        {
+            "type": "mcq",
+            "toeic_part": "r6",
+            "requires_passage": True,
+            "cefr_focus": "grammar_in_context",
+        }
+    ]
     raw = [
         {
             "type": "mcq",
+            "toeic_part": "r6",
             "passage": "Once upon a time in a galaxy far away the robots danced.",
             "stem": "Choose the tense.",
             "options": ["a", "b", "c", "d"],
@@ -158,11 +203,12 @@ def test_validate_rejects_ungrounded_passage():
 
 def test_validate_rejects_passage_length_way_off_level():
     excerpt = "word " * 400
-    blueprint = [{"type": "mcq", "requires_passage": True, "cefr_focus": "detail"}]
+    blueprint = [{"type": "mcq", "toeic_part": "r7", "requires_passage": True, "cefr_focus": "detail"}]
     # Tiny passage for B1 band (min 250 → reject < 125)
     raw = [
         {
             "type": "mcq",
+            "toeic_part": "r7",
             "passage": "word word word",
             "stem": "What repeats?",
             "options": ["word", "cat", "dog", "bird"],

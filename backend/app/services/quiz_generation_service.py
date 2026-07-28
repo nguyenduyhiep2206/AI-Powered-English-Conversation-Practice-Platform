@@ -19,8 +19,10 @@ from app.models.enums import (
     QuizQuestionStatusEnum,
     QuizQuestionTypeEnum,
     SkillTypeEnum,
+    ToeicPartEnum,
 )
 from app.models.learning_skill import LearningSkillDB
+from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.book_chunk_service import PackMode, get_unit_context
 from app.services.cefr_descriptors import (
@@ -31,19 +33,26 @@ from app.services.cefr_descriptors import (
 )
 from app.services.llm_client import chat_json
 
-SYSTEM_PROMPT = """You are an expert CEFR assessment item writer for English language courses.
+SYSTEM_PROMPT = """You are an expert TOEIC Reading item writer for English courses.
 Write items ONLY from the provided textbook EXCERPT.
-Every item that requires a passage MUST include a "passage" field copied or lightly trimmed
-from the EXCERPT (same wording). Do not invent facts, characters, or grammar rules absent
-from the excerpt. Do not write abstract grammar questions without a book passage/exemplar.
-Do not copy answer keys; write new stems about the passage.
+Use TOEIC Reading formats only:
+- r5: incomplete sentence (stem is one sentence with a blank); 4 options; no long passage.
+- r6: text completion — include a short passage grounded in the EXCERPT with a blank; 4 options.
+- r7: reading comprehension — include a passage grounded in the EXCERPT; stem asks about it; 4 options.
+Do not invent facts absent from the excerpt. Do not use cloze or fix_grammar types.
+Do not copy answer keys; write new stems.
 Return JSON: {"questions":[...]} with fields:
-type (mcq|cloze|fix_grammar), passage (string, required when blueprint says so),
-stem, options (exactly 4 strings for mcq else null), answer, explanation,
-skill, difficulty (easy|medium|hard), cefr_focus (string).
+type (must be "mcq"), toeic_part (r5|r6|r7), passage (string, required for r6/r7),
+stem, options (exactly 4 strings), answer, explanation,
+skill, difficulty (easy|medium|hard), cefr_focus (string),
+passage_group (optional string — same value for items sharing one passage).
 For mcq, answer must exactly match one option.
-Follow the item blueprint order and cefr_focus exactly.
+Follow the item blueprint order, toeic_part, and cefr_focus exactly.
 """
+
+_ALLOWED_READING_TYPES = {"mcq"}
+_ALLOWED_TOEIC_PARTS = {"r5", "r6", "r7"}
+_LEGACY_REJECTED_TYPES = {"cloze", "fix_grammar"}
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 PASSAGE_GROUNDING_RATIO = 0.55
@@ -154,25 +163,37 @@ def validate_generated_questions(
     cefr_level: CEFRLevel | str | None = None,
 ) -> list[dict[str, Any]]:
     """
-    Validate LLM quiz items.
+    Validate LLM quiz items for TOEIC Reading (mcq + toeic_part r5|r6|r7).
 
     When ``blueprint`` is provided, items are paired by index; blueprint entries with
     ``requires_passage`` must include a passage grounded in ``excerpt``.
-    Without blueprint (legacy), passage is optional and not grounded.
+    Rejects cloze / fix_grammar. Without blueprint (legacy callers), still requires
+    mcq + toeic_part when present; if toeic_part missing, accept mcq only for tests.
     """
     valid: list[dict[str, Any]] = []
     for index, item in enumerate(items):
         qtype = item.get("type")
+        if qtype in _LEGACY_REJECTED_TYPES:
+            continue
         stem = (item.get("stem") or "").strip()
         answer = str(item.get("answer") or "").strip()
-        if not stem or not answer or qtype not in {"mcq", "cloze", "fix_grammar"}:
+        if not stem or not answer or qtype not in _ALLOWED_READING_TYPES:
             continue
+
+        toeic_part = item.get("toeic_part")
+        if blueprint is not None and index < len(blueprint):
+            toeic_part = toeic_part or blueprint[index].get("toeic_part")
+        toeic_part = str(toeic_part).strip() if toeic_part else None
+        if toeic_part is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
+            continue
+        if blueprint is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
+            continue
+
         options = item.get("options")
-        if qtype == "mcq":
-            if not isinstance(options, list) or len(options) != 4:
-                continue
-            if answer not in options:
-                continue
+        if not isinstance(options, list) or len(options) != 4:
+            continue
+        if answer not in options:
+            continue
 
         passage_raw = item.get("passage")
         passage = (passage_raw or "").strip() if isinstance(passage_raw, str) else ""
@@ -183,6 +204,8 @@ def validate_generated_questions(
                 requires_passage = bool(blueprint[index].get("requires_passage"))
             else:
                 requires_passage = any(bool(b.get("requires_passage")) for b in blueprint)
+        elif toeic_part in {"r6", "r7"}:
+            requires_passage = True
 
         if requires_passage:
             if not passage or excerpt is None:
@@ -200,9 +223,11 @@ def validate_generated_questions(
         valid.append(
             {
                 "type": qtype,
+                "toeic_part": toeic_part,
                 "stem": stem,
                 "passage": passage or None,
-                "options": options if qtype == "mcq" else None,
+                "passage_group": item.get("passage_group"),
+                "options": options,
                 "answer": answer,
                 "explanation": item.get("explanation"),
                 "skill": item.get("skill") or "grammar",
@@ -314,7 +339,11 @@ def _build_draft_row(
     ctx: dict[str, Any],
     batch_id: str,
     item: dict[str, Any],
+    *,
+    passage_id: int | None = None,
 ) -> QuizQuestionDB:
+    toeic_raw = item.get("toeic_part")
+    toeic_part = ToeicPartEnum(toeic_raw) if toeic_raw in _ALLOWED_TOEIC_PARTS else None
     return QuizQuestionDB(
         skill_id=skill.id,
         book_id=primary.book_id,
@@ -322,6 +351,8 @@ def _build_draft_row(
         question_type=QuizQuestionTypeEnum(item["type"]),
         stem=item["stem"],
         passage=item.get("passage"),
+        passage_id=passage_id,
+        toeic_part=toeic_part,
         options=item["options"],
         answer=item["answer"],
         explanation=item.get("explanation"),
@@ -341,12 +372,51 @@ async def _persist_draft_questions(
     validated: list[dict[str, Any]],
 ) -> list[QuizQuestionDB]:
     batch_id = uuid.uuid4().hex
-    rows = [_build_draft_row(skill, primary, ctx, batch_id, item) for item in validated]
+    passage_ids: dict[str, int] = {}
+    rows: list[QuizQuestionDB] = []
+    for item in validated:
+        passage_id = await _ensure_passage_for_item(
+            db, primary, item, passage_ids=passage_ids
+        )
+        rows.append(
+            _build_draft_row(
+                skill, primary, ctx, batch_id, item, passage_id=passage_id
+            )
+        )
     db.add_all(rows)
     await db.commit()
     for row in rows:
         await db.refresh(row)
     return rows
+
+
+async def _ensure_passage_for_item(
+    db: AsyncSession,
+    primary: BookSkillSourceDB,
+    item: dict[str, Any],
+    *,
+    passage_ids: dict[str, int],
+) -> int | None:
+    """Create or reuse QuizPassageDB for r6/r7 items that share passage_group/text."""
+    toeic_part = item.get("toeic_part")
+    passage_text = (item.get("passage") or "").strip()
+    if toeic_part not in {"r6", "r7"} or not passage_text:
+        return None
+    group_key = str(item.get("passage_group") or "").strip() or passage_text
+    if group_key in passage_ids:
+        return passage_ids[group_key]
+    row = QuizPassageDB(
+        book_id=primary.book_id,
+        unit_id=primary.unit_id,
+        toeic_part=ToeicPartEnum(toeic_part),
+        body=passage_text,
+        status=QuizQuestionStatusEnum.draft,
+        meta={"generation": True},
+    )
+    db.add(row)
+    await db.flush()
+    passage_ids[group_key] = int(row.id)
+    return int(row.id)
 
 
 async def generate_quiz_for_skill(

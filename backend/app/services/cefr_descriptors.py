@@ -9,6 +9,7 @@ from app.models.enums import BookTypeEnum, CEFRLevel, SkillTypeEnum
 
 class BlueprintItem(TypedDict):
     type: str
+    toeic_part: str
     requires_passage: bool
     cefr_focus: str
 
@@ -105,27 +106,28 @@ _PASSAGE_LENGTH: dict[CEFRLevel, tuple[int, int]] = {
     CEFRLevel.C1: (400, 1200),
 }
 
-# Blueprint templates: (type, requires_passage, cefr_focus) repeating patterns
-_READING_PATTERN: list[tuple[str, bool, str]] = [
-    ("mcq", True, "main_idea"),
-    ("mcq", True, "detail"),
-    ("cloze", True, "cloze_in_passage"),
-    ("mcq", True, "vocab_in_context"),
-    ("mcq", True, "inference"),
-    ("mcq", True, "detail"),
-    ("cloze", True, "cloze_in_passage"),
-    ("mcq", True, "vocab_in_context"),
+# Blueprint templates: (type, toeic_part, requires_passage, cefr_focus)
+# Reading-heavy skills prefer R6/R7; grammar/vocab prefer R5 (+ some R6).
+_READING_PATTERN: list[tuple[str, str, bool, str]] = [
+    ("mcq", "r7", True, "main_idea"),
+    ("mcq", "r7", True, "detail"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r7", True, "vocab_in_context"),
+    ("mcq", "r7", True, "inference"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r7", True, "detail"),
+    ("mcq", "r5", False, "incomplete_sentence"),
 ]
 
-_GRAMMAR_PATTERN: list[tuple[str, bool, str]] = [
-    ("mcq", True, "grammar_in_context"),
-    ("mcq", True, "grammar_in_context"),
-    ("cloze", True, "cloze_in_passage"),
-    ("fix_grammar", True, "fix_grammar"),
-    ("mcq", True, "grammar_in_context"),
-    ("mcq", True, "grammar_in_context"),
-    ("cloze", True, "cloze_in_passage"),
-    ("fix_grammar", True, "fix_grammar"),
+_GRAMMAR_PATTERN: list[tuple[str, str, bool, str]] = [
+    ("mcq", "r5", False, "incomplete_sentence"),
+    ("mcq", "r5", False, "incomplete_sentence"),
+    ("mcq", "r5", False, "incomplete_sentence"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r5", False, "incomplete_sentence"),
+    ("mcq", "r5", False, "incomplete_sentence"),
+    ("mcq", "r6", True, "text_completion"),
+    ("mcq", "r5", False, "incomplete_sentence"),
 ]
 
 
@@ -165,8 +167,10 @@ def passage_length_range(level: CEFRLevel | str) -> tuple[int, int]:
 def _select_pattern(
     book_type: BookTypeEnum | None,
     skill_type: SkillTypeEnum,
-) -> list[tuple[str, bool, str]]:
+) -> list[tuple[str, str, bool, str]]:
     if book_type == BookTypeEnum.reading_practice or skill_type == SkillTypeEnum.reading:
+        return _READING_PATTERN
+    if skill_type == SkillTypeEnum.functional:
         return _READING_PATTERN
     return _GRAMMAR_PATTERN
 
@@ -179,7 +183,7 @@ def blueprint_for(
     """
     Build a list of item specs for one generate batch.
 
-    Each item: type (mcq|cloze|fix_grammar), requires_passage, cefr_focus.
+    Each item: type=mcq, toeic_part (r5|r6|r7), requires_passage, cefr_focus.
     """
     if count < 1:
         raise ValueError("count must be >= 1")
@@ -190,10 +194,11 @@ def blueprint_for(
 
     items: list[BlueprintItem] = []
     for index in range(count):
-        qtype, requires_passage, focus = pattern[index % len(pattern)]
+        qtype, toeic_part, requires_passage, focus = pattern[index % len(pattern)]
         items.append(
             {
                 "type": qtype,
+                "toeic_part": toeic_part,
                 "requires_passage": requires_passage,
                 "cefr_focus": focus,
             }
@@ -203,10 +208,11 @@ def blueprint_for(
 
 def blueprint_as_prompt_lines(items: list[BlueprintItem] | list[dict[str, Any]]) -> str:
     """Human-readable blueprint block for the LLM user prompt."""
-    lines = ["Item blueprint (follow order and focus):"]
+    lines = ["Item blueprint (follow order, toeic_part, and focus):"]
     for i, item in enumerate(items, start=1):
         lines.append(
-            f"{i}. type={item['type']}; requires_passage={item['requires_passage']}; "
+            f"{i}. type={item['type']}; toeic_part={item.get('toeic_part')}; "
+            f"requires_passage={item['requires_passage']}; "
             f"cefr_focus={item['cefr_focus']}"
         )
     return "\n".join(lines)
