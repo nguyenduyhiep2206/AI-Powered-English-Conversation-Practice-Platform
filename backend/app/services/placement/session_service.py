@@ -216,19 +216,41 @@ def _section_ends_at(minutes: int, now: datetime | None = None) -> datetime:
     return current + timedelta(minutes=minutes)
 
 
-def _public_session(attempt: PlacementAttemptDB, *, done: bool = False) -> dict[str, Any]:
+def _collect_writing_feedback(snap: dict[str, Any]) -> list[dict[str, Any]]:
+    return list(snap.get("_writing_feedback") or [])
+
+
+async def _load_saved_answers(db: AsyncSession, attempt_id: int) -> dict[str, str]:
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == attempt_id
+            )
+        )
+    ).scalars().all()
+    return {str(int(r.question_id)): (r.given_answer or "") for r in rows}
+
+
+async def _public_session(
+    db: AsyncSession,
+    attempt: PlacementAttemptDB,
+    *,
+    done: bool = False,
+) -> dict[str, Any]:
     snap = attempt.form_snapshot or {}
     public_snap = {
         "reading_items": snap.get("reading_items") or [],
         "writing_items": snap.get("writing_items") or [],
         "passages": snap.get("passages") or {},
     }
+    saved = await _load_saved_answers(db, int(attempt.id)) if attempt.id else {}
     return {
         "done": done,
         "attempt_id": int(attempt.id),
         "section": attempt.section,
         "section_ends_at": attempt.section_ends_at,
         "form": public_snap,
+        "saved_answers": saved,
         "reading_raw": attempt.reading_raw,
         "reading_scale": attempt.reading_scale,
         "writing_raw": attempt.writing_raw,
@@ -242,12 +264,6 @@ def _public_session(attempt: PlacementAttemptDB, *, done: bool = False) -> dict[
         "writing_feedback": _collect_writing_feedback(snap),
         "onboarding_complete": done,
     }
-
-
-def _collect_writing_feedback(snap: dict[str, Any]) -> list[dict[str, Any]]:
-    # Filled after answers exist — session payload may enrich later
-    return list(snap.get("_writing_feedback") or [])
-
 
 async def _require_owner_attempt(
     db: AsyncSession, user_id: int, attempt_id: int
@@ -278,13 +294,26 @@ def _timed_out(attempt: PlacementAttemptDB, now: datetime | None = None) -> bool
     return current >= ends
 
 
+def _form_is_usable(snap: Any) -> bool:
+    """True when snapshot has a TOEIC reading form (not a legacy adaptive attempt)."""
+    if not isinstance(snap, dict):
+        return False
+    reading = snap.get("reading_items") or []
+    return isinstance(reading, list) and len(reading) > 0
+
+
 async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, Any]:
     profile = await _require_survey_done(db, user_id)
     existing = await _get_in_progress(db, user_id)
-    if existing is not None:
+    if existing is not None and _form_is_usable(existing.form_snapshot):
         await _abandon_in_progress(db, user_id, keep_id=int(existing.id))
         await db.commit()
-        return _public_session(existing)
+        return await _public_session(db, existing)
+
+    # Legacy adaptive / empty snapshots cannot serve TOEIC UI — abandon and rebuild.
+    if existing is not None:
+        await _abandon_in_progress(db, user_id, keep_id=None)
+        await db.commit()
 
     now = _now()
     last_done = await _last_completed_at(db, user_id)
@@ -309,7 +338,7 @@ async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, A
     db.add(attempt)
     await db.commit()
     await db.refresh(attempt)
-    return _public_session(attempt)
+    return await _public_session(db, attempt)
 
 
 async def get_current_session(db: AsyncSession, user_id: int) -> dict[str, Any] | None:
@@ -317,7 +346,10 @@ async def get_current_session(db: AsyncSession, user_id: int) -> dict[str, Any] 
     attempt = await _get_in_progress(db, user_id)
     if attempt is None:
         return None
-    return _public_session(attempt)
+    if not _form_is_usable(attempt.form_snapshot):
+        # Force client to POST /sessions and rebuild a TOEIC form.
+        return None
+    return await _public_session(db, attempt)
 
 
 async def submit_reading_answers(
@@ -355,7 +387,7 @@ async def submit_reading_answers(
 
     await db.commit()
     await db.refresh(attempt)
-    return _public_session(attempt)
+    return await _public_session(db, attempt)
 
 
 async def submit_writing_answer(
@@ -407,7 +439,7 @@ async def submit_writing_answer(
     flag_modified(attempt, "form_snapshot")
     await db.commit()
     await db.refresh(attempt)
-    return _public_session(attempt)
+    return await _public_session(db, attempt)
 
 
 async def advance_section(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
@@ -428,7 +460,7 @@ async def advance_section(db: AsyncSession, user_id: int, attempt_id: int) -> di
     attempt.section_ends_at = _section_ends_at(WRITING_MINUTES)
     await db.commit()
     await db.refresh(attempt)
-    return _public_session(attempt)
+    return await _public_session(db, attempt)
 
 
 async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
@@ -436,7 +468,7 @@ async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> d
     if attempt.section == "reading":
         raise ValueError("Hãy advance sang Writing trước khi complete")
     if attempt.section == "done":
-        return _public_session(attempt, done=True)
+        return await _public_session(db, attempt, done=True)
 
     snap = attempt.form_snapshot or {}
     writing_ids = list(snap.get("_writing_ids") or [])
@@ -469,7 +501,7 @@ async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> d
     await _seed_reading_mastery(db, user_id, int(attempt.id))
     await db.commit()
     await db.refresh(attempt)
-    return _public_session(attempt, done=True)
+    return await _public_session(db, attempt, done=True)
 
 
 async def _upsert_answer(

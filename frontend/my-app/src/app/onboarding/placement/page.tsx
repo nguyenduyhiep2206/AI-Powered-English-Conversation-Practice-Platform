@@ -100,6 +100,76 @@ function buildReadingPages(
   return pages;
 }
 
+function draftKey(attemptId: number) {
+  return `placement-draft-${attemptId}`;
+}
+
+type LocalDraft = {
+  reading?: Record<string, string>;
+  writingTextById?: Record<string, string>;
+};
+
+function loadDraft(attemptId: number): LocalDraft {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = localStorage.getItem(draftKey(attemptId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as LocalDraft;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveDraft(attemptId: number, draft: LocalDraft) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(draftKey(attemptId), JSON.stringify(draft));
+  } catch {
+    /* ignore quota */
+  }
+}
+
+function clearDraft(attemptId: number) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.removeItem(draftKey(attemptId));
+  } catch {
+    /* ignore */
+  }
+}
+
+function savedAnswersToMap(saved?: Record<string, string> | null): Record<number, string> {
+  const out: Record<number, string> = {};
+  if (!saved) return out;
+  for (const [k, v] of Object.entries(saved)) {
+    const id = Number(k);
+    if (Number.isFinite(id) && v) out[id] = v;
+  }
+  return out;
+}
+
+function firstIncompleteReadingPage(
+  pages: ReadingPage[],
+  answers: Record<number, string>,
+): number {
+  for (let i = 0; i < pages.length; i += 1) {
+    const incomplete = pages[i].items.some((it) => !answers[it.id]);
+    if (incomplete) return i;
+  }
+  return Math.max(0, pages.length - 1);
+}
+
+function firstIncompleteWritingIndex(
+  items: PlacementFormItem[],
+  answers: Record<number, string>,
+): number {
+  for (let i = 0; i < items.length; i += 1) {
+    if (!answers[items[i].id]) return i;
+  }
+  return Math.max(0, items.length - 1);
+}
+
 export default function PlacementPage() {
   const router = useRouter();
   const [session, setSession] = useState<PlacementSession | null>(null);
@@ -132,6 +202,65 @@ export default function PlacementPage() {
   const readingProgress =
     readingItems.length > 0 ? Math.round((readingAnswered / readingItems.length) * 100) : 0;
 
+  function hydrateFromSession(next: PlacementSession) {
+    const serverMap = savedAnswersToMap(next.saved_answers);
+    const draft = loadDraft(next.attempt_id);
+    const mergedReading: Record<number, string> = { ...serverMap };
+    if (draft.reading) {
+      for (const [k, v] of Object.entries(draft.reading)) {
+        const id = Number(k);
+        if (Number.isFinite(id) && v && !mergedReading[id]) {
+          mergedReading[id] = v;
+        }
+      }
+    }
+    setSession(next);
+    setReadingAnswers(mergedReading);
+
+    const pages = buildReadingPages(
+      next.form?.reading_items ?? [],
+      next.form?.passages ?? {},
+    );
+    const wItems = next.form?.writing_items ?? [];
+
+    if (next.section === "writing") {
+      const wIdx = firstIncompleteWritingIndex(wItems, serverMap);
+      setWritingIndex(wIdx);
+      const wId = wItems[wIdx]?.id;
+      const fromServer = wId != null ? serverMap[wId] : "";
+      const fromDraft =
+        wId != null ? draft.writingTextById?.[String(wId)] ?? "" : "";
+      setWritingText(fromServer || fromDraft || "");
+      setPageIndex(Math.max(0, pages.length - 1));
+    } else {
+      setPageIndex(firstIncompleteReadingPage(pages, mergedReading));
+      setWritingIndex(0);
+      setWritingText("");
+    }
+  }
+
+  function persistReadingDraft(nextAnswers: Record<number, string>) {
+    if (!session) return;
+    const draft = loadDraft(session.attempt_id);
+    const reading: Record<string, string> = {};
+    for (const [id, val] of Object.entries(nextAnswers)) {
+      reading[String(id)] = val;
+    }
+    saveDraft(session.attempt_id, { ...draft, reading });
+  }
+
+  function persistWritingDraft(itemId: number, text: string) {
+    if (!session) return;
+    const draft = loadDraft(session.attempt_id);
+    saveDraft(session.attempt_id, {
+      ...draft,
+      writingTextById: {
+        ...(draft.writingTextById ?? {}),
+        [String(itemId)]: text,
+      },
+    });
+  }
+
   useEffect(() => {
     if (loadStarted.current) return;
     loadStarted.current = true;
@@ -154,7 +283,21 @@ export default function PlacementPage() {
         }
         let next = await getCurrentPlacementSession();
         if (!next) next = await startPlacementSession();
-        setSession(next);
+        const readingCount = next.form?.reading_items?.length ?? 0;
+        if (!next.done && readingCount === 0) {
+          next = await startPlacementSession();
+        }
+        if (!next.done && (next.form?.reading_items?.length ?? 0) === 0) {
+          setError(
+            "Placement bank has no published TOEIC questions yet. Ask an admin to generate/publish or run seed_toeic_placement.",
+          );
+        }
+        if (next.done) {
+          clearDraft(next.attempt_id);
+          setSession(next);
+        } else {
+          hydrateFromSession(next);
+        }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load placement");
       } finally {
@@ -179,11 +322,22 @@ export default function PlacementPage() {
         given_answer: readingAnswers[it.id],
       }));
       const next = await submitReadingAnswers(session.attempt_id, payload);
-      setSession(next);
-      if (pageIndex < readingPages.length - 1) {
-        setPageIndex((p) => p + 1);
-        window.scrollTo({ top: 0, behavior: "smooth" });
+      hydrateFromSession(next);
+      const pages = buildReadingPages(
+        next.form?.reading_items ?? [],
+        next.form?.passages ?? {},
+      );
+      const answers = savedAnswersToMap(next.saved_answers);
+      const draft = loadDraft(next.attempt_id);
+      if (draft.reading) {
+        for (const [k, v] of Object.entries(draft.reading)) {
+          const id = Number(k);
+          if (Number.isFinite(id) && v && !answers[id]) answers[id] = v;
+        }
       }
+      const nextPage = firstIncompleteReadingPage(pages, answers);
+      setPageIndex(nextPage);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Submit failed");
     } finally {
@@ -196,11 +350,8 @@ export default function PlacementPage() {
     setBusy(true);
     setError(null);
     try {
-      // Flush any remaining answered pages first if last page already saved
       const next = await advancePlacementSection(session.attempt_id);
-      setSession(next);
-      setWritingIndex(0);
-      setWritingText("");
+      hydrateFromSession(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Cannot advance yet — finish Reading");
     } finally {
@@ -217,12 +368,8 @@ export default function PlacementPage() {
         item_id: currentWriting.id,
         text: writingText,
       });
-      setSession(next);
-      if (writingIndex < writingItems.length - 1) {
-        setWritingIndex((i) => i + 1);
-        setWritingText("");
-        window.scrollTo({ top: 0, behavior: "smooth" });
-      }
+      hydrateFromSession(next);
+      window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Writing submit failed");
     } finally {
@@ -236,6 +383,7 @@ export default function PlacementPage() {
     setError(null);
     try {
       const next = await completePlacementSession(session.attempt_id);
+      clearDraft(next.attempt_id);
       setSession(next);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Complete failed");
@@ -341,6 +489,12 @@ export default function PlacementPage() {
 
         {error && <p className="text-sm text-red-700">{error}</p>}
 
+        {session?.section === "reading" && readingPages.length === 0 && !error && (
+          <p className="text-sm text-stone-600">
+            No reading questions in this session. Refresh the page or start again after the bank is seeded.
+          </p>
+        )}
+
         {session?.section === "reading" && currentPage && (
           <section className="space-y-5">
             <p className="text-sm font-medium text-stone-600">{currentPage.label}</p>
@@ -367,7 +521,11 @@ export default function PlacementPage() {
                             : "border-stone-300 bg-white"
                         }`}
                         onClick={() =>
-                          setReadingAnswers((prev) => ({ ...prev, [item.id]: opt }))
+                          setReadingAnswers((prev) => {
+                            const next = { ...prev, [item.id]: opt };
+                            persistReadingDraft(next);
+                            return next;
+                          })
                         }
                       >
                         {opt}
@@ -426,7 +584,11 @@ export default function PlacementPage() {
             <textarea
               className="min-h-40 w-full rounded-md border border-stone-300 bg-white p-3 text-sm"
               value={writingText}
-              onChange={(e) => setWritingText(e.target.value)}
+              onChange={(e) => {
+                const text = e.target.value;
+                setWritingText(text);
+                if (currentWriting) persistWritingDraft(currentWriting.id, text);
+              }}
               placeholder="Write your response…"
             />
             <div className="flex flex-wrap gap-2">

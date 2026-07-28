@@ -60,6 +60,7 @@ class PlacementSessionData(BaseModel):
     placement_score: int | None = None
     current_level: str | None = None
     writing_feedback: list[dict[str, Any]] | None = None
+    saved_answers: dict[str, str] | None = None
     onboarding_complete: bool | None = None
     # Legacy adaptive fields (unused)
     question: Any | None = None

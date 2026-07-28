@@ -58,6 +58,7 @@ def _session_data(payload: dict) -> PlacementSessionData:
         placement_score=payload.get("placement_score"),
         current_level=payload.get("current_level"),
         writing_feedback=payload.get("writing_feedback"),
+        saved_answers=payload.get("saved_answers") or {},
         onboarding_complete=payload.get("onboarding_complete"),
     )
 

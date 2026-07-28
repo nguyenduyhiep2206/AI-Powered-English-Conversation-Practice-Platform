@@ -26,6 +26,7 @@ export type PlacementSession = {
   section?: string | null;
   section_ends_at?: string | null;
   form?: PlacementForm | null;
+  saved_answers?: Record<string, string> | null;
   reading_raw?: number | null;
   reading_scale?: number | null;
   writing_raw?: number | null;
