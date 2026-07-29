@@ -11,8 +11,10 @@ from app.api import (
     admin_survey,
     admin_books,
     admin_quiz,
+    admin_lessons,
     quiz,
     roadmap,
+    skills,
 )
 from app.core.config import settings
 from app.core.mongodb import connect_mongo, disconnect_mongo
@@ -48,7 +50,9 @@ app.include_router(onboarding.router, prefix="/api/v1/onboarding", tags=["onboar
 app.include_router(admin_survey.router, prefix="/api/v1/admin/survey", tags=["admin-survey"])
 app.include_router(admin_books.router, prefix="/api/v1/admin/books", tags=["admin-books"])
 app.include_router(admin_quiz.router, prefix="/api/v1/admin/quiz", tags=["admin-quiz"])
+app.include_router(admin_lessons.router, prefix="/api/v1/admin/lessons", tags=["admin-lessons"])
 app.include_router(quiz.router, prefix="/api/v1/quiz", tags=["quiz"])
+app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
 app.include_router(roadmap.router, prefix="/api/v1/roadmap", tags=["roadmap"])
 
 

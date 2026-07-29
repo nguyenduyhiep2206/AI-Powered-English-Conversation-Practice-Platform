@@ -67,5 +67,8 @@ class Settings(BaseSettings):
     STRUCTURE_SKIM_LINES_PER_PAGE: int = 5
     STRUCTURE_SKIM_MAX_PAGES: int = 400
 
+    # Skill mini-unit Learn phase (read→check→write→feedback)
+    LEARN_UNIT_ENABLED: bool = False
+
 
 settings = Settings()
