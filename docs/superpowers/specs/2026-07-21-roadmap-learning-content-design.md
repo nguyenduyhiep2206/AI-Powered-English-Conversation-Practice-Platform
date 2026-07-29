@@ -1,7 +1,7 @@
 # Design: Thêm phần "Học" (lesson) vào roadmap — không chỉ quiz
 
 **Date:** 2026-07-21
-**Status:** Proposed
+**Status:** **SUPERSEDED** by `docs/superpowers/specs/2026-07-29-skill-lesson-mini-unit-design.md` (and previously by 2026-07-26 slide Learn, also discarded)
 **Scope:** `backend` (model + service + API mới), `frontend/my-app` (practice → lesson flow)
 **Depends on:** `2026-07-20-skill-graph-zpd-roadmap-design.md` (skill graph + ZPD assemble), `2026-07-21-roadmap-assembly-fixes-design.md` (assemble fixes)
 **Research:** Exa — Duolingo Method whitepaper, ArthurAI 6-step lesson, Gradual Release of Responsibility (Fisher & Frey / NSW / Smekens), Tiny Lesson
