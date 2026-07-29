@@ -54,6 +54,21 @@ export default function AdminPage() {
             </p>
           </Link>
 
+          <Link
+            href="/admin/lessons"
+            className="ef-card-hover ef-card block rounded-[12px] border border-[#EAEAEA] bg-white p-6 transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-tight">Lessons</h2>
+              <Badge className="rounded-full bg-[#FBF3DB] text-[10px] uppercase tracking-[0.05em] text-[#956400] hover:bg-[#FBF3DB]">
+                Active
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-[#787774]">
+              Generate mini-unit Learn content and publish for practice.
+            </p>
+          </Link>
+
           <section className="ef-card rounded-[12px] border border-[#EAEAEA] bg-white p-6">
             <div className="flex items-center justify-between gap-2">
               <h2 className="text-sm font-semibold tracking-tight">Survey questions</h2>

@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, enabled: true, exact: true },
   { href: "/admin/books", label: "Books", icon: BookOpen, enabled: true, exact: false },
   { href: "/admin/quiz", label: "Quiz", icon: ListChecks, enabled: true, exact: false },
+  { href: "/admin/lessons", label: "Lessons", icon: ClipboardList, enabled: true, exact: false },
   { href: "/admin/survey", label: "Survey", icon: ClipboardList, enabled: false, exact: false },
   { href: "/admin/users", label: "Users", icon: Users, enabled: false, exact: false },
 ] as const;
