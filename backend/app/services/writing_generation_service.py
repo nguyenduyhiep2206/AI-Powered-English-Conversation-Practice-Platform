@@ -5,11 +5,15 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
+from sqlalchemy.ext.asyncio import AsyncSession
+
 from app.models.enums import (
     QuizQuestionStatusEnum,
     QuizQuestionTypeEnum,
     ToeicPartEnum,
 )
+from app.models.book_skill_source import BookSkillSourceDB
+from app.models.learning_skill import LearningSkillDB
 from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
 from app.services.llm_client import chat_json
@@ -19,7 +23,6 @@ from app.services.quiz_generation_service import (
     _require_source_book,
     _resolve_primary_source,
 )
-from sqlalchemy.ext.asyncio import AsyncSession
 
 SYSTEM_PROMPT = """You write TOEIC Writing practice tasks grounded in a textbook EXCERPT.
 No images / picture descriptions — never invent media_url or picture prompts.
@@ -53,58 +56,55 @@ Use generic business names when the excerpt lacks specifics.
 def validate_writing_tasks(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
     valid: list[dict[str, Any]] = []
     for item in tasks:
-        part = str(item.get("toeic_part") or "").strip()
-        stem = (item.get("stem") or "").strip()
-        if part not in {"w1", "w2", "w3"} or not stem:
-            continue
-        brief = item.get("task_brief") if isinstance(item.get("task_brief"), dict) else {}
-        passage = item.get("passage")
-        passage_text = passage.strip() if isinstance(passage, str) else ""
-        prompt_words = item.get("prompt_words")
-        if part == "w1":
-            if not isinstance(prompt_words, list) or len(prompt_words) != 2:
-                continue
-            words = [str(w).strip() for w in prompt_words if str(w).strip()]
-            if len(words) != 2:
-                continue
-            brief = {**brief, "must_use_both_words": True}
-            valid.append(
-                {
-                    "toeic_part": part,
-                    "stem": stem,
-                    "passage": None,
-                    "prompt_words": words,
-                    "task_brief": brief,
-                }
-            )
-            continue
-        if part == "w2" and not passage_text:
-            continue
-        if part == "w3":
-            brief = {**brief, "min_words": int(brief.get("min_words") or 300)}
-        valid.append(
-            {
-                "toeic_part": part,
-                "stem": stem,
-                "passage": passage_text or None,
-                "prompt_words": None,
-                "task_brief": brief,
-            }
-        )
+        normalized = _normalize_writing_task(item)
+        if normalized is not None:
+            valid.append(normalized)
     return valid
 
 
-async def generate_writing_for_skill(
-    db: AsyncSession, skill_id: int, *, count: int = 2
-) -> list[QuizQuestionDB]:
-    """Create draft W1 (cue words only) / W2 / W3 writing items — no images."""
-    if count < 1:
-        raise ValueError("count must be >= 1")
-    skill = await _require_skill(db, skill_id)
-    primary = await _resolve_primary_source(db, skill_id)
-    book = await _require_source_book(db, int(primary.book_id))
-    ctx = _load_unit_context(skill, book, primary)
+def _normalize_writing_task(item: dict[str, Any]) -> dict[str, Any] | None:
+    part = str(item.get("toeic_part") or "").strip()
+    stem = (item.get("stem") or "").strip()
+    if part not in {"w1", "w2", "w3"} or not stem:
+        return None
+    brief = item.get("task_brief") if isinstance(item.get("task_brief"), dict) else {}
+    passage = item.get("passage")
+    passage_text = passage.strip() if isinstance(passage, str) else ""
+    prompt_words = item.get("prompt_words")
 
+    if part == "w1":
+        if not isinstance(prompt_words, list) or len(prompt_words) != 2:
+            return None
+        words = [str(w).strip() for w in prompt_words if str(w).strip()]
+        if len(words) != 2:
+            return None
+        return {
+            "toeic_part": part,
+            "stem": stem,
+            "passage": None,
+            "prompt_words": words,
+            "task_brief": {**brief, "must_use_both_words": True},
+        }
+
+    if part == "w2" and not passage_text:
+        return None
+    if part == "w3":
+        brief = {**brief, "min_words": int(brief.get("min_words") or 300)}
+    return {
+        "toeic_part": part,
+        "stem": stem,
+        "passage": passage_text or None,
+        "prompt_words": None,
+        "task_brief": brief,
+    }
+
+
+def _request_validated_writing_tasks(
+    primary: BookSkillSourceDB,
+    skill: LearningSkillDB,
+    ctx: dict[str, Any],
+    count: int,
+) -> list[dict[str, Any]]:
     payload = chat_json(
         SYSTEM_PROMPT,
         f"Unit: {primary.unit_title or skill.title}\n"
@@ -117,42 +117,74 @@ async def generate_writing_for_skill(
     validated = validate_writing_tasks(raw)
     if not validated:
         raise ValueError("No valid writing tasks after validation.")
+    return validated
 
+
+async def _ensure_writing_passage(
+    db: AsyncSession,
+    primary: BookSkillSourceDB,
+    item: dict[str, Any],
+) -> int | None:
+    passage_text = item.get("passage")
+    if not passage_text:
+        return None
+    passage = QuizPassageDB(
+        book_id=primary.book_id,
+        unit_id=primary.unit_id,
+        toeic_part=ToeicPartEnum(item["toeic_part"]),
+        body=passage_text,
+        status=QuizQuestionStatusEnum.draft,
+    )
+    db.add(passage)
+    await db.flush()
+    return int(passage.id)
+
+
+def _build_writing_draft_row(
+    skill: LearningSkillDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    batch_id: str,
+    item: dict[str, Any],
+    *,
+    passage_id: int | None,
+) -> QuizQuestionDB:
+    return QuizQuestionDB(
+        skill_id=skill.id,
+        book_id=primary.book_id,
+        unit_id=primary.unit_id,
+        question_type=QuizQuestionTypeEnum.writing,
+        toeic_part=ToeicPartEnum(item["toeic_part"]),
+        stem=item["stem"],
+        passage=item.get("passage"),
+        passage_id=passage_id,
+        prompt_words=item.get("prompt_words"),
+        media_url=None,
+        task_brief=item.get("task_brief"),
+        options=None,
+        answer="",
+        cefr_level=skill.cefr_level,
+        difficulty="medium",
+        status=QuizQuestionStatusEnum.draft,
+        generation_batch_id=batch_id,
+        source_chunk_ids=ctx["chunk_ids"],
+    )
+
+
+async def _persist_writing_drafts(
+    db: AsyncSession,
+    skill: LearningSkillDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    validated: list[dict[str, Any]],
+) -> list[QuizQuestionDB]:
     batch_id = uuid.uuid4().hex
     rows: list[QuizQuestionDB] = []
     for item in validated:
-        passage_id = None
-        if item.get("passage"):
-            passage = QuizPassageDB(
-                book_id=primary.book_id,
-                unit_id=primary.unit_id,
-                toeic_part=ToeicPartEnum(item["toeic_part"]),
-                body=item["passage"],
-                status=QuizQuestionStatusEnum.draft,
-            )
-            db.add(passage)
-            await db.flush()
-            passage_id = int(passage.id)
+        passage_id = await _ensure_writing_passage(db, primary, item)
         rows.append(
-            QuizQuestionDB(
-                skill_id=skill.id,
-                book_id=primary.book_id,
-                unit_id=primary.unit_id,
-                question_type=QuizQuestionTypeEnum.writing,
-                toeic_part=ToeicPartEnum(item["toeic_part"]),
-                stem=item["stem"],
-                passage=item.get("passage"),
-                passage_id=passage_id,
-                prompt_words=item.get("prompt_words"),
-                media_url=None,
-                task_brief=item.get("task_brief"),
-                options=None,
-                answer="",
-                cefr_level=skill.cefr_level,
-                difficulty="medium",
-                status=QuizQuestionStatusEnum.draft,
-                generation_batch_id=batch_id,
-                source_chunk_ids=ctx["chunk_ids"],
+            _build_writing_draft_row(
+                skill, primary, ctx, batch_id, item, passage_id=passage_id
             )
         )
     db.add_all(rows)
@@ -160,6 +192,22 @@ async def generate_writing_for_skill(
     for row in rows:
         await db.refresh(row)
     return rows
+
+
+async def generate_writing_for_skill(
+    db: AsyncSession, skill_id: int, *, count: int = 2
+) -> list[QuizQuestionDB]:
+    """Create draft W1 (cue words only) / W2 / W3 writing items — no images."""
+    if count < 1:
+        raise ValueError("count must be >= 1")
+
+    skill = await _require_skill(db, skill_id)
+    primary = await _resolve_primary_source(db, skill_id)
+    book = await _require_source_book(db, int(primary.book_id))
+    ctx = _load_unit_context(skill, book, primary)
+
+    validated = _request_validated_writing_tasks(primary, skill, ctx, count)
+    return await _persist_writing_drafts(db, skill, primary, ctx, validated)
 
 
 def writing_publishable(item: QuizQuestionDB) -> bool:

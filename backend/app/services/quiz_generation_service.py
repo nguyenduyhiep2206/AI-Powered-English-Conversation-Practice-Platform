@@ -216,18 +216,9 @@ def passage_theme_overlap(passage: str, excerpt: str) -> bool:
     return (len(overlap) / len(p_toks)) >= _PASSAGE_MIN_OVERLAP_RATIO
 
 
-def passage_grounded(
-    passage: str, excerpt: str, *, min_ratio: float = PASSAGE_GROUNDING_RATIO
+def _fuzzy_window_match(
+    needle: str, haystack: str, *, min_ratio: float
 ) -> bool:
-    """True if passage appears in excerpt, fuzzy-matches a window, or shares theme words."""
-    needle = _normalize_text(passage)
-    haystack = _normalize_text(excerpt)
-    if not needle or not haystack:
-        return False
-    if needle in haystack:
-        return True
-    if passage_theme_overlap(passage, excerpt):
-        return True
     target = max(20, len(needle))
     lo = max(20, int(target * 0.8))
     hi = min(len(haystack), int(target * 1.2))
@@ -245,6 +236,21 @@ def passage_grounded(
     return best >= min_ratio
 
 
+def passage_grounded(
+    passage: str, excerpt: str, *, min_ratio: float = PASSAGE_GROUNDING_RATIO
+) -> bool:
+    """True if passage appears in excerpt, fuzzy-matches a window, or shares theme words."""
+    needle = _normalize_text(passage)
+    haystack = _normalize_text(excerpt)
+    if not needle or not haystack:
+        return False
+    if needle in haystack:
+        return True
+    if passage_theme_overlap(passage, excerpt):
+        return True
+    return _fuzzy_window_match(needle, haystack, min_ratio=min_ratio)
+
+
 def passage_length_ok(passage: str, cefr_level: CEFRLevel | str | None) -> bool:
     """Reject passages wildly outside the CEFR length band (min/2 .. max*2)."""
     if cefr_level is None:
@@ -252,6 +258,111 @@ def passage_length_ok(passage: str, cefr_level: CEFRLevel | str | None) -> bool:
     min_chars, max_chars = passage_length_range(cefr_level)
     n = len(passage.strip())
     return (min_chars // 2) <= n <= (max_chars * 2)
+
+
+def _resolve_toeic_part(
+    item: dict[str, Any],
+    *,
+    index: int,
+    blueprint: list[dict[str, Any]] | None,
+) -> str | None:
+    toeic_part = item.get("toeic_part")
+    if blueprint is not None and index < len(blueprint):
+        toeic_part = toeic_part or blueprint[index].get("toeic_part")
+    toeic_part = str(toeic_part).strip() if toeic_part else None
+    if toeic_part is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
+        return None
+    if blueprint is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
+        return None
+    return toeic_part
+
+
+def _item_requires_passage(
+    toeic_part: str | None,
+    *,
+    index: int,
+    blueprint: list[dict[str, Any]] | None,
+) -> bool:
+    if toeic_part in {"r6", "r7"}:
+        return True
+    if blueprint is None or toeic_part is not None:
+        return False
+    if index < len(blueprint):
+        return bool(blueprint[index].get("requires_passage"))
+    return any(bool(b.get("requires_passage")) for b in blueprint)
+
+
+def _passage_passes_checks(
+    passage: str,
+    *,
+    excerpt: str | None,
+    cefr_level: CEFRLevel | str | None,
+) -> bool:
+    if not passage or excerpt is None:
+        return False
+    if not passage_grounded(passage, excerpt):
+        return False
+    return passage_length_ok(passage, cefr_level)
+
+
+def _normalize_generated_item(
+    item: dict[str, Any],
+    *,
+    index: int,
+    excerpt: str | None,
+    blueprint: list[dict[str, Any]] | None,
+    cefr_level: CEFRLevel | str | None,
+) -> dict[str, Any] | None:
+    qtype = item.get("type")
+    if qtype in _LEGACY_REJECTED_TYPES:
+        return None
+    stem = (item.get("stem") or "").strip()
+    answer = str(item.get("answer") or "").strip()
+    if not stem or not answer or qtype not in _ALLOWED_READING_TYPES:
+        return None
+
+    toeic_part = _resolve_toeic_part(item, index=index, blueprint=blueprint)
+    if blueprint is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
+        return None
+
+    options = item.get("options")
+    if not isinstance(options, list) or len(options) != 4:
+        return None
+    if answer not in options:
+        return None
+
+    passage_raw = item.get("passage")
+    passage = (passage_raw or "").strip() if isinstance(passage_raw, str) else ""
+    requires_passage = _item_requires_passage(
+        toeic_part, index=index, blueprint=blueprint
+    )
+
+    if requires_passage:
+        if not _passage_passes_checks(passage, excerpt=excerpt, cefr_level=cefr_level):
+            return None
+    elif toeic_part == "r5":
+        if "-------" not in stem:
+            return None
+        passage = ""
+    elif passage and excerpt is not None:
+        if not passage_grounded(passage, excerpt):
+            return None
+        if cefr_level is not None and not passage_length_ok(passage, cefr_level):
+            return None
+
+    return {
+        "type": qtype,
+        "toeic_part": toeic_part,
+        "stem": stem,
+        "passage": passage or None,
+        "passage_group": item.get("passage_group"),
+        "options": options,
+        "answer": answer,
+        "explanation": item.get("explanation"),
+        "skill": item.get("skill") or "grammar",
+        "difficulty": item.get("difficulty") or "medium",
+        "cefr_focus": item.get("cefr_focus"),
+    }
 
 
 def validate_generated_questions(
@@ -271,72 +382,15 @@ def validate_generated_questions(
     """
     valid: list[dict[str, Any]] = []
     for index, item in enumerate(items):
-        qtype = item.get("type")
-        if qtype in _LEGACY_REJECTED_TYPES:
-            continue
-        stem = (item.get("stem") or "").strip()
-        answer = str(item.get("answer") or "").strip()
-        if not stem or not answer or qtype not in _ALLOWED_READING_TYPES:
-            continue
-
-        toeic_part = item.get("toeic_part")
-        if blueprint is not None and index < len(blueprint):
-            toeic_part = toeic_part or blueprint[index].get("toeic_part")
-        toeic_part = str(toeic_part).strip() if toeic_part else None
-        if toeic_part is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
-            continue
-        if blueprint is not None and toeic_part not in _ALLOWED_TOEIC_PARTS:
-            continue
-
-        options = item.get("options")
-        if not isinstance(options, list) or len(options) != 4:
-            continue
-        if answer not in options:
-            continue
-
-        passage_raw = item.get("passage")
-        passage = (passage_raw or "").strip() if isinstance(passage_raw, str) else ""
-
-        # Prefer the item's declared part for passage rules (LLM may reorder vs blueprint).
-        requires_passage = toeic_part in {"r6", "r7"}
-        if not requires_passage and blueprint is not None and toeic_part is None:
-            if index < len(blueprint):
-                requires_passage = bool(blueprint[index].get("requires_passage"))
-            else:
-                requires_passage = any(bool(b.get("requires_passage")) for b in blueprint)
-
-        if requires_passage:
-            if not passage or excerpt is None:
-                continue
-            if not passage_grounded(passage, excerpt):
-                continue
-            if not passage_length_ok(passage, cefr_level):
-                continue
-        elif toeic_part == "r5":
-            if "-------" not in stem:
-                continue
-            passage = ""  # Part 5 never stores a passage
-        elif passage and excerpt is not None:
-            if not passage_grounded(passage, excerpt):
-                continue
-            if cefr_level is not None and not passage_length_ok(passage, cefr_level):
-                continue
-
-        valid.append(
-            {
-                "type": qtype,
-                "toeic_part": toeic_part,
-                "stem": stem,
-                "passage": passage or None,
-                "passage_group": item.get("passage_group"),
-                "options": options,
-                "answer": answer,
-                "explanation": item.get("explanation"),
-                "skill": item.get("skill") or "grammar",
-                "difficulty": item.get("difficulty") or "medium",
-                "cefr_focus": item.get("cefr_focus"),
-            }
+        normalized = _normalize_generated_item(
+            item,
+            index=index,
+            excerpt=excerpt,
+            blueprint=blueprint,
+            cefr_level=cefr_level,
         )
+        if normalized is not None:
+            valid.append(normalized)
     return valid
 
 
@@ -394,19 +448,18 @@ def _load_unit_context(
     return ctx
 
 
-def _request_validated_items(
+def _build_quiz_user_prompt(
     skill: LearningSkillDB,
     book: BookDB,
     primary: BookSkillSourceDB,
     ctx: dict[str, Any],
     count: int,
-) -> list[dict[str, Any]]:
-    """Build the CEFR-aware prompt, call the LLM, and keep only grounded items."""
+    blueprint: list[dict[str, Any]],
+) -> str:
     cefr = skill.cefr_level
     skill_type = skill.skill_type or SkillTypeEnum.grammar
     book_type = book.book_type or BookTypeEnum.freeform
-    blueprint = blueprint_for(book_type, skill_type, count)
-    user_prompt = build_generation_prompt(
+    return build_generation_prompt(
         primary.unit_title or skill.title,
         cefr.value if hasattr(cefr, "value") else str(cefr),
         ctx["text"],
@@ -417,6 +470,33 @@ def _request_validated_items(
         book_type=book_type.value if hasattr(book_type, "value") else str(book_type),
     )
 
+
+def _validate_llm_payload(
+    payload: Any,
+    *,
+    excerpt: str,
+    blueprint: list[dict[str, Any]],
+    cefr_level: CEFRLevel | str | None,
+) -> list[dict[str, Any]]:
+    raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
+    if not isinstance(raw_questions, list):
+        return []
+    return validate_generated_questions(
+        raw_questions,
+        excerpt=excerpt,
+        blueprint=blueprint,
+        cefr_level=cefr_level,
+    )
+
+
+def _best_validated_from_llm(
+    user_prompt: str,
+    *,
+    excerpt: str,
+    blueprint: list[dict[str, Any]],
+    cefr_level: CEFRLevel | str | None,
+    count: int,
+) -> list[dict[str, Any]]:
     best: list[dict[str, Any]] = []
     for attempt in range(2):
         prompt = user_prompt
@@ -426,21 +506,20 @@ def _request_validated_items(
                 "Return exactly the full set. For every r6/r7 item include a passage that "
                 "reuses topic words from the EXCERPT. Every r5 stem must contain ------- .\n"
             )
-        payload = chat_json(SYSTEM_PROMPT, prompt)
-        raw_questions = payload.get("questions") if isinstance(payload, dict) else payload
-        if not isinstance(raw_questions, list):
-            continue
-        validated = validate_generated_questions(
-            raw_questions,
-            excerpt=ctx["text"],
+        validated = _validate_llm_payload(
+            chat_json(SYSTEM_PROMPT, prompt),
+            excerpt=excerpt,
             blueprint=blueprint,
-            cefr_level=cefr,
+            cefr_level=cefr_level,
         )
         if len(validated) > len(best):
             best = validated
         if len(best) >= count:
             break
+    return best
 
+
+def _require_enough_items(best: list[dict[str, Any]], count: int) -> list[dict[str, Any]]:
     if not best:
         raise ValueError("No valid questions after validation.")
     if len(best) < max(2, count // 2):
@@ -449,6 +528,28 @@ def _request_validated_items(
             "(passages must reuse EXCERPT vocabulary; r5 needs -------). Try again."
         )
     return best[:count]
+
+
+def _request_validated_items(
+    skill: LearningSkillDB,
+    book: BookDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    count: int,
+) -> list[dict[str, Any]]:
+    """Build the CEFR-aware prompt, call the LLM, and keep only grounded items."""
+    skill_type = skill.skill_type or SkillTypeEnum.grammar
+    book_type = book.book_type or BookTypeEnum.freeform
+    blueprint = blueprint_for(book_type, skill_type, count)
+    user_prompt = _build_quiz_user_prompt(skill, book, primary, ctx, count, blueprint)
+    best = _best_validated_from_llm(
+        user_prompt,
+        excerpt=ctx["text"],
+        blueprint=blueprint,
+        cefr_level=skill.cefr_level,
+        count=count,
+    )
+    return _require_enough_items(best, count)
 
 
 def _build_draft_row(
@@ -482,32 +583,6 @@ def _build_draft_row(
     )
 
 
-async def _persist_draft_questions(
-    db: AsyncSession,
-    skill: LearningSkillDB,
-    primary: BookSkillSourceDB,
-    ctx: dict[str, Any],
-    validated: list[dict[str, Any]],
-) -> list[QuizQuestionDB]:
-    batch_id = uuid.uuid4().hex
-    passage_ids: dict[str, int] = {}
-    rows: list[QuizQuestionDB] = []
-    for item in validated:
-        passage_id = await _ensure_passage_for_item(
-            db, primary, item, passage_ids=passage_ids
-        )
-        rows.append(
-            _build_draft_row(
-                skill, primary, ctx, batch_id, item, passage_id=passage_id
-            )
-        )
-    db.add_all(rows)
-    await db.commit()
-    for row in rows:
-        await db.refresh(row)
-    return rows
-
-
 async def _ensure_passage_for_item(
     db: AsyncSession,
     primary: BookSkillSourceDB,
@@ -535,6 +610,32 @@ async def _ensure_passage_for_item(
     await db.flush()
     passage_ids[group_key] = int(row.id)
     return int(row.id)
+
+
+async def _persist_draft_questions(
+    db: AsyncSession,
+    skill: LearningSkillDB,
+    primary: BookSkillSourceDB,
+    ctx: dict[str, Any],
+    validated: list[dict[str, Any]],
+) -> list[QuizQuestionDB]:
+    batch_id = uuid.uuid4().hex
+    passage_ids: dict[str, int] = {}
+    rows: list[QuizQuestionDB] = []
+    for item in validated:
+        passage_id = await _ensure_passage_for_item(
+            db, primary, item, passage_ids=passage_ids
+        )
+        rows.append(
+            _build_draft_row(
+                skill, primary, ctx, batch_id, item, passage_id=passage_id
+            )
+        )
+    db.add_all(rows)
+    await db.commit()
+    for row in rows:
+        await db.refresh(row)
+    return rows
 
 
 async def generate_quiz_for_skill(

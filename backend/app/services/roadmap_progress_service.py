@@ -32,15 +32,15 @@ async def _require_in_progress(
         )
     ).scalar_one_or_none()
     if progress is None:
-        raise ValueError("Không tìm thấy tiến độ cho bước lộ trình này")
+        raise ValueError("Not found progress for this roadmap step")
     if progress.status != ProgressStatusEnum.in_progress:
-        raise ValueError("Chỉ hoàn thành được tuần đang in_progress")
+        raise ValueError("Can only complete the week that is in_progress")
 
     step = (
         await db.execute(select(RoadmapStepDB).where(RoadmapStepDB.id == roadmap_step_id))
     ).scalar_one_or_none()
     if step is None:
-        raise ValueError("Không tìm thấy roadmap step")
+        raise ValueError("Not found roadmap step")
     return progress, step
 
 
@@ -54,7 +54,7 @@ async def _quiz_skill_id(db: AsyncSession, roadmap_step_id: int) -> int:
         )
     ).scalar_one_or_none()
     if link is None:
-        raise ValueError("Bước lộ trình chưa gắn skill quiz")
+        raise ValueError("Roadmap step is not linked to a quiz skill")
     return int(link.skill_id)
 
 
@@ -82,7 +82,7 @@ async def complete_roadmap_week(
     skill_id = await _quiz_skill_id(db, roadmap_step_id)
     mastery = await _mastery_for_skill(db, user_id, skill_id)
     if not can_pass_week(mastery):
-        raise ValueError("Chưa đạt mastery 0.7 cho skill của tuần này")
+        raise ValueError("Not reached mastery 0.7 for the week's skill")
 
     progress.status = ProgressStatusEnum.completed
     progress.completed_at = datetime.now(timezone.utc)
