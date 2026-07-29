@@ -166,24 +166,6 @@ export async function login(email: string, password: string) {
   return data;
 }
 
-export async function googleLogin(credential: string) {
-  assertBrowserSessionAvailable();
-
-  const res = await apiFetch("/api/v1/auth/google", {
-    method: "POST",
-    body: JSON.stringify({ credential }),
-  });
-
-  if (!res.ok) {
-    const error = await res.json().catch(() => ({}));
-    throw new Error(extractErrorMessage(error, "Sign in with Google failed"));
-  }
-
-  const data = await res.json();
-  setTokenCookie(data.access_token);
-  return data;
-}
-
 export async function register(payload: {
   full_name: string;
   username: string;

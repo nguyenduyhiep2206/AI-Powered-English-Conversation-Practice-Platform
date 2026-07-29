@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Eye, EyeOff, ArrowRight, Loader2 } from "lucide-react";
-import GoogleSignInButton from "@/components/ui/GoogleSignInButton";
 import { login, getMe } from "@/lib/api";
 import { resolvePostLoginPath, type MeResponse } from "@/lib/auth";
 
@@ -168,9 +167,6 @@ export default function LoginPage() {
               <div className="h-px flex-1 bg-border" />
             </div>
 
-            <div className="my-2">
-              <GoogleSignInButton onError={setError} />
-            </div>
             <p className="text-center text-sm text-muted-foreground">
               Don't have an account?{" "}
               <Link href={`/register`} className="text-primary hover:underline">

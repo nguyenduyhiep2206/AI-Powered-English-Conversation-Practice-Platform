@@ -2,11 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { Loader2, Route as RouteIcon, Sparkles } from "lucide-react";
+import { Loader2, Route as RouteIcon } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { RoadmapPath } from "@/components/roadmap/RoadmapPath";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
 import { fetchPlacementAccessStatus, type PlacementAccessStatus } from "@/lib/placement";
 import {
@@ -89,29 +89,18 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
-              <Sparkles className="h-4 w-4 text-black" />
-            </div>
-            <span className="font-semibold tracking-tight text-foreground">
-              EnglishFlow
-            </span>
-          </Link>
-          <div className="flex items-center gap-2">
-            {access?.has_in_progress ? (
-              <Link
-                href="/onboarding/placement"
-                className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline"
-              >
-                Resume placement
-              </Link>
-            ) : null}
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader
+        extraActions={
+          access?.has_in_progress ? (
+            <Link
+              href="/onboarding/placement"
+              className="hidden text-xs text-muted-foreground transition-colors hover:text-foreground sm:inline"
+            >
+              Resume placement
+            </Link>
+          ) : null
+        }
+      />
 
       <main className="mx-auto max-w-3xl px-6 py-10">
         <div className="ef-fade-up mb-10 flex flex-wrap items-end justify-between gap-4">

@@ -112,14 +112,16 @@ export default function RegisterPage() {
             </ul>
           </div>
           <div className="text-xs text-muted-foreground">
-            Already practicing?{" "}
-            <Link href="/login" className="text-primary hover:underline">Sign in</Link>
           </div>
         </div>
 
         <div className="flex items-center justify-center p-6 md:p-12">
           <div className="w-full max-w-md">
             <div className="mb-8">
+              <div className="mb-4 text-center text-muted-foreground">
+                Already have an account?{" "}
+                <Link href="/login" className="text-primary hover:underline">Sign in</Link>
+              </div>
               <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 Create your account
               </p>
@@ -233,7 +235,7 @@ export default function RegisterPage() {
 
               <label className="flex items-start gap-2 text-xs text-muted-foreground">
                 <Checkbox
-                  className="mt-0.5"
+                  className="border-primary data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
                   checked={agreed}
                   onCheckedChange={(v) => setAgreed(v === true)}
                 />

@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   ArrowRight,
@@ -9,13 +8,12 @@ import {
   PencilLine,
   Target,
   Clock,
-  Sparkles,
   Route as RouteIcon,
   ListChecks,
 } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus, type OnboardingStep } from "@/lib/onboarding-status";
 
 export default function StartOnboardingPage() {
@@ -71,20 +69,7 @@ export default function StartOnboardingPage() {
 
   return (
     <div className="min-h-screen bg-background">
-      <header className="border-b border-border">
-        <div className="mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
-              <Sparkles className="h-4 w-4 text-black" />
-            </div>
-            <span className="font-semibold tracking-tight text-foreground">EnglishFlow</span>
-          </Link>
-          <div className="flex items-center gap-0.5 rounded-lg border border-border/60 bg-card/40 p-1 backdrop-blur-sm">
-            <div className="mx-0.5 h-4 w-px bg-border/70" aria-hidden />
-            <LogoutButton />
-          </div>
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="mx-auto flex min-h-[calc(100vh-73px)] max-w-3xl items-center px-6 py-12">
         <div className="w-full overflow-hidden rounded-xl border border-border bg-card">

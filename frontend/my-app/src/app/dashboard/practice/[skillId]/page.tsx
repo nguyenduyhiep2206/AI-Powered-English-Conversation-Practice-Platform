@@ -3,13 +3,13 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Loader2, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, Loader2, X } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import LessonMiniUnit from "@/components/lesson/LessonMiniUnit";
 import LessonContentWindow from "@/components/lesson/LessonContentWindow";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import LogoutButton from "@/components/ui/LogoutButton";
 import {
   completeSkillLesson,
   fetchSkillLesson,
@@ -141,17 +141,7 @@ export default function PracticeSkillPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border">
-        <div className="mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/dashboard" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-white">
-              <Sparkles className="h-4 w-4 text-black" />
-            </div>
-            <span className="font-semibold tracking-tight">EnglishFlow</span>
-          </Link>
-          <LogoutButton />
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="mx-auto max-w-2xl px-6 py-10">
         <>

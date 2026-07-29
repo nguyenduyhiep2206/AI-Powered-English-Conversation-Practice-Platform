@@ -3,9 +3,9 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Loader2, Sparkles } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import AppHeader from "@/components/AppHeader";
 import { Button } from "@/components/ui/button";
-import LogoutButton from "@/components/ui/LogoutButton";
 import { fetchOnboardingStatus } from "@/lib/onboarding-status";
 import { assembleRoadmap } from "@/lib/roadmap";
 import {
@@ -254,17 +254,7 @@ export default function OnboardingSurveyPage() {
   if (!whyQuestion || !timeQuestion) {
     return (
       <div className="min-h-screen bg-background text-foreground">
-        <header className="border-b border-border">
-          <div className="mx-auto flex items-center justify-between px-6 py-4">
-            <Link href="/start-onboarding" className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
-                <Sparkles className="h-4 w-4 text-black" />
-              </div>
-              <span className="font-semibold tracking-tight">EnglishFlow</span>
-            </Link>
-            <LogoutButton />
-          </div>
-        </header>
+        <AppHeader />
         <main className="mx-auto max-w-2xl px-6 py-10">
           <p className="text-sm text-destructive" role="alert">
             {error ?? "Survey is not configured for Busuu-style onboarding"}
@@ -276,17 +266,7 @@ export default function OnboardingSurveyPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <header className="border-b border-border">
-        <div className="mx-auto flex items-center justify-between px-6 py-4">
-          <Link href="/start-onboarding" className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg border border-border bg-white">
-              <Sparkles className="h-4 w-4 text-black" />
-            </div>
-            <span className="font-semibold tracking-tight">EnglishFlow</span>
-          </Link>
-          <LogoutButton />
-        </div>
-      </header>
+      <AppHeader />
 
       <main className="mx-auto max-w-2xl px-6 py-10">
         <div className="mb-6">
