@@ -16,9 +16,6 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int
     REFRESH_TOKEN_EXPIRE_DAYS: int
 
-    # Google OAuth
-    GOOGLE_CLIENT_ID: str
-
     # Database
     SQLALCHEMY_DATABASE_URL: str
 

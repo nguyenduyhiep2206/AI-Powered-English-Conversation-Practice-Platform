@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Literal
+from typing import Optional
 from datetime import datetime
 
 class User(BaseModel):
@@ -7,7 +7,7 @@ class User(BaseModel):
     email: Optional[str] = None
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
-    auth_provider: Literal["local", "google"] = "local"
+    auth_provider: str = "local"
 
 class UserCreate(User):
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
@@ -31,6 +31,3 @@ class UserResponse(User):
 
 class UserinDB(User):
     hashed_password: str
-    
-class GoogleLoginRequest(BaseModel):
-    credential: str

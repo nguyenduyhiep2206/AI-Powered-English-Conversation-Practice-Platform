@@ -91,7 +91,6 @@ Health check API: `GET /ping`
 Bắt buộc theo `app/core/config.py` (không commit secret):
 
 - App / JWT: `APP_NAME`, `DEBUG`, `SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`
-- OAuth: `GOOGLE_CLIENT_ID`
 - Postgres: `SQLALCHEMY_DATABASE_URL` (+ `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` cho container)
 - Redis: `REDIS_HOST`, `REDIS_PORT`
 - CORS: `FRONTEND_URL`

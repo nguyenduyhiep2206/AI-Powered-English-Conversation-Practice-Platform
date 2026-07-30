@@ -12,9 +12,6 @@ class LoginRequest(BaseModel):
     identifier: str
     password: str
 
-class GoogleLoginRequest(BaseModel):
-    credential: str # ID token received from Google Sign-In
-
 
 class MeData(BaseModel):
     id: int

@@ -83,7 +83,6 @@ Nhóm biến chính (từ `app/core/config.py`):
 |------|------|
 | App | `APP_NAME`, `DEBUG` |
 | JWT | `SECRET_KEY`, `ALGORITHM` (mặc định HS256), `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` |
-| Google | `GOOGLE_CLIENT_ID` |
 | Postgres | `SQLALCHEMY_DATABASE_URL` (+ `POSTGRES_*` cho container DB) |
 | Redis | `REDIS_HOST`, `REDIS_PORT`, `REDIS_DB`, `PERMISSION_CACHE_TTL_SECONDS` |
 | CORS | `FRONTEND_URL` |
