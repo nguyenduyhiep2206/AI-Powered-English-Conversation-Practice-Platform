@@ -1,36 +1,95 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Frontend — EnglishFlow (Next.js)
 
-## Getting Started
+UI learner (dashboard, onboarding, placement, practice) và admin (sách, quiz, lessons).
 
-First, run the development server:
+Root repo: [../../README.md](../../README.md) · Backend API: [../../backend/README.md](../../backend/README.md)
+
+---
+
+## Stack
+
+- Next.js 16 (App Router), React 19, TypeScript
+- Tailwind CSS 4, shadcn/ui (Radix)
+
+---
+
+## Cấu trúc chính
+
+```text
+frontend/my-app/
+├── src/app/            # Routes (dashboard, onboarding, admin, login…)
+├── components/         # UI dùng chung (AppHeader, lesson, admin…)
+├── lib/                # API clients, auth helpers
+├── public/
+├── package.json
+├── Dockerfile.dev
+└── .env.local          # Không commit
+```
+
+---
+
+## Prerequisites
+
+- Node.js 20+
+- Backend API đang chạy (mặc định `http://localhost:8001`) — xem backend README hoặc `docker compose up api`
+
+---
+
+## Setup
+
+```bash
+cd frontend/my-app
+npm install
+```
+
+Tạo `.env.local`:
+
+```bash
+NEXT_PUBLIC_API_URL=http://localhost:8001
+API_URL=http://localhost:8001
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_ACCESS_TOKEN_EXPIRE_MINUTES=30
+NEXT_PUBLIC_REFRESH_TOKEN_EXPIRE_DAYS=7
+```
+
+Trong Docker Compose, FE dùng `frontend/my-app/.env.local` qua `env_file`.
+
+---
+
+## Chạy dev
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Mở http://localhost:3000
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Scripts khác:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run build
+npm run start
+npm run lint
+```
 
-## Learn More
+---
 
-To learn more about Next.js, take a look at the following resources:
+## Docker
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Từ root repo:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```bash
+docker compose up --build frontend
+# hoặc full stack:
+docker compose up --build
+```
 
-## Deploy on Vercel
+Nginx (port `81`) proxy `/` → frontend, `/api/` → API.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+---
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Ghi chú
+
+- Client gọi API qua `NEXT_PUBLIC_API_URL` (`lib/api.ts`).
+- Server components / middleware có thể dùng `API_URL` hoặc `NEXT_PUBLIC_API_URL`.
+- Nghiệp vụ sản phẩm: [../../docs/BUSINESS.md](../../docs/BUSINESS.md)
