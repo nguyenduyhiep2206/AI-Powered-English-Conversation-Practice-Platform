@@ -1,16 +1,21 @@
 from pydantic import BaseModel
 from typing import Optional
 
+
 class Token(BaseModel):
     access_token: str
     token_type: str
+    remember_me: bool = True
+
 
 class Token_data(BaseModel):
     user_id: Optional[str] = None
 
+
 class LoginRequest(BaseModel):
     identifier: str
     password: str
+    remember_me: bool = False
 
 
 class MeData(BaseModel):

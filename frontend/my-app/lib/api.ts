@@ -136,9 +136,18 @@ export async function authFetchMultipart(
 }
 
 /** Keep cookie until refresh token expires so middleware can detect a restorable session. */
-export function setTokenCookie(accessToken: string): void {
+export function setTokenCookie(
+  accessToken: string,
+  rememberMe: boolean = true,
+): void {
   if (typeof document === "undefined" || !accessToken) return;
-  document.cookie = `token=${encodeURIComponent(accessToken)}; path=/; max-age=${REFRESH_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
+  const encoded = encodeURIComponent(accessToken);
+  if (rememberMe) {
+    document.cookie = `token=${encoded}; path=/; max-age=${REFRESH_TOKEN_MAX_AGE_SECONDS}; samesite=lax`;
+  } else {
+    // Session cookie: cleared when the browser closes.
+    document.cookie = `token=${encoded}; path=/; samesite=lax`;
+  }
 }
 
 export function clearTokenCookie(): void {
@@ -148,12 +157,20 @@ export function clearTokenCookie(): void {
   document.cookie = `token=; path=/; max-age=0; samesite=lax`;
 }
 
-export async function login(email: string, password: string) {
+export async function login(
+  email: string,
+  password: string,
+  rememberMe: boolean = false,
+) {
   assertBrowserSessionAvailable();
 
   const res = await apiFetch("/api/v1/auth/login", {
     method: "POST",
-    body: JSON.stringify({ identifier: email, password }),
+    body: JSON.stringify({
+      identifier: email,
+      password,
+      remember_me: rememberMe,
+    }),
   });
 
   if (!res.ok) {
@@ -161,8 +178,12 @@ export async function login(email: string, password: string) {
     throw new Error(extractErrorMessage(error, "Email or password is incorrect"));
   }
 
-  const data = await res.json();
-  setTokenCookie(data.access_token);
+  const data = (await res.json()) as {
+    access_token: string;
+    token_type: string;
+    remember_me?: boolean;
+  };
+  setTokenCookie(data.access_token, data.remember_me ?? rememberMe);
   return data;
 }
 
@@ -198,11 +219,15 @@ export async function refreshAccessToken() {
       throw new Error(extractErrorMessage(error, "Session expired"));
     }
 
-    const data = (await res.json()) as { access_token: string; token_type: string };
+    const data = (await res.json()) as {
+      access_token: string;
+      token_type: string;
+      remember_me?: boolean;
+    };
     if (!data.access_token) {
       throw new Error("Session expired");
     }
-    setTokenCookie(data.access_token);
+    setTokenCookie(data.access_token, data.remember_me ?? true);
     return data;
   })();
 

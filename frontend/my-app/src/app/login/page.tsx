@@ -18,6 +18,7 @@ export default function LoginPage() {
   // 1. State save email, password, error, loading
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [rememberMe, setRememberMe] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({});
@@ -42,7 +43,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       const me = (await getMe()) as MeResponse;
       router.replace(resolvePostLoginPath(me.data));
       router.refresh();
@@ -142,7 +143,12 @@ export default function LoginPage() {
               </div>
               <div className="flex items-center justify-between">
                   <label className="flex items-center gap-2 text-sm text-muted-foreground">
-                    <Checkbox className="border-primary data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"/> Remember me
+                    <Checkbox
+                      checked={rememberMe}
+                      onCheckedChange={(checked) => setRememberMe(checked === true)}
+                      className="border-primary data-[state=checked]:border-primary data-[state=checked]:bg-primary data-[state=checked]:text-primary-foreground"
+                    />
+                    Remember me
                   </label>
                   <Link href="/forgot-password" className="text-xs text-primary hover:underline">
                     Forgot password?

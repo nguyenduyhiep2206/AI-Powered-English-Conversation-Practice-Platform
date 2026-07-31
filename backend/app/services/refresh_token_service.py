@@ -3,7 +3,7 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import HTTPException, Request, status
+from fastapi import Request
 from jose import JWTError, jwt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +14,10 @@ from app.utils.jwt_handler import create_access_token, create_refresh_token
 
 
 class RefreshTokenError(Exception):
+    pass
+
+
+class BrowserSessionConflict(Exception):
     pass
 
 
@@ -58,7 +62,10 @@ async def _get_active_token(db: AsyncSession, jti: str) -> RefreshTokenDB | None
 
 
 def _build_tokens(
-    user_id: int, request: Request | None
+    user_id: int,
+    request: Request | None,
+    *,
+    remember_me: bool = True,
 ) -> tuple[str, str, str, datetime, str | None, str | None]:
     ip_address, user_agent = _client_meta(request)
     jti = str(uuid.uuid4())
@@ -69,7 +76,7 @@ def _build_tokens(
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
     )
     refresh_token, expired_at = create_refresh_token(
-        data={"sub": str(user_id)},
+        data={"sub": str(user_id), "remember_me": bool(remember_me)},
         jti=jti,
         expires_delta=refresh_delta,
     )
@@ -80,10 +87,12 @@ async def issue_session_tokens(
     db: AsyncSession,
     user_id: int,
     request: Request | None = None,
+    *,
+    remember_me: bool = True,
 ) -> tuple[str, str]:
     """Create a new auth session without invalidating other active sessions."""
     access_token, refresh_token, jti, expired_at, ip_address, user_agent = _build_tokens(
-        user_id, request
+        user_id, request, remember_me=remember_me
     )
 
     db.add(
@@ -105,11 +114,16 @@ async def rotate_refresh_token(
     db: AsyncSession,
     token: str,
     request: Request | None = None,
-) -> tuple[str, str]:
-    """Validate the current session refresh token and rotate to a new pair."""
+) -> tuple[str, str, bool, int]:
+    """Validate the current session refresh token and rotate to a new pair.
+
+    Returns (access_token, refresh_token, remember_me, user_id).
+    """
     payload = _decode_refresh_payload(token)
     user_id = int(payload["sub"])
     old_jti = payload["jti"]
+    # Legacy tokens without claim stay persistent (previous default).
+    remember_me = bool(payload.get("remember_me", True))
 
     stored = await _get_active_token(db, old_jti)
     if stored is None:
@@ -118,7 +132,7 @@ async def rotate_refresh_token(
     stored.revoked = True
 
     access_token, refresh_token, jti, expired_at, ip_address, user_agent = _build_tokens(
-        user_id, request
+        user_id, request, remember_me=remember_me
     )
     db.add(
         RefreshTokenDB(
@@ -132,7 +146,7 @@ async def rotate_refresh_token(
     )
     await db.commit()
 
-    return access_token, refresh_token
+    return access_token, refresh_token, remember_me, user_id
 
 
 async def revoke_refresh_token(db: AsyncSession, token: str) -> None:
@@ -176,7 +190,4 @@ async def ensure_browser_session_available(
 ) -> None:
     """Reject login when this browser already has an active session (first login wins)."""
     if await get_active_session_user_id(db, refresh_token) is not None:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=SESSION_ALREADY_ACTIVE_DETAIL,
-        )
+        raise BrowserSessionConflict(SESSION_ALREADY_ACTIVE_DETAIL)
