@@ -3,6 +3,7 @@ import { authFetch, extractErrorMessage } from "@/lib/api";
 export type SkillSourceRow = {
   id: number;
   skill_id: number;
+  skill_title?: string;
   unit_id: number;
   unit_title: string;
   section_title?: string | null;
@@ -10,12 +11,32 @@ export type SkillSourceRow = {
   is_primary: boolean;
 };
 
+export type UnmappedUnit = {
+  unit_index: number;
+  unit_title: string;
+};
+
 export type SyncSkillsResult = {
   book_id: number;
   source_count: number;
   excluded: number;
+  mapped_count?: number;
+  unmapped_units?: UnmappedUnit[];
   llm_used?: boolean;
   edge_count_added?: number;
+  enriched?: number;
+  method_counts?: Record<string, number>;
+  source_counts?: Record<string, number>;
+  enrichment_incomplete?: boolean;
+  sources: SkillSourceRow[];
+};
+
+export type BookSkillSourcesResult = {
+  book_id: number;
+  source_count: number;
+  excluded: number;
+  mapped_count: number;
+  unmapped_units: UnmappedUnit[];
   sources: SkillSourceRow[];
 };
 
@@ -39,6 +60,18 @@ export type QuizQuestionRow = {
   status: string;
   generation_batch_id?: string | null;
 };
+
+export async function fetchBookSkillSources(
+  bookId: number,
+): Promise<BookSkillSourcesResult> {
+  const res = await authFetch(`/api/v1/admin/quiz/books/${bookId}/skill-sources`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load skill sources"));
+  }
+  const body = (await res.json()) as { data: BookSkillSourcesResult };
+  return body.data;
+}
 
 export async function syncBookSkills(bookId: number): Promise<SyncSkillsResult> {
   const res = await authFetch(`/api/v1/admin/quiz/books/${bookId}/sync-skills`, {

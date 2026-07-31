@@ -116,7 +116,7 @@ function AdminQuizPageInner() {
         </p>
       </header>
 
-      <main className="mx-auto w-full max-w-5xl flex-1 space-y-8 p-6 md:p-10">
+      <main className="mx-auto w-full flex-1 space-y-8 p-6 md:p-10">
         <ol className="grid gap-3 sm:grid-cols-3">
           {[
             { step: "01", label: "Sync skills", hint: "Map units → skill graph" },

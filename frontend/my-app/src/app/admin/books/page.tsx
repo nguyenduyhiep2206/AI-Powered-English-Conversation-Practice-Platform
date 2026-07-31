@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowRight, BookOpen, Loader2, ScanSearch, Trash2, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -180,13 +180,15 @@ export default function AdminBooksPage() {
       return;
     }
 
+    setPreviewBookId(bookId);
     setPreviewLoading(true);
     setError(null);
     try {
       const result = await fetchBookStructurePreview(bookId);
-      setPreviewBookId(bookId);
       setPreview(result);
     } catch (err) {
+      setPreviewBookId(null);
+      setPreview(null);
       setError(err instanceof Error ? err.message : "Failed to load preview");
     } finally {
       setPreviewLoading(false);
@@ -385,228 +387,260 @@ export default function AdminBooksPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {books.map((book) => (
-                    <tr key={book.id} className="border-b border-[#EAEAEA] last:border-0">
-                      <td className="px-5 py-3.5">
-                        <p className="font-medium text-[#111111]">{book.title}</p>
-                        {book.description && (
-                          <p className="mt-0.5 line-clamp-1 text-xs text-[#787774]">
-                            {book.description}
-                          </p>
-                        )}
-                      </td>
-                      <td className="px-5 py-3.5 text-[#787774]">
-                        {BOOK_TYPE_LABELS[book.book_type]}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
-                        {book.cefr_level ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5">
-                        <span
-                          className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[book.status]}`}
-                        >
-                          {BOOK_STATUS_LABELS[book.status]}
-                        </span>
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
-                        {book.page_count ?? "—"}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
-                        {formatFileSize(book.file_size)}
-                      </td>
-                      <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
-                        {book.chunk_count}
-                      </td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          {book.status === "ready" && (
-                            <Button
-                              type="button"
-                              size="sm"
-                              asChild
-                              className="rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
-                            >
-                              <Link href={`/admin/quiz?bookId=${book.id}`}>
-                                Open quiz
-                                <ArrowRight className="ml-1 h-3.5 w-3.5" />
-                              </Link>
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            title="Retry structure detect"
-                            disabled={
-                              detectingId === book.id ||
-                              previewLoading ||
-                              book.status === "uploaded" ||
-                              book.status === "processing"
-                            }
-                            onClick={() => handleDetect(book.id)}
-                          >
-                            {detectingId === book.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <ScanSearch className="h-4 w-4" />
+                  {books.map((book) => {
+                    const isPreviewOpen =
+                      previewBookId === book.id && preview !== null;
+                    const isPreviewLoading =
+                      previewLoading && previewBookId === book.id;
+                    return (
+                      <Fragment key={book.id}>
+                        <tr className="border-b border-[#EAEAEA] last:border-0">
+                          <td className="px-5 py-3.5">
+                            <p className="font-medium text-[#111111]">{book.title}</p>
+                            {book.description && (
+                              <p className="mt-0.5 line-clamp-1 text-xs text-[#787774]">
+                                {book.description}
+                              </p>
                             )}
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            title="View structure preview"
-                            disabled={previewLoading}
-                            onClick={() => handleShowPreview(book.id)}
-                          >
-                            Structure
-                          </Button>
-                          {(book.status === "ready" || book.status === "failed") && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              title="Retry pending Voyage embeddings"
-                              disabled={retryingEmbedId === book.id}
-                              onClick={() => handleRetryEmbeddings(book.id)}
+                          </td>
+                          <td className="px-5 py-3.5 text-[#787774]">
+                            {BOOK_TYPE_LABELS[book.book_type]}
+                          </td>
+                          <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
+                            {book.cefr_level ?? "—"}
+                          </td>
+                          <td className="px-5 py-3.5">
+                            <span
+                              className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[book.status]}`}
                             >
-                              {retryingEmbedId === book.id ? (
-                                <Loader2 className="h-4 w-4 animate-spin" />
-                              ) : (
-                                "Retry embed"
+                              {BOOK_STATUS_LABELS[book.status]}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
+                            {book.page_count ?? "—"}
+                          </td>
+                          <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
+                            {formatFileSize(book.file_size)}
+                          </td>
+                          <td className="px-5 py-3.5 font-mono text-xs text-[#787774]">
+                            {book.chunk_count}
+                          </td>
+                          <td className="px-5 py-3.5 text-right">
+                            <div className="flex items-center justify-end gap-1">
+                              {book.status === "ready" && (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  asChild
+                                  className="rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
+                                >
+                                  <Link href={`/admin/quiz?bookId=${book.id}`}>
+                                    Open quiz
+                                    <ArrowRight className="ml-1 h-3.5 w-3.5" />
+                                  </Link>
+                                </Button>
                               )}
-                            </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-[#9F2F2D] hover:bg-[#FDEBEC] hover:text-[#9F2F2D]"
-                            disabled={deletingId === book.id}
-                            onClick={() => handleDelete(book.id)}
-                          >
-                            {deletingId === book.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              <Trash2 className="h-4 w-4" />
-                            )}
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="cursor-pointer disabled:cursor-not-allowed"
+                                title="Retry structure detect"
+                                disabled={
+                                  detectingId === book.id ||
+                                  previewLoading ||
+                                  book.status === "uploaded" ||
+                                  book.status === "processing"
+                                }
+                                onClick={() => handleDetect(book.id)}
+                              >
+                                {detectingId === book.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <ScanSearch className="h-4 w-4" />
+                                )}
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="cursor-pointer disabled:cursor-not-allowed"
+                                title={
+                                  isPreviewOpen
+                                    ? "Hide structure preview"
+                                    : "View structure preview"
+                                }
+                                disabled={previewLoading}
+                                onClick={() => handleShowPreview(book.id)}
+                              >
+                                {isPreviewLoading ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : isPreviewOpen ? (
+                                  "Hide"
+                                ) : (
+                                  "Show"
+                                )}
+                              </Button>
+                              {(book.status === "ready" || book.status === "failed") && (
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="sm"
+                                  className="cursor-pointer disabled:cursor-not-allowed"
+                                  title="Retry pending Voyage embeddings"
+                                  disabled={retryingEmbedId === book.id}
+                                  onClick={() => handleRetryEmbeddings(book.id)}
+                                >
+                                  {retryingEmbedId === book.id ? (
+                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                  ) : (
+                                    "Retry embed"
+                                  )}
+                                </Button>
+                              )}
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="cursor-pointer disabled:cursor-not-allowed text-[#9F2F2D] hover:bg-[#FDEBEC] hover:text-[#9F2F2D]"
+                                disabled={deletingId === book.id}
+                                onClick={() => handleDelete(book.id)}
+                              >
+                                {deletingId === book.id ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Trash2 className="h-4 w-4" />
+                                )}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                        {isPreviewOpen && preview && (
+                          <tr className="border-b border-[#EAEAEA] bg-[#FBFBFA] last:border-0">
+                            <td colSpan={8} className="px-5 py-5">
+                              <div className="mb-4 flex flex-wrap items-center gap-2">
+                                <h3 className="text-sm font-semibold tracking-tight">
+                                  Structure preview
+                                </h3>
+                                {preview.detection_method && (
+                                  <Badge
+                                    variant="outline"
+                                    className="rounded-full font-mono text-[10px]"
+                                  >
+                                    {preview.detection_method}
+                                  </Badge>
+                                )}
+                                {preview.confidence != null && (
+                                  <span className="rounded-full bg-[#F9F9F8] px-2.5 py-0.5 font-mono text-[10px] text-[#787774]">
+                                    {(preview.confidence * 100).toFixed(0)}% confidence
+                                  </span>
+                                )}
+                                <span
+                                  className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[preview.status]}`}
+                                >
+                                  {BOOK_STATUS_LABELS[preview.status]}
+                                </span>
+                                {preview.units.length > 0 &&
+                                  preview.status === "needs_review" && (
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      className="ml-auto rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
+                                      disabled={indexingId === book.id}
+                                      onClick={() => handleConfirmAndIndex(book.id)}
+                                    >
+                                      {indexingId === book.id ? (
+                                        <Loader2 className="h-4 w-4 animate-spin" />
+                                      ) : (
+                                        "Confirm & index"
+                                      )}
+                                    </Button>
+                                  )}
+                              </div>
+
+                              {preview.status === "processing" && (
+                                <p className="mb-3 text-sm text-[#787774]">
+                                  Indexing in background (chunk + embed)…
+                                </p>
+                              )}
+
+                              {preview.status === "needs_review" && (
+                                <p className="mb-3 text-sm text-[#787774]">
+                                  Automatic verification did not pass. Retry detect, or
+                                  Confirm &amp; index to proceed with the units below.
+                                </p>
+                              )}
+
+                              {preview.units.length === 0 ? (
+                                <p className="text-sm text-[#787774]">
+                                  {preview.status === "uploaded"
+                                    ? "Detecting & merging structure in the background…"
+                                    : "No structure units yet. Use Retry detect if detection failed."}
+                                </p>
+                              ) : (
+                                <div className="overflow-x-auto rounded-[8px] border border-[#EAEAEA] bg-white">
+                                  <table className="w-full min-w-[640px] text-left text-sm">
+                                    <thead className="border-b border-[#EAEAEA] text-[11px] uppercase tracking-[0.08em] text-[#787774]">
+                                      <tr>
+                                        <th className="px-3 py-2 font-medium">#</th>
+                                        <th className="px-3 py-2 font-medium">Title</th>
+                                        <th className="px-3 py-2 font-medium">Pages</th>
+                                        <th className="px-3 py-2 font-medium">Source</th>
+                                        <th className="px-3 py-2 font-medium" />
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {preview.units.map((unit) => (
+                                        <tr
+                                          key={unit.id ?? unit.unit_index}
+                                          className="border-b border-[#EAEAEA] last:border-0"
+                                        >
+                                          <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
+                                            {unit.unit_index + 1}
+                                          </td>
+                                          <td className="px-3 py-2.5 font-medium">
+                                            {unit.title}
+                                          </td>
+                                          <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
+                                            {unit.page_start}–{unit.page_end}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-[#787774]">
+                                            {unit.depth_or_source ?? "—"}
+                                          </td>
+                                          <td className="px-3 py-2.5 text-right">
+                                            <Button
+                                              type="button"
+                                              variant="ghost"
+                                              size="sm"
+                                              disabled={reindexingUnitId === unit.id}
+                                              onClick={() =>
+                                                handleReindexUnit(book.id, unit.id)
+                                              }
+                                            >
+                                              {reindexingUnitId === unit.id ? (
+                                                <Loader2 className="h-4 w-4 animate-spin" />
+                                              ) : (
+                                                "Reindex"
+                                              )}
+                                            </Button>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           )}
         </section>
-
-        {preview && previewBookId !== null && (
-          <section className="rounded-[12px] border border-[#EAEAEA] bg-white p-6 md:p-8">
-            <div className="mb-4 flex flex-wrap items-center gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Structure preview</h2>
-              {preview.detection_method && (
-                <Badge variant="outline" className="rounded-full font-mono text-[10px]">
-                  {preview.detection_method}
-                </Badge>
-              )}
-              {preview.confidence != null && (
-                <span className="rounded-full bg-[#F9F9F8] px-2.5 py-0.5 font-mono text-[10px] text-[#787774]">
-                  {(preview.confidence * 100).toFixed(0)}% confidence
-                </span>
-              )}
-              <span
-                className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium uppercase tracking-[0.05em] ${STATUS_BADGE[preview.status]}`}
-              >
-                {BOOK_STATUS_LABELS[preview.status]}
-              </span>
-              {preview.units.length > 0 && preview.status === "needs_review" && (
-                <Button
-                  type="button"
-                  size="sm"
-                  className="ml-auto rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
-                  disabled={indexingId === previewBookId}
-                  onClick={() => handleConfirmAndIndex(previewBookId)}
-                >
-                  {indexingId === previewBookId ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    "Confirm & index"
-                  )}
-                </Button>
-              )}
-            </div>
-
-            {preview.status === "processing" && (
-              <p className="mb-3 text-sm text-[#787774]">
-                Indexing in background (chunk + embed)…
-              </p>
-            )}
-
-            {preview.status === "needs_review" && (
-              <p className="mb-3 text-sm text-[#787774]">
-                Automatic verification did not pass. Retry detect, or Confirm &amp; index
-                to proceed with the units below.
-              </p>
-            )}
-
-            {preview.units.length === 0 ? (
-              <p className="text-sm text-[#787774]">
-                {preview.status === "uploaded"
-                  ? "Detecting & merging structure in the background…"
-                  : "No structure units yet. Use Retry detect if detection failed."}
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[640px] text-left text-sm">
-                  <thead className="border-b border-[#EAEAEA] text-[11px] uppercase tracking-[0.08em] text-[#787774]">
-                    <tr>
-                      <th className="px-3 py-2 font-medium">#</th>
-                      <th className="px-3 py-2 font-medium">Title</th>
-                      <th className="px-3 py-2 font-medium">Pages</th>
-                      <th className="px-3 py-2 font-medium">Source</th>
-                      <th className="px-3 py-2 font-medium" />
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {preview.units.map((unit) => (
-                      <tr
-                        key={unit.id ?? unit.unit_index}
-                        className="border-b border-[#EAEAEA] last:border-0"
-                      >
-                        <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
-                          {unit.unit_index + 1}
-                        </td>
-                        <td className="px-3 py-2.5 font-medium">{unit.title}</td>
-                        <td className="px-3 py-2.5 font-mono text-xs text-[#787774]">
-                          {unit.page_start}–{unit.page_end}
-                        </td>
-                        <td className="px-3 py-2.5 text-[#787774]">
-                          {unit.depth_or_source ?? "—"}
-                        </td>
-                        <td className="px-3 py-2.5 text-right">
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            disabled={reindexingUnitId === unit.id}
-                            onClick={() => handleReindexUnit(previewBookId, unit.id)}
-                          >
-                            {reindexingUnitId === unit.id ? (
-                              <Loader2 className="h-4 w-4 animate-spin" />
-                            ) : (
-                              "Reindex"
-                            )}
-                          </Button>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </section>
-        )}
       </main>
     </>
   );

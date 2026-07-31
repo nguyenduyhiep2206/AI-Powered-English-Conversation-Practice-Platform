@@ -16,13 +16,30 @@ from app.schemas.quiz_schema import (
     QuizQuestionOut,
 )
 from app.services.quiz_generation_service import generate_quiz_for_skill
-from app.services.skill_graph_service import sync_skills_from_preview
+from app.services.skill_graph_service import (
+    list_book_skill_sources,
+    sources_with_titles,
+    sync_skills_from_preview,
+)
 from app.services.writing_generation_service import (
     generate_writing_for_skill,
     writing_publishable,
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/books/{book_id}/skill-sources",
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_list_skill_sources(book_id: int, db: AsyncSession = Depends(get_db)):
+    """Return persisted book_skill_sources with catalog skill titles."""
+    try:
+        data = await list_book_skill_sources(db, book_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return {"data": data}
 
 
 @router.post(
@@ -35,33 +52,32 @@ router = APIRouter()
     include_in_schema=False,
 )
 async def admin_sync_skills(book_id: int, db: AsyncSession = Depends(get_db)):
-    """Sync learning skills + book_skill_sources from a ready book's structure preview."""
+    """Attach book units to catalog skills; replace book_skill_sources for a ready book."""
     try:
         sources, meta = await sync_skills_from_preview(db, book_id)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    return {
-        "data": {
-            "book_id": book_id,
-            "source_count": len(sources),
-            "excluded": sum(1 for s in sources if s.is_excluded),
-            "llm_used": bool(meta.get("llm_used")),
-            "edge_count_added": int(meta.get("edge_count_added") or 0),
-            "sources": [
-                {
-                    "id": s.id,
-                    "skill_id": s.skill_id,
-                    "unit_id": s.unit_id,
-                    "unit_title": s.unit_title,
-                    "section_title": s.section_title,
-                    "is_excluded": s.is_excluded,
-                    "is_primary": s.is_primary,
-                }
-                for s in sources
-            ],
-        }
+    source_payloads = await sources_with_titles(db, sources)
+    data: dict = {
+        "book_id": book_id,
+        "source_count": len(source_payloads),
+        "excluded": int(meta.get("excluded_count") or 0),
+        "mapped_count": int(meta.get("mapped_count") or 0),
+        "unmapped_units": meta.get("unmapped_units") or [],
+        "llm_used": bool(meta.get("llm_used")),
+        "edge_count_added": int(meta.get("edge_count_added") or 0),
+        "sources": source_payloads,
     }
+    if "enriched" in meta:
+        data["enriched"] = int(meta.get("enriched") or 0)
+    if "method_counts" in meta:
+        data["method_counts"] = meta["method_counts"]
+    if "source_counts" in meta:
+        data["source_counts"] = meta["source_counts"]
+    if meta.get("enrichment_incomplete"):
+        data["enrichment_incomplete"] = True
+    return {"data": data}
 
 
 @router.post(

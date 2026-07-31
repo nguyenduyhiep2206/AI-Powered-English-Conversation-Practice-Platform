@@ -1,4 +1,4 @@
-"""Sync book structure units into canonical learning_skills + book_skill_sources."""
+"""Attach book structure units onto curated learning_skills (catalog) + book_skill_sources."""
 
 from __future__ import annotations
 
@@ -9,23 +9,24 @@ from typing import Any
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import settings
 from app.models.book import BookDB
 from app.models.book_skill_source import BookSkillSourceDB
 from app.models.book_structure_preview import BookStructurePreviewDB
 from app.models.enums import BookStatusEnum, BookTypeEnum, CEFRLevel, SkillTypeEnum
-from app.models.learning_skill import LearningSkillDB, SkillEdgeDB
-from app.services.skill_graph_difficulty import difficulty_from_unit_index
-from app.services.skill_graph_llm_service import refine_units_with_llm
+from app.models.learning_skill import LearningSkillDB
+from app.services.skill_graph_llm_service import attach_units_with_llm
 from app.services.skill_normalize_service import normalize_unit_to_slug
 
 logger = logging.getLogger(__name__)
 
 EXCLUDE_PATTERNS = re.compile(
-    r"(answer\s*key|key to exercises|key to additional|study\s*guide|appendix|index|^contents$)",
+    r"(answer\s*key|key to exercises|key to additional|study\s*guide|appendix|"
+    r"index|^contents$|\breview\b|\bprogress\s*check\b|\btest\b|\bexam\b)",
     re.I,
 )
 
-EXISTING_SKILLS_CAP = 200
+CATALOG_SKILLS_CAP = 200
 
 
 def should_exclude_unit(title: str) -> bool:
@@ -42,12 +43,6 @@ def infer_section_title(unit: dict[str, Any], all_units: list[dict[str, Any]]) -
         if (u.get("depth_or_source") or "").lower() == "section":
             prev_section = u["title"]
     return prev_section
-
-
-def build_linear_edges(nodes: list[dict[str, Any]]) -> list[tuple[int, int]]:
-    """Link consecutive non-excluded nodes by id (skip excluded)."""
-    active = [c for c in sorted(nodes, key=lambda x: x["unit_index"]) if not c["is_excluded"]]
-    return [(active[i]["id"], active[i + 1]["id"]) for i in range(len(active) - 1)]
 
 
 def infer_skill_type(book_type: BookTypeEnum | str | None) -> SkillTypeEnum:
@@ -73,76 +68,53 @@ def _primary_rank(book_type: BookTypeEnum | str | None) -> int:
     return order.get(value, 9)
 
 
-def _parse_skill_type(raw: str, fallback: SkillTypeEnum) -> SkillTypeEnum:
-    try:
-        return SkillTypeEnum(str(raw).strip().lower())
-    except ValueError:
-        return fallback
-
-
-def build_rule_unit_mappings(
+def build_rule_attach_mappings(
     units: list[dict[str, Any]],
     *,
-    default_skill_type: SkillTypeEnum,
+    catalog_slugs: set[str],
 ) -> list[dict[str, Any]]:
-    """Rule-based mappings used when LLM refine fails."""
-    n_units = len(units)
+    """Rule fallback: title slug, else first grammar_cue in catalog; else unmapped."""
+    catalog = {s.strip().lower() for s in catalog_slugs}
     mappings: list[dict[str, Any]] = []
     for u in units:
-        slug, display_title = normalize_unit_to_slug(str(u.get("title") or ""))
+        title = str(u.get("title") or "")
         unit_index = int(u["unit_index"])
+        if should_exclude_unit(title):
+            mappings.append({"unit_index": unit_index, "slug": None, "exclude": True})
+            continue
+        slug, _display = normalize_unit_to_slug(title)
+        if slug in catalog:
+            mappings.append({"unit_index": unit_index, "slug": slug, "exclude": False})
+            continue
+        cue_slug = None
+        for cue in u.get("grammar_cues") or []:
+            candidate = str(cue).strip().lower()
+            if candidate in catalog:
+                cue_slug = candidate
+                break
         mappings.append(
-            {
-                "unit_index": unit_index,
-                "slug": slug,
-                "title": display_title,
-                "skill_type": default_skill_type.value,
-                "difficulty_in_level": difficulty_from_unit_index(unit_index, n_units),
-                "exclude": should_exclude_unit(str(u.get("title") or "")),
-            }
+            {"unit_index": unit_index, "slug": cue_slug, "exclude": False}
         )
     return mappings
 
 
-async def _get_or_create_skill(
-    db: AsyncSession,
-    *,
-    slug: str,
-    title: str,
-    cefr_level: CEFRLevel,
-    skill_type: SkillTypeEnum,
-    difficulty_in_level: int | None = None,
-    overwrite_difficulty: bool = False,
-) -> LearningSkillDB:
-    existing = (
-        await db.execute(
-            select(LearningSkillDB).where(
-                LearningSkillDB.slug == slug,
-                LearningSkillDB.cefr_level == cefr_level,
-            )
-        )
-    ).scalar_one_or_none()
-    if existing is not None:
-        if difficulty_in_level is not None and (
-            overwrite_difficulty or existing.difficulty_in_level is None
-        ):
-            existing.difficulty_in_level = int(difficulty_in_level)
-        return existing
-
-    skill = LearningSkillDB(
-        slug=slug,
-        title=title,
-        cefr_level=cefr_level,
-        skill_type=skill_type,
-        difficulty_in_level=difficulty_in_level if difficulty_in_level is not None else 5,
-        is_active=True,
-    )
-    db.add(skill)
-    await db.flush()
-    return skill
+def _llm_attach_input_units(unit_dicts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Build attach LLM unit payload: title + enrich signals only (no excerpt/text)."""
+    return [
+        {
+            "unit_index": int(u["unit_index"]),
+            "title": u["title"],
+            "rule_slug": normalize_unit_to_slug(str(u["title"]))[0],
+            "language_focus": u.get("language_focus"),
+            "grammar_cues": u.get("grammar_cues") or [],
+            "vocab_cues": u.get("vocab_cues") or [],
+            "content_summary": u.get("content_summary"),
+        }
+        for u in unit_dicts
+    ]
 
 
-async def _load_existing_skills_for_level(
+async def load_catalog_skills(
     db: AsyncSession, cefr_level: CEFRLevel
 ) -> list[dict[str, Any]]:
     rows = list(
@@ -152,9 +124,10 @@ async def _load_existing_skills_for_level(
                 .where(
                     LearningSkillDB.cefr_level == cefr_level,
                     LearningSkillDB.is_active.is_(True),
+                    LearningSkillDB.origin == "catalog",
                 )
                 .order_by(LearningSkillDB.id)
-                .limit(EXISTING_SKILLS_CAP)
+                .limit(CATALOG_SKILLS_CAP)
             )
         )
         .scalars()
@@ -162,6 +135,7 @@ async def _load_existing_skills_for_level(
     )
     return [
         {
+            "id": int(s.id),
             "slug": s.slug,
             "title": s.title,
             "difficulty_in_level": int(s.difficulty_in_level)
@@ -170,54 +144,6 @@ async def _load_existing_skills_for_level(
         }
         for s in rows
     ]
-
-
-async def _resolve_skill_id(
-    db: AsyncSession,
-    *,
-    slug: str,
-    cefr_level: CEFRLevel,
-    cache: dict[str, int],
-) -> int | None:
-    if slug in cache:
-        return cache[slug]
-    row = (
-        await db.execute(
-            select(LearningSkillDB).where(
-                LearningSkillDB.slug == slug,
-                LearningSkillDB.cefr_level == cefr_level,
-            )
-        )
-    ).scalar_one_or_none()
-    if row is None:
-        return None
-    cache[slug] = int(row.id)
-    return int(row.id)
-
-
-async def _add_edge_if_missing(
-    db: AsyncSession, from_skill_id: int, to_skill_id: int
-) -> bool:
-    if from_skill_id == to_skill_id:
-        return False
-    exists = (
-        await db.execute(
-            select(SkillEdgeDB).where(
-                SkillEdgeDB.from_skill_id == from_skill_id,
-                SkillEdgeDB.to_skill_id == to_skill_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if exists is not None:
-        return False
-    db.add(
-        SkillEdgeDB(
-            from_skill_id=from_skill_id,
-            to_skill_id=to_skill_id,
-            relation="prerequisite",
-        )
-    )
-    return True
 
 
 async def _load_ready_book_and_units(
@@ -247,6 +173,106 @@ async def _load_ready_book_and_units(
     return book, units
 
 
+def skill_source_payload(
+    source: BookSkillSourceDB, *, skill_title: str
+) -> dict[str, Any]:
+    return {
+        "id": int(source.id),
+        "skill_id": int(source.skill_id),
+        "skill_title": skill_title,
+        "unit_id": int(source.unit_id),
+        "unit_title": source.unit_title,
+        "section_title": source.section_title,
+        "is_excluded": bool(source.is_excluded),
+        "is_primary": bool(source.is_primary),
+    }
+
+
+async def _skill_titles_by_id(
+    db: AsyncSession, skill_ids: set[int]
+) -> dict[int, str]:
+    if not skill_ids:
+        return {}
+    rows = (
+        await db.execute(
+            select(LearningSkillDB.id, LearningSkillDB.title).where(
+                LearningSkillDB.id.in_(skill_ids)
+            )
+        )
+    ).all()
+    return {int(skill_id): title for skill_id, title in rows}
+
+
+async def sources_with_titles(
+    db: AsyncSession, sources: list[BookSkillSourceDB]
+) -> list[dict[str, Any]]:
+    titles = await _skill_titles_by_id(db, {int(s.skill_id) for s in sources})
+    return [
+        skill_source_payload(
+            s,
+            skill_title=titles.get(int(s.skill_id), f"#{s.skill_id}"),
+        )
+        for s in sources
+    ]
+
+
+async def list_book_skill_sources(
+    db: AsyncSession, book_id: int
+) -> dict[str, Any]:
+    """Load persisted attach rows + skill titles; derive unmapped from preview units."""
+    book = (
+        await db.execute(select(BookDB).where(BookDB.id == book_id))
+    ).scalar_one_or_none()
+    if book is None:
+        raise ValueError(f"Không tìm thấy sách {book_id}")
+
+    units = list(
+        (
+            await db.execute(
+                select(BookStructurePreviewDB)
+                .where(BookStructurePreviewDB.book_id == book_id)
+                .order_by(BookStructurePreviewDB.unit_index)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    rows = (
+        await db.execute(
+            select(BookSkillSourceDB, LearningSkillDB.title)
+            .join(LearningSkillDB, LearningSkillDB.id == BookSkillSourceDB.skill_id)
+            .where(BookSkillSourceDB.book_id == book_id)
+            .order_by(BookSkillSourceDB.id)
+        )
+    ).all()
+
+    sources = [
+        skill_source_payload(source, skill_title=title) for source, title in rows
+    ]
+    sourced_unit_ids = {int(s["unit_id"]) for s in sources}
+    # Only derive unmapped after at least one attach row exists for this book.
+    unmapped_units = (
+        [
+            {"unit_index": int(u.unit_index), "unit_title": u.title}
+            for u in units
+            if int(u.id) not in sourced_unit_ids
+        ]
+        if sources
+        else []
+    )
+    excluded = sum(1 for s in sources if s["is_excluded"])
+    mapped = len(sources) - excluded
+    return {
+        "book_id": book_id,
+        "source_count": len(sources),
+        "excluded": excluded,
+        "mapped_count": mapped,
+        "unmapped_units": unmapped_units,
+        "sources": sources,
+    }
+
+
 def _unit_dicts(units: list[BookStructurePreviewDB]) -> list[dict[str, Any]]:
     return [
         {
@@ -254,67 +280,78 @@ def _unit_dicts(units: list[BookStructurePreviewDB]) -> list[dict[str, Any]]:
             "title": u.title,
             "unit_index": u.unit_index,
             "depth_or_source": u.depth_or_source,
+            "language_focus": u.language_focus,
+            "grammar_cues": u.grammar_cues or [],
+            "vocab_cues": u.vocab_cues or [],
+            "content_summary": u.content_summary,
         }
         for u in units
     ]
 
 
-async def _resolve_mappings(
+async def _maybe_enrich_units_before_attach(
+    db: AsyncSession, book_id: int
+) -> dict[str, Any]:
+    """Force re-enrich all units before attach; never raises — attach must continue on failure."""
+    if not getattr(settings, "UNIT_ENRICH_ENABLED", True):
+        return {}
+    try:
+        from app.services.unit_enrichment_service import enrich_units_for_book
+
+        return await enrich_units_for_book(db, book_id, force=True)
+    except Exception:
+        logger.exception(
+            "Unit enrichment failed for book_id=%s; continuing attach",
+            book_id,
+        )
+        return {"enrichment_incomplete": True}
+
+
+async def _resolve_attach_mappings(
     db: AsyncSession,
     *,
     book: BookDB,
     book_id: int,
     unit_dicts: list[dict[str, Any]],
-    default_skill_type: SkillTypeEnum,
-) -> tuple[list[dict[str, Any]], list[tuple[str, str]], bool]:
-    """LLM refine first; rule fallback on any failure."""
+    catalog_skills: list[dict[str, Any]],
+) -> tuple[list[dict[str, Any]], bool]:
     cefr_value = (
         book.cefr_level.value if hasattr(book.cefr_level, "value") else str(book.cefr_level)
     )
-    llm_input_units = [
-        {
-            "unit_index": int(u["unit_index"]),
-            "title": u["title"],
-            "rule_slug": normalize_unit_to_slug(str(u["title"]))[0],
-        }
-        for u in unit_dicts
-    ]
-    existing_skills = await _load_existing_skills_for_level(db, book.cefr_level)
-
+    llm_input_units = _llm_attach_input_units(unit_dicts)
+    catalog_slugs = {str(s["slug"]) for s in catalog_skills}
     try:
-        mappings, prereq_pairs = refine_units_with_llm(
+        mappings = attach_units_with_llm(
             cefr_level=cefr_value,
             book_title=book.title,
-            existing_skills=existing_skills,
+            catalog_skills=catalog_skills,
             units=llm_input_units,
         )
-        return mappings, prereq_pairs, True
+        return mappings, True
     except Exception:
         logger.exception(
-            "LLM skill graph refine failed for book_id=%s; falling back to rules",
+            "LLM attach failed for book_id=%s; falling back to rules",
             book_id,
         )
         return (
-            build_rule_unit_mappings(unit_dicts, default_skill_type=default_skill_type),
-            [],
+            build_rule_attach_mappings(unit_dicts, catalog_slugs=catalog_slugs),
             False,
         )
 
 
-async def _create_sources_from_mappings(
+async def _create_attach_sources(
     db: AsyncSession,
     *,
-    book: BookDB,
     book_id: int,
     mappings: list[dict[str, Any]],
     units_by_index: dict[int, BookStructurePreviewDB],
     unit_dicts: list[dict[str, Any]],
-    default_skill_type: SkillTypeEnum,
-    overwrite_difficulty: bool,
-) -> tuple[list[BookSkillSourceDB], list[dict[str, Any]], dict[str, int]]:
-    created_sources: list[BookSkillSourceDB] = []
-    sequence_for_edges: list[dict[str, Any]] = []
-    slug_to_id: dict[str, int] = {}
+    slug_to_skill: dict[str, dict[str, Any]],
+) -> tuple[list[BookSkillSourceDB], list[dict[str, Any]], int]:
+    """Create sources only for mapped non-excluded units. Returns sources, unmapped, excluded_count."""
+    created: list[BookSkillSourceDB] = []
+    unmapped: list[dict[str, Any]] = []
+    excluded_count = 0
 
     for mapping in sorted(mappings, key=lambda m: int(m["unit_index"])):
         unit_index = int(mapping["unit_index"])
@@ -322,25 +359,22 @@ async def _create_sources_from_mappings(
         if preview is None:
             continue
 
-        difficulty = max(1, min(10, int(mapping.get("difficulty_in_level") or 5)))
-        excluded = bool(mapping.get("exclude", False))
-        slug = str(mapping["slug"])
-        title = str(mapping.get("title") or slug)
-        skill = await _get_or_create_skill(
-            db,
-            slug=slug,
-            title=title,
-            cefr_level=book.cefr_level,
-            skill_type=_parse_skill_type(
-                str(mapping.get("skill_type") or ""), default_skill_type
-            ),
-            difficulty_in_level=difficulty,
-            overwrite_difficulty=overwrite_difficulty,
-        )
-        slug_to_id[slug] = int(skill.id)
+        if bool(mapping.get("exclude")):
+            excluded_count += 1
+            continue
+
+        slug = mapping.get("slug")
+        if not slug:
+            unmapped.append({"unit_index": unit_index, "unit_title": preview.title})
+            continue
+
+        skill = slug_to_skill.get(str(slug))
+        if skill is None:
+            unmapped.append({"unit_index": unit_index, "unit_title": preview.title})
+            continue
 
         source = BookSkillSourceDB(
-            skill_id=skill.id,
+            skill_id=int(skill["id"]),
             book_id=book_id,
             unit_id=preview.id,
             unit_title=preview.title,
@@ -352,17 +386,14 @@ async def _create_sources_from_mappings(
                 },
                 unit_dicts,
             ),
-            is_excluded=excluded,
+            is_excluded=False,
             is_primary=False,
         )
         db.add(source)
-        created_sources.append(source)
-        sequence_for_edges.append(
-            {"id": int(skill.id), "unit_index": unit_index, "is_excluded": excluded}
-        )
+        created.append(source)
 
     await db.flush()
-    return created_sources, sequence_for_edges, slug_to_id
+    return created, unmapped, excluded_count
 
 
 async def _recompute_primary_sources(
@@ -392,40 +423,6 @@ async def _recompute_primary_sources(
             source.is_primary = source.id == best_source.id
 
 
-async def _union_prerequisite_edges(
-    db: AsyncSession,
-    *,
-    book: BookDB,
-    llm_used: bool,
-    prereq_slug_pairs: list[tuple[str, str]],
-    sequence_for_edges: list[dict[str, Any]],
-    slug_to_id: dict[str, int],
-) -> int:
-    added = 0
-    if llm_used and prereq_slug_pairs:
-        for frm_slug, to_slug in prereq_slug_pairs:
-            frm_id = await _resolve_skill_id(
-                db, slug=frm_slug, cefr_level=book.cefr_level, cache=slug_to_id
-            )
-            to_id = await _resolve_skill_id(
-                db, slug=to_slug, cefr_level=book.cefr_level, cache=slug_to_id
-            )
-            if frm_id is None or to_id is None:
-                continue
-            if await _add_edge_if_missing(db, frm_id, to_id):
-                added += 1
-        return added
-
-    seen: set[tuple[int, int]] = set()
-    for frm, to in build_linear_edges(sequence_for_edges):
-        if frm == to or (frm, to) in seen:
-            continue
-        seen.add((frm, to))
-        if await _add_edge_if_missing(db, frm, to):
-            added += 1
-    return added
-
-
 async def _clear_book_sources(db: AsyncSession, book_id: int) -> None:
     await db.execute(delete(BookSkillSourceDB).where(BookSkillSourceDB.book_id == book_id))
 
@@ -433,46 +430,54 @@ async def _clear_book_sources(db: AsyncSession, book_id: int) -> None:
 async def sync_skills_from_preview(
     db: AsyncSession, book_id: int
 ) -> tuple[list[BookSkillSourceDB], dict[str, Any]]:
-    """Replace book_skill_sources for a ready book; upsert learning_skills by (slug, cefr).
+    """Attach book units onto catalog skills; replace this book's book_skill_sources.
 
-    Tries LLM refine once; on failure falls back to rule-based normalize + linear edges.
-    Returns (sources, meta) where meta includes llm_used and edge_count_added.
+    Does not create skills, rewrite edges, or overwrite catalog difficulty.
+    Returns (sources, meta) with mapped/unmapped/excluded counts.
     """
     book, units = await _load_ready_book_and_units(db, book_id)
+    enrich_meta = await _maybe_enrich_units_before_attach(db, book_id)
+    if enrich_meta and not enrich_meta.get("enrichment_incomplete"):
+        book, units = await _load_ready_book_and_units(db, book_id)
+
     unit_dicts = _unit_dicts(units)
     units_by_index = {int(u.unit_index): u for u in units}
-    default_skill_type = infer_skill_type(book.book_type)
 
-    mappings, prereq_slug_pairs, llm_used = await _resolve_mappings(
+    catalog_skills = await load_catalog_skills(db, book.cefr_level)
+    if not catalog_skills:
+        raise ValueError(
+            "No catalog skills for this CEFR level — run: python -m app.seeds.cefr_ladder_a1_a2"
+        )
+
+    mappings, llm_used = await _resolve_attach_mappings(
         db,
         book=book,
         book_id=book_id,
         unit_dicts=unit_dicts,
-        default_skill_type=default_skill_type,
+        catalog_skills=catalog_skills,
     )
 
     await _clear_book_sources(db, book_id)
-    created_sources, sequence_for_edges, slug_to_id = await _create_sources_from_mappings(
+    slug_to_skill = {str(s["slug"]): s for s in catalog_skills}
+    created_sources, unmapped_units, excluded_count = await _create_attach_sources(
         db,
-        book=book,
         book_id=book_id,
         mappings=mappings,
         units_by_index=units_by_index,
         unit_dicts=unit_dicts,
-        default_skill_type=default_skill_type,
-        overwrite_difficulty=llm_used,
+        slug_to_skill=slug_to_skill,
     )
     await _recompute_primary_sources(db, created_sources)
-    edge_count_added = await _union_prerequisite_edges(
-        db,
-        book=book,
-        llm_used=llm_used,
-        prereq_slug_pairs=prereq_slug_pairs,
-        sequence_for_edges=sequence_for_edges,
-        slug_to_id=slug_to_id,
-    )
 
     await db.commit()
     for source in created_sources:
         await db.refresh(source)
-    return created_sources, {"llm_used": llm_used, "edge_count_added": edge_count_added}
+
+    return created_sources, {
+        "llm_used": llm_used,
+        "mapped_count": len(created_sources),
+        "unmapped_units": unmapped_units,
+        "excluded_count": excluded_count,
+        "edge_count_added": 0,
+        **enrich_meta,
+    }
