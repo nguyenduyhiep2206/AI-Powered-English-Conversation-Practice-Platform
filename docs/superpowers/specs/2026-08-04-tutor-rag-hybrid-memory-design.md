@@ -1,22 +1,23 @@
 # Thiết kế: Tutor RAG + Hybrid Memory (book_chunks)
 
 **Ngày:** 2026-08-04  
-**Trạng thái:** Draft — chờ review  
+**Trạng thái:** Accepted  
 **Plan:** `docs/superpowers/plans/2026-08-04-tutor-rag-hybrid-memory.md`  
-**Phụ thuộc:** AI Tutor text role-play P0 (`2026-08-04-ai-tutor-text-roleplay-design.md`), Mongo `book_chunks` + Voyage embeddings, Redis, `book_skill_sources`  
+**Phụ thuộc:** AI Tutor text role-play (`2026-08-04-ai-tutor-text-roleplay-design.md` — **topic catalog + off-topic policy**), Mongo `book_chunks` + Voyage embeddings, Redis, `book_skill_sources`  
 **Map bài lab:** RAG / chunk-embed-store / RetrievalQA / Memory+RAG / Docker+cache+debug — corpus = sách đã index (thay CSV siêu thị)  
 
 ---
 
 ## 1. Vấn đề
 
-Tutor P0 chỉ gửi scenario + skill titles + transcript → LLM. Hội thoại dài và hỏi kiến thức sách dễ:
+Tutor text-only gửi scenario + skill titles + transcript → LLM. Hội thoại dài và hỏi kiến thức sách dễ:
 
 1. Phồng token (full history / nhồi unit text).
 2. Hallucinate grammar/vocab ngoài sách.
 3. Không tận dụng pipeline index đã có (`book_chunks.embedding`).
+4. Entry catalog (Promova-like) làm rõ **topic bound** — RAG chỉ hợp lệ trong topic/sách liên quan, không phải open Q&A thế giới.
 
-Bài lab yêu cầu RAG + hybrid memory + Redis cache + debug — phù hợp mở rộng tutor, không làm chatbot siêu thị riêng.
+Bài lab yêu cầu RAG + hybrid memory + Redis cache + debug — mở rộng tutor, không chatbot siêu thị riêng.
 
 ---
 
@@ -24,19 +25,19 @@ Bài lab yêu cầu RAG + hybrid memory + Redis cache + debug — phù hợp m�
 
 ### Mục tiêu
 
-- Khi learner **hỏi kiến thức / giải thích từ sách** (hoặc bật “grounded”): retrieve Top-K chunks từ Mongo gắn skill tuần hiện tại → inject vào prompt.
-- Hội thoại dài: **windowed memory** (opener + N turn gần ± optional rolling summary) — không gửi full transcript.
-- Token estimate (prompt chars / approx tokens) **&lt; 50%** so với baseline “full transcript + full unit pack” trên cùng fixture hội thoại dài (đo trong test/script).
-- Redis cache cho câu hỏi lặp (normalize query → cached answer + retrieval meta).
-- Debug mode FE: hiện retrieved chunks, scores, memory window, cache hit, token estimate.
-- Config: `TOP_K`, similarity threshold, max inject chars.
+- Khi learner **hỏi kiến thức / giải thích từ sách** trong topic: retrieve Top-K chunks từ Mongo (scope theo skill nếu có).
+- Hội thoại dài: **windowed memory**.
+- Token hybrid **&lt; 50%** baseline full context (fixture test).
+- Redis cache retrieval cho câu hỏi lặp **trong nhánh RAG**.
+- Debug mode FE + SSE `debug`.
+- Tôn trọng **off-topic policy** của tutor: tin tức/giá vàng **không** retrieve.
 
 ### Không làm
 
-- Chroma / FAISS / OpenAI embeddings mới (tương đương: Mongo + Voyage đã có; ghi rõ trong báo cáo lab).
-- CSV siêu thị.
-- Voice / đổi mastery từ RAG.
-- Atlas `$vectorSearch` bắt buộc trên máy local (tùy môi trường): mặc định **in-process cosine** trên subset đã filter theo `book_id`/`unit_id`; nếu Atlas có sẵn thì có thể swap adapter sau.
+- Chroma / FAISS / OpenAI embeddings mới (Mongo + Voyage tương đương đề).
+- CSV siêu thị; web search realtime.
+- RAG cho mọi câu chào / small-talk trong scene.
+- Avatar / voice.
 
 ---
 
@@ -44,56 +45,53 @@ Bài lab yêu cầu RAG + hybrid memory + Redis cache + debug — phù hợp m�
 
 | Chủ đề | Quyết định |
 |--------|------------|
-| Surface | Mở rộng AI Tutor (cùng session SSE) |
-| Khi nào RAG | Heuristic router: câu hỏi kiến thức / chứa keyword giải thích / `?` + skill terms; **hoặc** luôn retrieve nhẹ Top-K=2 nếu `TUTOR_RAG_ALWAYS_LIGHT` |
-| Corpus | `book_chunks` `embed_status=embedded` của unit gắn `target_skill_ids` qua `book_skill_sources` |
-| Embed query | `embedding_service.embed_texts([query])` (Voyage) |
-| Retrieve | Filter by book/unit ids → cosine similarity → Top-K, drop dưới `TUTOR_RAG_MIN_SCORE` |
-| Memory | Opener + last `TUTOR_MEMORY_MAX_TURNS` user/assistant pairs; strip meta from history |
-| Hybrid prompt | system = roleplay rules + **Retrieved context** block + CEFR/skills; user = windowed transcript |
-| Cache | Redis key `tutor:rag:{hash(normalized_q + skill_ids + lang)}` TTL cấu hình; chỉ cache nhánh “Q&A grounded”, không cache pure small-talk |
-| Debug | SSE event `debug` (chỉ khi `debug=true` trên POST message) + FE panel |
-| Baseline đo token | Script/test: `estimate_tokens(full)` vs `estimate_tokens(hybrid)` |
+| Surface | Cùng session SSE tutor; catalog hoặc roadmap đều vào một chat UI |
+| Off-topic trước RAG | Nếu off-topic (giá vàng, news…) → **không** retrieve; prompt redirect-only |
+| Khi nào RAG | `needs_rag` **và** không off-topic **và** có scope chunks |
+| Corpus | `book_chunks` embedded; ưu tiên unit gắn `target_skill_ids` |
+| Embed / retrieve | Voyage + cosine in-process |
+| Memory | Opener + last N turns |
+| Cache | Redis retrieval payload only |
+| Debug | `debug=true` → event `debug` |
+| Token test | hybrid ≤ 0.5 × baseline |
 
 ---
 
-## 4. Luồng turn (cập nhật)
+## 4. Luồng turn
 
 ```text
 POST .../messages { content, debug? }
   → persist user
-  → build memory_window from transcript
-  → route = needs_rag(content)?
-       yes → embed query → retrieve → (redis get/set) → context_block
-       no  → context_block empty
-  → system = build_turn_system_prompt(..., retrieved=context_block)
-  → stream reply + meta
-  → if debug: emit event "debug" { route, cache_hit, chunks[], memory_chars, prompt_chars, approx_tokens }
+  → memory_window
+  → if is_off_topic(content):
+        retrieved = none; route = off_topic
+     elif TUTOR_RAG_ENABLED and needs_rag(content) and has_scope:
+        retrieve (+ redis) → retrieved; route = rag
+     else:
+        route = roleplay
+  → stream with system prompt (+ retrieved block if any)
+  → meta (off_topic?)
+  → debug event?
   → done
 ```
-
-Pure role-play (greeting, “yes”, short replies) skip RAG để giữ latency/cost.
 
 ---
 
 ## 5. Retrieve scope
 
-Cho session với `target_skill_ids`:
+**Có `target_skill_ids` (từ roadmap):**  
+`book_skill_sources` → `(book_id, unit_id)` → chunks embedded → cosine Top-K.
 
-1. Query `book_skill_sources` → tập `(book_id, unit_id)` primary/attached.
-2. Load Mongo chunks: `book_id ∈ …`, `unit_id ∈ …` (hoặc unit slug), `embed_status=embedded`, projection `{text, embedding, book_id, unit_id, chunk_id}`.
-3. Nếu không có chunk: fallback không RAG + hint debug `retrieval_empty`.
-4. Cosine(query_vec, chunk.embedding); giữ score ≥ threshold; Top-K; truncate tổng text ≤ `TUTOR_RAG_MAX_CHARS`.
+**Catalog-only (`target_skill_ids` rỗng):**  
+P0: **skip RAG** (role-play thuần) trừ khi `TUTOR_RAG_CATALOG_LEVEL_FALLBACK=true` (mặc định **false**).
+
+Không có chunk → `retrieval_empty`; vẫn role-play.
 
 ---
 
-## 6. API / SSE bổ sung
+## 6. API / config
 
-- `POST /sessions/{id}/messages` body thêm optional `debug: bool` (default false).
-- Event mới: `debug` (chỉ khi debug) — **sau** `meta` hoặc trước `done`, không lẫn vào transcript persist.
-- Không đổi schema bảng Postgres bắt buộc; optional JSON `meta.debug` trên assistant message nếu muốn audit (P0: chỉ SSE).
-
-Config (`config.py`):
+Giống tutor API; message body `debug?: bool`.
 
 ```text
 TUTOR_RAG_ENABLED: bool = True
@@ -103,62 +101,55 @@ TUTOR_RAG_MAX_CHARS: int = 2500
 TUTOR_MEMORY_MAX_TURNS: int = 6
 TUTOR_RAG_CACHE_TTL_SECONDS: int = 3600
 TUTOR_RAG_ALWAYS_LIGHT: bool = False
+TUTOR_RAG_CATALOG_LEVEL_FALLBACK: bool = False
 ```
 
 ---
 
 ## 7. Frontend
 
-- Toggle **Debug** trên trang tutor → gửi `debug: true`.
-- Panel phụ: list chunk (score, unit, snippet), cache hit badge, memory window size, approx tokens.
-- Không hiện debug mặc định cho learner thường.
+- Catalog `/ai-tutor` (cards START) — xem tutor role-play spec.
+- Chat: Debug toggle + panel (`route`: roleplay|rag|off_topic, chunks, cache, tokens).
+- Off-topic: AI redirect in-character; debug hiện `route=off_topic`.
 
 ---
 
-## 8. Đo “giảm &lt; 50% token”
+## 8. Đo token &lt; 50%
 
-Fixture hội thoại dài (vd 15 turns) + 1 câu hỏi grounded:
-
-| Mode | Prompt composition |
-|------|-------------------|
-| Baseline | Full transcript + pack toàn bộ unit text (như “tuần 6 full context”) |
-| Hybrid | Memory window + Top-K chunks |
-
-`approx_tokens = ceil(chars / 4)` đủ cho lab; log cả hai trong debug/script. Acceptance: hybrid ≤ 0.5 × baseline trên fixture cố định trong test.
+Baseline = full transcript + full unit pack text.  
+Hybrid = memory window + Top-K.  
+Fixture cố định trong pytest.
 
 ---
 
 ## 9. Bảo mật
 
-- Retrieve chỉ chunks thuộc sách đã gắn skill session (không mở all books).
-- Debug chỉ owner session.
-- Cache key không chứa raw PII ngoài query đã normalize; TTL ngắn.
+- Không retrieve ngoài scope skill/unit.
+- Không tool call tin tức.
+- Debug owner-only.
 
 ---
 
-## 10. Map báo cáo lab (nộp thầy)
+## 10. Map báo cáo lab
 
-| Yêu cầu đề | Chứng minh trong EnglishFlow |
-|------------|------------------------------|
-| Embeddings từ data thật | PDF → chunks → Voyage (pipeline sẵn) |
-| Vector DB | Mongo `book_chunks.embedding` |
-| RAG pipeline | `tutor_rag.py` retrieve + inject |
-| Memory hybrid | Windowed transcript |
-| Token &lt; 50% | Test/script §8 |
-| Redis cache | Hit trên câu hỏi lặp |
-| Debug UI | Tutor debug panel |
-| Docker | compose hiện có |
-
-Ghi chú ethodology: “OpenAI Embedding/Chroma trong slide ≡ Voyage/Mongo trong hệ thống production của nhóm.”
+| Đề | EnglishFlow |
+|----|-------------|
+| Embeddings data thật | PDF → Voyage |
+| Vector DB | Mongo `book_chunks` |
+| RAG pipeline | `tutor_rag` |
+| Memory hybrid | Window |
+| Token &lt; 50% | Test §8 |
+| Redis | Retrieval cache |
+| Debug UI | Panel |
+| Topic bound | Catalog Promova-like + off-topic |
 
 ---
 
 ## 11. Spec self-review
 
-- [x] Không TBD quyết định P0  
-- [x] Tách khỏi supermarket CSV  
-- [x] Không phá tutor P0 khi `TUTOR_RAG_ENABLED=false`  
-- [ ] Plan task chi tiết — file plan kèm theo  
+- [x] Catalog + off-topic gắn với RAG gating  
+- [x] Catalog-only RAG default off  
+- [x] Không supermarket / Chroma bắt buộc  
 
 ---
 
@@ -167,3 +158,4 @@ Ghi chú ethodology: “OpenAI Embedding/Chroma trong slide ≡ Voyage/Mongo tro
 | Date | Note |
 |------|------|
 | 2026-08-04 | Draft: adapt lab RAG vào tutor + book_chunks |
+| 2026-08-04 | Add topic catalog UX + off-topic gate before retrieve |

@@ -1,24 +1,25 @@
 # Tutor RAG + Hybrid Memory Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans. Steps use checkbox (`- [ ]`) syntax.
 
-**Goal:** Add optional RAG over Mongo `book_chunks` + windowed chat memory + Redis Q-cache + debug SSE/UI to the existing AI Tutor, cutting prompt size vs full-context baseline by ≥50% on a fixed fixture.
+**Goal:** Topic catalog (Promova-like) + off-topic soft steering + optional RAG over `book_chunks` + windowed memory + Redis retrieval cache + debug UI — with ≥50% token cut vs full-context baseline on a fixture.
 
-**Architecture:** New `tutor_rag` service (route → embed query → filter chunks by skill→unit → cosine Top-K); tutor turn uses memory window + retrieved block; Redis caches grounded Q&A; FE debug panel when `debug=true`.
+**Architecture:** Catalog lists scenarios → START with `scenario_id`; roadmap still can pass `roadmap_step_id`. Turn pipeline: off-topic gate → optional RAG → memory window → SSE. Redis caches retrieval only.
 
-**Tech Stack:** FastAPI, Mongo book_chunks, Voyage `embed_texts`, Redis, existing tutor SSE, Next.js tutor page, pytest.
+**Tech Stack:** FastAPI, Mongo, Voyage, Redis, tutor SSE, Next.js.
 
-**Spec:** `docs/superpowers/specs/2026-08-04-tutor-rag-hybrid-memory-design.md`
+**Spec:** `docs/superpowers/specs/2026-08-04-tutor-rag-hybrid-memory-design.md` + updates in `2026-08-04-ai-tutor-text-roleplay-design.md`
 
 ## Global Constraints
 
-- Disable path: `TUTOR_RAG_ENABLED=false` restores P0 behavior (no retrieve)
-- Corpus only chunks tied to session `target_skill_ids` via `book_skill_sources`
-- Embeddings = Voyage (not OpenAI); vector store = Mongo (not Chroma) — document in lab report
-- No mastery writes; no supermarket CSV
-- SSE `debug` event only when client requests `debug: true`
-- Approx tokens = `ceil(chars / 4)`; hybrid ≤ 0.5 × baseline on fixture test
-- Commit conventional when allowed; only stage task files
+- **Do not commit** unless the user explicitly asks to commit (stage files only otherwise)
+- `TUTOR_RAG_ENABLED=false` → no retrieve
+- Off-topic (news/gold/world facts) → no RAG, in-character redirect
+- Catalog-only sessions: RAG off unless `TUTOR_RAG_CATALOG_LEVEL_FALLBACK=true` (default false)
+- Corpus scoped by `target_skill_ids` when present
+- Voyage + Mongo (not OpenAI/Chroma)
+- Debug event only when `debug=true`
+- Token hybrid ≤ 0.5 × baseline on fixture
 
 ---
 
@@ -26,144 +27,80 @@
 
 | File | Responsibility |
 |------|----------------|
-| `backend/app/core/config.py` | `TUTOR_RAG_*`, `TUTOR_MEMORY_MAX_TURNS`, cache TTL |
-| `backend/app/services/tutor_rag.py` | Router heuristic, load scope, cosine retrieve, build context block |
-| `backend/app/services/tutor_memory.py` | Window transcript; size estimators |
-| `backend/app/services/tutor_rag_cache.py` | Redis get/set normalized query cache |
-| `backend/app/services/tutor_prompt.py` | Accept `retrieved_context` in system prompt |
-| `backend/app/services/tutor_service.py` | Wire hybrid into `_stream_assistant_turn`; emit debug |
-| `backend/app/schemas/tutor_schema.py` | `debug` on message body; DebugPayload type |
-| `backend/app/api/tutor.py` | Pass debug flag |
-| `backend/tests/test_tutor_rag.py` | Cosine, threshold, empty scope, token budget |
-| `backend/tests/test_tutor_memory.py` | Windowing |
-| `backend/tests/test_tutor_rag_cache.py` | Redis mock hit/miss |
-| `frontend/my-app/lib/tutor.ts` | `debug` option + `onDebug` handler |
-| `frontend/my-app/src/app/dashboard/tutor/[sessionId]/page.tsx` | Debug toggle + panel |
-| Spec status | Accepted after implement |
+| `config.py` | RAG/memory/cache flags |
+| `tutor_rag.py` | `is_off_topic`, `needs_rag`, cosine, retrieve |
+| `tutor_memory.py` | Window + token estimate |
+| `tutor_rag_cache.py` | Redis |
+| `tutor_prompt.py` | Retrieved block + stronger off-topic rules |
+| `tutor_service.py` | Start by scenario_id \| roadmap_step_id; wire turn |
+| `api/tutor.py` | `GET /scenarios`, start body xor, debug |
+| `frontend/.../tutor/page.tsx` | **Catalog** cards |
+| `frontend/.../tutor/[sessionId]/page.tsx` | Chat + debug |
+| tests | rag, memory, cache, off_topic, catalog start, token budget |
 
 ---
 
-### Task 1: Config + pure retrieve helpers
+### Task 0: Off-topic + prompt hardening (no RAG yet)
 
-**Files:**
-- Modify: `backend/app/core/config.py`
-- Create: `backend/app/services/tutor_rag.py`
-- Create: `backend/app/services/tutor_memory.py`
-- Test: `backend/tests/test_tutor_rag.py`, `backend/tests/test_tutor_memory.py`
+**Files:** `tutor_prompt.py`, `tutor_rag.py` (`is_off_topic`), tests, wire `meta.off_topic`
 
-**Interfaces:**
-- `needs_rag(text: str) -> bool`
-- `cosine(a: list[float], b: list[float]) -> float`
-- `select_top_chunks(query_vec, docs, *, top_k, min_score, max_chars) -> list[dict]`
-- `format_retrieved_block(chunks) -> str`
-- `window_transcript(messages, *, max_turns, keep_first_assistant=True) -> list[dict]`
-- `estimate_tokens(text: str) -> int`
-
-- [ ] **Step 1: Failing tests** for cosine, top-k threshold, char cap, needs_rag heuristics, window keeps opener + last N.
-
-- [ ] **Step 2: Implement pure functions** (no Mongo in unit tests — pass fake docs).
-
-- [ ] **Step 3: Pytest green**
-
-```bash
-cd backend && PYTHONPATH=. .venv/bin/pytest tests/test_tutor_rag.py tests/test_tutor_memory.py -v
-```
-
-- [ ] **Step 4: Commit** `feat(tutor): add RAG retrieve helpers and memory window`
+- [x] Heuristic + prompt examples (gold price → redirect)
+- [x] Unit tests for `is_off_topic`
+- [x] Stage only (no commit unless asked)
 
 ---
 
-### Task 2: Scope load + embed query integration
+### Task 1: Config + retrieve/memory pure helpers
 
-**Files:**
-- Modify: `backend/app/services/tutor_rag.py`
-- Test: `backend/tests/test_tutor_rag.py` (mock Mongo + embed)
-
-**Interfaces:**
-- `async def resolve_unit_scope(db, skill_ids: list[int]) -> list[tuple[int, str | int]]`  # book_id, unit key
-- `async def load_embedded_chunks(scope) -> list[dict]`
-- `async def retrieve_for_session(db, *, skill_ids, query: str) -> list[dict]`
-
-- [ ] **Step 1: Tests** with monkeypatched Mongo collection / `embed_texts`.
-- [ ] **Step 2: Implement** using existing `get_unit_chunks` patterns or motor query filtering `embed_status=embedded`.
-- [ ] **Step 3: Commit** `feat(tutor): retrieve book_chunks for tutor skill scope`
+- [x] Cosine, top-k, window, estimate_tokens + tests
 
 ---
 
-### Task 3: Redis cache
+### Task 2: Scope load + embed retrieve
 
-**Files:**
-- Create: `backend/app/services/tutor_rag_cache.py`
-- Test: `backend/tests/test_tutor_rag_cache.py`
-
-**Interfaces:**
-- `cache_key(normalized_query: str, skill_ids: list[int]) -> str`
-- `async def cache_get(key) -> dict | None`
-- `async def cache_set(key, value: dict, ttl: int) -> None`
-
-Value shape: `{ "answer": str | None, "chunks": [...], "meta": {...} }` — for P0 cache **retrieval+optional canned** or full assistant text after turn (prefer cache retrieval result only to avoid stale roleplay tone; **decision: cache retrieval payload only**).
-
-- [ ] **Step 1–3:** TDD with fakeredis or mock redis client used by project.
-- [ ] **Step 4: Commit** `feat(tutor): redis cache for tutor RAG retrieval`
+- [x] Skip retrieve when `target_skill_ids` empty (unless fallback flag)
 
 ---
 
-### Task 4: Wire tutor_service + prompts + API debug
+### Task 3: Redis cache (retrieval only)
 
-**Files:**
-- Modify: `tutor_prompt.py`, `tutor_service.py`, `tutor_schema.py`, `api/tutor.py`
-- Test: extend `test_tutor_service.py` with mocked retrieve/cache
-
-**Behavior:**
-1. Window transcript before prompt.
-2. If RAG enabled and `needs_rag`: retrieve (cache) → inject.
-3. If `debug`: yield `("debug", payload)` before `done`.
-4. Token budget test: fixture comparing baseline vs hybrid estimators ≥ 50% reduction.
-
-- [ ] **Step 1: Prompt** add section `Retrieved book context:\n{block or "(none)"}`.
-- [ ] **Step 2: Service wire-up** keep orchestrator style.
-- [ ] **Step 3: API** accept `debug: bool = False` on message body.
-- [ ] **Step 4: Tests green**
-- [ ] **Step 5: Commit** `feat(tutor): hybrid memory and RAG in streamed turns`
+- [x] Redis get/set keyed by normalized query + skills
 
 ---
 
-### Task 5: Frontend debug mode
+### Task 4: Wire service + API debug + start xor
 
-**Files:**
-- Modify: `frontend/my-app/lib/tutor.ts`
-- Modify: tutor page component
-
-- [ ] Toggle Debug → `streamTutorMessage(..., { debug: true, onDebug })`
-- [ ] Side panel lists chunks/scores/cache/memory/tokens
-- [ ] Commit `feat(tutor): debug panel for RAG and memory context`
+- [x] `GET /scenarios`
+- [x] `POST /sessions` accepts `scenario_id` **or** `roadmap_step_id`
+- [x] Turn: off_topic → rag → roleplay routes
+- [x] Token budget test
 
 ---
 
-### Task 6: Docs + lab mapping note
+### Task 5: Frontend catalog + debug
 
-**Files:**
-- Spec status → Accepted
-- Short section in `backend/README.md` or tutor section: env flags + “lab equivalence table”
-- Commit `docs: accept tutor RAG hybrid memory design`
+- [x] `/ai-tutor` card grid + START
+- [x] Nav link
+- [x] Chat debug panel shows `route`
+
+---
+
+### Task 6: Docs / README lab mapping
+
+- [x] Spec Accepted; **no commit until user asks**
 
 ---
 
 ## Spec coverage
 
-| Spec item | Task |
-|-----------|------|
-| needs_rag + retrieve | 1–2 |
-| Memory window | 1, 4 |
-| Redis cache | 3–4 |
-| SSE debug | 4–5 |
-| Token &lt; 50% test | 4 |
-| FE debug | 5 |
-| Config flags | 1, 4 |
-| Lab mapping note | 6 |
+| Item | Task |
+|------|------|
+| Off-topic policy | 0, 4 |
+| Topic catalog UX | 4–5 |
+| RAG + memory + cache | 1–4 |
+| Debug | 4–5 |
+| Token &lt; 50% | 4 |
 
 ## Execution handoff
 
-Plan saved to `docs/superpowers/plans/2026-08-04-tutor-rag-hybrid-memory.md`.
-
-**Options:** (1) Subagent-Driven · (2) Inline · (3) Review specs first only
+Wait for user review. When implementing: **never git commit** until user says commit.

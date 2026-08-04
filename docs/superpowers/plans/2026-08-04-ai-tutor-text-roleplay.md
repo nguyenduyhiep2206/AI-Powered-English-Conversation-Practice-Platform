@@ -4,7 +4,7 @@
 
 **Goal:** Ship skill-grounded text role-play from roadmap steps with SSE-streamed assistant replies, gentle corrections, and soft end-session signals (no hard mastery writes).
 
-**Architecture:** New `tutor_sessions` / `tutor_messages` tables; FastAPI `/api/v1/tutor` with SSE on send-message; one streamed LLM turn that emits reply tokens then a `___META___` JSON trailer; sync JSON for `/end`. Frontend CTA on in-progress week → `/dashboard/tutor/[sessionId]` with token rendering.
+**Architecture:** New `tutor_sessions` / `tutor_messages` tables; FastAPI `/api/v1/tutor` with SSE on send-message; one streamed LLM turn that emits reply tokens then a `___META___` JSON trailer; sync JSON for `/end`. Frontend CTA on in-progress week → `/ai-tutor/[sessionId]` with token rendering.
 
 **Tech Stack:** FastAPI, SQLAlchemy async, Alembic, LangChain `ChatOpenAI` stream, Next.js App Router, pytest, `EventSource`-style `fetch` + `ReadableStream` on FE.
 
@@ -44,7 +44,7 @@
 | `backend/tests/test_tutor_service.py` | Start/end/mastery invariant (mocked LLM) |
 | `backend/tests/test_tutor_api_sse.py` | SSE event order (mocked service/LLM) |
 | `frontend/my-app/lib/tutor.ts` | Types + `startTutorSession`, `streamTutorMessage`, `endTutorSession` |
-| `frontend/my-app/src/app/dashboard/tutor/[sessionId]/page.tsx` | Chat UI |
+| `frontend/my-app/src/app/ai-tutor/[sessionId]/page.tsx` | Chat UI |
 | `frontend/my-app/components/roadmap/WeekNode.tsx` (and/or dashboard) | CTA Practice speaking |
 | `docs/REQUIREMENTS.md` | Narrow Must for tutor; keep Won't for voice/vocab/streak |
 | Spec frontmatter | Status → Accepted; link this plan |
@@ -391,7 +391,7 @@ git commit -m "feat(tutor): expose tutor REST and SSE message endpoints"
 
 **Files:**
 - Create: `frontend/my-app/lib/tutor.ts`
-- Create: `frontend/my-app/src/app/dashboard/tutor/[sessionId]/page.tsx`
+- Create: `frontend/my-app/src/app/ai-tutor/[sessionId]/page.tsx`
 - Modify: `frontend/my-app/components/roadmap/WeekNode.tsx` (and/or `RoadmapPath.tsx` / dashboard)
 - Modify: `frontend/my-app/lib/routes.ts` if routes helper exists
 
@@ -414,7 +414,7 @@ Parse lines; on `event:` + `data:`; call `onToken`, `onMeta`, `onDone`, `onError
 
 - [ ] **Step 3: CTA**
 
-On week/step `in_progress`, button “Practice speaking” → `startTutorSession` → `router.push(/dashboard/tutor/${id})`.
+On week/step `in_progress`, button “Practice speaking” → `startTutorSession` → `router.push(/ai-tutor/${id})`.
 
 - [ ] **Step 4: Manual smoke**
 
