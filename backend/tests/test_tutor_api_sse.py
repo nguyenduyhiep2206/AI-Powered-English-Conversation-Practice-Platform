@@ -14,6 +14,7 @@ pytest_plugins = ["tests.tutor.conftest"]
 from app.api import tutor
 from app.api.deps import get_current_active_user
 from app.core.database import get_db
+from app.models.enums import TutorSessionStatusEnum
 
 
 @pytest_asyncio.fixture
@@ -69,3 +70,51 @@ async def test_post_message_streams_token_meta_done(api_client, monkeypatch):
     assert token_idx < meta_idx < done_idx
     assert '"text": "Hello "' in text
     assert '"goal_progress": "none"' in text
+
+
+@pytest_asyncio.fixture
+async def api_client_inactive_session(db_session, tutor_seed, active_tutor_session):
+    active_tutor_session.status = TutorSessionStatusEnum.completed
+    await db_session.commit()
+    await db_session.refresh(active_tutor_session)
+
+    app = FastAPI()
+    app.include_router(tutor.router, prefix="/api/v1/tutor")
+
+    async def override_get_db():
+        yield db_session
+
+    async def override_current_user():
+        return tutor_seed["user"]
+
+    app.dependency_overrides[get_db] = override_get_db
+    app.dependency_overrides[get_current_active_user] = override_current_user
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client, active_tutor_session
+
+    app.dependency_overrides.clear()
+
+
+@pytest.mark.asyncio
+async def test_post_message_returns_409_when_session_not_active(api_client_inactive_session):
+    client, session = api_client_inactive_session
+
+    response = await client.post(
+        f"/api/v1/tutor/sessions/{session.id}/messages",
+        json={"content": "Hi"},
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Tutor session is not active"
+
+
+@pytest.mark.asyncio
+async def test_end_session_returns_409_when_session_not_active(api_client_inactive_session):
+    client, session = api_client_inactive_session
+
+    response = await client.post(f"/api/v1/tutor/sessions/{session.id}/end")
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Tutor session is not active"

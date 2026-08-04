@@ -44,6 +44,8 @@ def _map_tutor_error(exc: ValueError) -> HTTPException:
         return HTTPException(status_code=403, detail=msg)
     if msg in {"Roadmap step not found", "Roadmap step progress not found"}:
         return HTTPException(status_code=404, detail=msg)
+    if msg == "Tutor session is not active":
+        return HTTPException(status_code=409, detail=msg)
     return HTTPException(status_code=400, detail=msg)
 
 
