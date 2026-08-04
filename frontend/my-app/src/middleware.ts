@@ -6,6 +6,7 @@ import { isJwtExpired } from "@/lib/jwt";
 import { isOnboardingComplete } from "@/lib/onboarding-status-server";
 import {
   isAllowedAdminPath,
+  isAllowedAiTutorPath,
   isAllowedDashboardPath,
   isAllowedOnboardingPath,
   NOT_FOUND_PATH,
@@ -64,6 +65,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/start-onboarding", APP_ORIGIN));
   }
 
+  if (!hasSession && pathname.startsWith("/ai-tutor")) {
+    return NextResponse.redirect(new URL("/login", APP_ORIGIN));
+  }
+
+  if (pathname.startsWith("/ai-tutor") && !isAllowedAiTutorPath(pathname)) {
+    return notFoundResponse(request);
+  }
+
+  if (
+    validToken &&
+    pathname.startsWith("/ai-tutor") &&
+    !(await isOnboardingComplete(validToken))
+  ) {
+    return NextResponse.redirect(new URL("/start-onboarding", APP_ORIGIN));
+  }
+
   if (validToken && AUTH_PAGES.includes(pathname)) {
     const destination = await getPostLoginDestination(validToken);
     return NextResponse.redirect(new URL(destination, APP_ORIGIN));
@@ -99,6 +116,8 @@ export const config = {
   matcher: [
     "/admin/:path*",
     "/dashboard/:path*",
+    "/ai-tutor",
+    "/ai-tutor/:path*",
     "/login",
     "/register",
     "/start-onboarding",

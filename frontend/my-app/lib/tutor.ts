@@ -6,6 +6,22 @@ export type TutorTurnMeta = {
   correction: { original: string; better: string; why: string } | null;
   hint: string | null;
   goal_progress: "none" | "partial" | "done";
+  off_topic?: boolean;
+};
+
+export type TutorDebugInfo = {
+  route: "roleplay" | "rag" | "off_topic" | string;
+  cache_hit: boolean;
+  memory_tokens?: number;
+  retrieved_tokens?: number;
+  chunk_count?: number;
+  chunks?: {
+    score?: number;
+    unit_title?: string | null;
+    book_id?: number;
+    unit_id?: number;
+    preview?: string;
+  }[];
 };
 
 export type TutorMessage = {
@@ -16,10 +32,24 @@ export type TutorMessage = {
   created_at: string;
 };
 
+export type TutorScenario = {
+  id: number;
+  title: string;
+  slug: string;
+  description: string | null;
+  category: string;
+  level: string;
+  ai_role: string;
+  user_role: string;
+  goal_prompt: string;
+  suggested_vocab: string[] | null;
+  order_index: number;
+};
+
 export type TutorSession = {
   id: number;
   user_id: number;
-  roadmap_step_id: number;
+  roadmap_step_id: number | null;
   scenario_id: number;
   status: TutorSessionStatus;
   target_skill_ids: number[];
@@ -53,6 +83,7 @@ export type StreamTutorMessageHandlers = {
     content: string;
     meta: TutorTurnMeta | null;
   }) => void;
+  onDebug?: (info: TutorDebugInfo) => void;
   onError?: (err: { code?: string; message: string }) => void;
   onDone?: () => void;
 };
@@ -102,6 +133,9 @@ function dispatchSseBlock(
         content: String(payload.content ?? ""),
         meta: (payload.meta as TutorTurnMeta | null) ?? null,
       });
+      break;
+    case "debug":
+      handlers.onDebug?.(payload as TutorDebugInfo);
       break;
     case "error":
       handlers.onError?.({
@@ -156,20 +190,40 @@ async function readSseStream(
   }
 }
 
-export async function startTutorSession(
-  roadmapStepId: number,
-): Promise<TutorSession> {
+export async function listTutorScenarios(
+  level?: string,
+): Promise<TutorScenario[]> {
+  const qs = level ? `?level=${encodeURIComponent(level)}` : "";
+  const res = await authFetch(`${TUTOR_PREFIX}/scenarios${qs}`);
+
+  if (!res.ok) {
+    await parseApiError(res, "Failed to load tutor scenarios");
+  }
+
+  const body = (await res.json()) as { data: TutorScenario[] };
+  return body.data;
+}
+
+export async function startTutorSession(input: {
+  roadmapStepId?: number;
+  scenarioId?: number;
+}): Promise<TutorSession> {
+  const body =
+    input.scenarioId != null
+      ? { scenario_id: input.scenarioId }
+      : { roadmap_step_id: input.roadmapStepId };
+
   const res = await authFetch(`${TUTOR_PREFIX}/sessions`, {
     method: "POST",
-    body: JSON.stringify({ roadmap_step_id: roadmapStepId }),
+    body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     await parseApiError(res, "Failed to start tutor session");
   }
 
-  const body = (await res.json()) as { data: TutorSession };
-  return body.data;
+  const json = (await res.json()) as { data: TutorSession };
+  return json.data;
 }
 
 export async function getTutorSession(id: number): Promise<TutorSessionDetail> {
@@ -187,11 +241,14 @@ export async function streamTutorMessage(
   sessionId: number,
   content: string,
   handlers: StreamTutorMessageHandlers,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; debug?: boolean },
 ): Promise<void> {
   const res = await authFetch(`${TUTOR_PREFIX}/sessions/${sessionId}/messages`, {
     method: "POST",
-    body: JSON.stringify({ content }),
+    body: JSON.stringify({
+      content,
+      debug: Boolean(options?.debug),
+    }),
     signal: options?.signal,
   });
 

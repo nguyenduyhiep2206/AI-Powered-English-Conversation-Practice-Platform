@@ -79,6 +79,17 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
             </svg>
             My plan
           </Link>
+          <Link
+            href="/ai-tutor"
+            className={cn(
+              "text-sm transition-colors",
+              pathname.startsWith("/ai-tutor")
+                ? "font-medium text-foreground"
+                : "text-muted-foreground hover:text-foreground",
+            )}
+          >
+            AI Tutor
+          </Link>
         </nav>
 
         <div className="flex shrink-0 items-center gap-2">

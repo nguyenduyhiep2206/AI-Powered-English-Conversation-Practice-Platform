@@ -8,7 +8,8 @@ const ADMIN_PATHS = new Set([
   "/admin/skills",
 ]);
 
-const DASHBOARD_PATH_RE = /^\/dashboard(\/(practice\/\d+|tutor\/\d+))?$/;
+const DASHBOARD_PATH_RE = /^\/dashboard(\/practice\/\d+)?$/;
+const AI_TUTOR_PATH_RE = /^\/ai-tutor(\/\d+)?$/;
 const ONBOARDING_PATH_RE = /^\/onboarding(\/placement)?$/;
 const PROFILE_PATH_RE = /^\/profile(\/settings)?$/;
 const ADMIN_SKILL_PATH_RE = /^\/admin\/skills(\/\d+)?$/;
@@ -20,6 +21,10 @@ export function isAllowedAdminPath(pathname: string): boolean {
 
 export function isAllowedDashboardPath(pathname: string): boolean {
   return DASHBOARD_PATH_RE.test(pathname);
+}
+
+export function isAllowedAiTutorPath(pathname: string): boolean {
+  return AI_TUTOR_PATH_RE.test(pathname);
 }
 
 export function isAllowedOnboardingPath(pathname: string): boolean {

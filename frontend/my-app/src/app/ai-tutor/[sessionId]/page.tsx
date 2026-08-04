@@ -12,6 +12,7 @@ import {
   endTutorSession,
   getTutorSession,
   streamTutorMessage,
+  type TutorDebugInfo,
   type TutorMessage,
   type TutorSessionDetail,
   type TutorSummary,
@@ -151,7 +152,7 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
             </Button>
           ) : null}
           <Button type="button" className="flex-1" onClick={onClose}>
-            Back to roadmap
+            Back to topics
           </Button>
         </div>
       </div>
@@ -176,6 +177,8 @@ export default function TutorSessionPage() {
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<TutorSummary | null>(null);
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const [debugInfo, setDebugInfo] = useState<TutorDebugInfo | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -239,6 +242,7 @@ export default function TutorSessionPage() {
     setDraft("");
     setStreamingText("");
     setStreamingMeta(null);
+    setDebugInfo(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -280,6 +284,9 @@ export default function TutorSessionPage() {
             setStreamingText("");
             setStreamingMeta(null);
           },
+          onDebug: (info) => {
+            setDebugInfo(info);
+          },
           onError: (err) => {
             setError(err.message);
           },
@@ -287,7 +294,7 @@ export default function TutorSessionPage() {
             setStreamingText("");
           },
         },
-        { signal: controller.signal },
+        { signal: controller.signal, debug: debugEnabled },
       );
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -325,11 +332,11 @@ export default function TutorSessionPage() {
       <AppHeader />
 
       <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6 sm:px-6">
-        <div className="mb-4 flex items-center gap-3">
+        <div className="mb-4 flex flex-wrap items-center gap-3">
           <Button asChild type="button" variant="ghost" size="sm">
-            <Link href="/dashboard">
+            <Link href="/ai-tutor">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Roadmap
+              Topics
             </Link>
           </Button>
           {session ? (
@@ -337,6 +344,15 @@ export default function TutorSessionPage() {
               {session.status}
             </Badge>
           ) : null}
+          <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={debugEnabled}
+              onChange={(event) => setDebugEnabled(event.target.checked)}
+              className="h-3.5 w-3.5 rounded border-border"
+            />
+            Debug
+          </label>
         </div>
 
         <div className="mb-4">
@@ -395,6 +411,28 @@ export default function TutorSessionPage() {
               </p>
             ) : null}
 
+            {debugEnabled && debugInfo ? (
+              <div className="mt-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 font-mono text-xs text-muted-foreground">
+                <p>
+                  route={debugInfo.route} · cache=
+                  {debugInfo.cache_hit ? "hit" : "miss"} · memory≈
+                  {debugInfo.memory_tokens ?? "?"} · retrieved≈
+                  {debugInfo.retrieved_tokens ?? "?"} · chunks=
+                  {debugInfo.chunk_count ?? 0}
+                </p>
+                {debugInfo.chunks && debugInfo.chunks.length > 0 ? (
+                  <ul className="mt-2 space-y-1">
+                    {debugInfo.chunks.map((chunk, index) => (
+                      <li key={`${chunk.unit_id ?? index}-${index}`}>
+                        [{index + 1}] {chunk.unit_title ?? "unit"} (
+                        {chunk.score ?? "?"}): {chunk.preview}
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
+              </div>
+            ) : null}
+
             {isActive ? (
               <form onSubmit={handleSend} className="mt-4 space-y-3">
                 <textarea
@@ -434,9 +472,9 @@ export default function TutorSessionPage() {
                 <Button
                   type="button"
                   className="mt-3"
-                  onClick={() => router.push("/dashboard")}
+                  onClick={() => router.push("/ai-tutor")}
                 >
-                  Back to roadmap
+                  Back to topics
                 </Button>
               </div>
             )}
@@ -447,7 +485,7 @@ export default function TutorSessionPage() {
       {summary ? (
         <SummaryModal
           summary={summary}
-          onClose={() => router.push("/dashboard")}
+          onClose={() => router.push("/ai-tutor")}
         />
       ) : null}
     </div>

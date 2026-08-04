@@ -136,8 +136,10 @@ export function WeekNode({
                 setTutorError(null);
                 setStartingTutor(true);
                 try {
-                  const session = await startTutorSession(week.roadmap_step_id);
-                  router.push(`/dashboard/tutor/${session.id}`);
+                  const session = await startTutorSession({
+                    roadmapStepId: week.roadmap_step_id,
+                  });
+                  router.push(`/ai-tutor/${session.id}`);
                 } catch (err) {
                   setTutorError(
                     err instanceof Error
