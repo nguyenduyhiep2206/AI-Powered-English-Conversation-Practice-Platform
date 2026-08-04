@@ -61,12 +61,12 @@ async def iter_turn_sse(
     _require_active_session(session)
     _validate_turn_input(session, content)
 
-    user_msg = await _persist_user_message(db, session_id, content)
+    user_msg = await _persist_user_message(db, session, session_id, content)
     await db.commit()
     yield ("user_message", {"id": user_msg.id, "content": user_msg.content})
 
     try:
-        async for event in _stream_assistant_turn(db, session, content):
+        async for event in _stream_assistant_turn(db, session):
             yield event
     except Exception as exc:
         yield ("error", {"code": "llm_error", "message": str(exc)})
@@ -208,7 +208,10 @@ def _validate_turn_input(session: TutorSessionDB, content: str) -> None:
 
 
 async def _persist_user_message(
-    db: AsyncSession, session_id: int, content: str
+    db: AsyncSession,
+    session: TutorSessionDB,
+    session_id: int,
+    content: str,
 ) -> TutorMessageDB:
     msg = TutorMessageDB(
         session_id=session_id,
@@ -218,6 +221,7 @@ async def _persist_user_message(
     )
     db.add(msg)
     await db.flush()
+    session.message_count = int(session.message_count) + 1
     return msg
 
 
@@ -272,7 +276,6 @@ def _stream_safe_delta(accumulated: str, emitted_len: int) -> tuple[str, int]:
 async def _stream_assistant_turn(
     db: AsyncSession,
     session: TutorSessionDB,
-    user_message: str,
 ) -> AsyncIterator[tuple[str, dict]]:
     _step, scenario = await _load_step_and_scenario(db, int(session.roadmap_step_id))
     cefr = await _resolve_cefr_level(db, int(session.user_id), scenario)
@@ -288,7 +291,7 @@ async def _stream_assistant_turn(
         suggested_vocab=scenario.suggested_vocab,
         target_skill_titles=skill_titles,
     )
-    user_payload = build_turn_user_payload(transcript=transcript, user_message=user_message)
+    user_payload = build_turn_user_payload(transcript=transcript)
 
     accumulated = ""
     emitted_len = 0
@@ -314,7 +317,6 @@ async def _stream_assistant_turn(
     )
     db.add(assistant)
     await db.flush()
-    session.message_count = int(session.message_count) + 1
     await db.commit()
 
     yield (

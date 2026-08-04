@@ -101,18 +101,13 @@ Output format (critical):
 """
 
 
-def build_turn_user_payload(
-    *,
-    transcript: list[dict[str, Any]],
-    user_message: str,
-) -> str:
+def build_turn_user_payload(*, transcript: list[dict[str, Any]]) -> str:
     lines: list[str] = []
     for msg in transcript:
         role = msg.get("role", "user")
         content = (msg.get("content") or "").strip()
         if content:
             lines.append(f"{role}: {content}")
-    lines.append(f"user: {user_message.strip()}")
     lines.append("")
     lines.append("Respond in character. End with the meta delimiter and JSON as instructed.")
     return "\n".join(lines)

@@ -41,8 +41,14 @@ def chat_json(system: str, user: str) -> Any:
     return parse_json_content(content)
 
 
+_STREAM_TIMEOUT_SEC = 120.0
+
+
 async def chat_stream_text(*, system: str, user: str) -> AsyncIterator[str]:
-    """Yield text chunks from ChatOpenAI.astream."""
+    """Yield text chunks from ChatOpenAI.astream.
+
+    Uses ``timeout`` (seconds) so hung streams fail instead of blocking forever.
+    """
     if not settings.OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY chưa được cấu hình")
 
@@ -54,6 +60,7 @@ async def chat_stream_text(*, system: str, user: str) -> AsyncIterator[str]:
         "api_key": settings.OPENAI_API_KEY,
         "temperature": 0.5,
         "streaming": True,
+        "timeout": _STREAM_TIMEOUT_SEC,
     }
     if settings.OPENAI_BASE_URL:
         kwargs["base_url"] = settings.OPENAI_BASE_URL

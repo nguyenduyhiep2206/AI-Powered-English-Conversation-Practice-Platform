@@ -122,6 +122,9 @@ async def test_iter_turn_sse_streams_tokens_before_meta(monkeypatch, db_session,
     assert "assistant_message" in event_names
     assert event_names[-1] == "done"
 
+    await db_session.refresh(active_tutor_session)
+    assert active_tutor_session.message_count == 1
+
     meta_idx = event_names.index("meta")
     assistant_idx = event_names.index("assistant_message")
     assert meta_idx < assistant_idx
@@ -147,6 +150,8 @@ async def test_iter_turn_sse_yields_error_on_llm_failure(
 
     assert events[0][0] == "user_message"
     assert any(e == "error" for e, _ in events)
+    await db_session.refresh(active_tutor_session)
+    assert active_tutor_session.message_count == 1
     user_msgs = (
         await db_session.execute(
             select(TutorMessageDB).where(

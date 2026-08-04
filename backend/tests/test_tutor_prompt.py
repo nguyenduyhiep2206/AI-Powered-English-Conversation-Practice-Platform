@@ -1,4 +1,14 @@
-from app.services.tutor_prompt import META_DELIMITER, filter_soft_signals, split_reply_and_meta
+from app.services.tutor_prompt import META_DELIMITER, build_turn_user_payload, filter_soft_signals, split_reply_and_meta
+
+
+def test_build_turn_user_payload_uses_transcript_only():
+    transcript = [
+        {"role": "assistant", "content": "Welcome!"},
+        {"role": "user", "content": "I have a reservation."},
+    ]
+    payload = build_turn_user_payload(transcript=transcript)
+    assert payload.count("user: I have a reservation.") == 1
+    assert "Welcome!" in payload
 
 
 def test_split_reply_and_meta_happy():
