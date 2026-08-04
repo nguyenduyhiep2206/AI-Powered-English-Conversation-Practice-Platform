@@ -56,6 +56,8 @@ from app.models.scenario import (
     UserProgressDB,
 )
 
+from app.models.tutor import TutorMessageDB, TutorSessionDB
+
 __all__ = [
     # Auth & RBAC
     "UserDB", "RoleDB", "PermissionDB", "RefreshTokenDB",
@@ -69,4 +71,6 @@ __all__ = [
     "LearningThemeUnitDB", "ThemeUnitSkillDB", "RoadmapStepSkillDB",
     # Scenario & Roadmap
     "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
+    # AI Tutor
+    "TutorSessionDB", "TutorMessageDB",
 ]

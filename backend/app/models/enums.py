@@ -152,3 +152,22 @@ placement_attempt_status_enum = SAEnum(
     name="placement_attempt_status_enum",
     create_type=True,
 )
+
+
+class TutorSessionStatusEnum(str, enum.Enum):
+    active = "active"
+    completed = "completed"
+    abandoned = "abandoned"
+
+
+class TutorMessageRoleEnum(str, enum.Enum):
+    user = "user"
+    assistant = "assistant"
+
+
+tutor_session_status_enum = SAEnum(
+    TutorSessionStatusEnum, name="tutor_session_status_enum", create_type=True
+)
+tutor_message_role_enum = SAEnum(
+    TutorMessageRoleEnum, name="tutor_message_role_enum", create_type=True
+)
