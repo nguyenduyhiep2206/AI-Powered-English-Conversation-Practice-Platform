@@ -4,9 +4,6 @@
 #   3. auth        — depends on users
 #   4. profile     — depends on users
 #   5. scenario    — no user FK at model level, but user_progress does
-#   6. chat        — depends on users + scenarios
-#   7. vocabulary  — depends on users + chat_sessions
-#   8. gamification— depends on users
 #
 # Every model must be imported here so SQLAlchemy's mapper registry can
 # resolve string-based relationship targets before init_db() runs.
@@ -43,7 +40,13 @@ from app.models.placement_attempt import PlacementAttemptDB, PlacementAttemptAns
 
 from app.models.user_skill_mastery import UserSkillMasteryDB
 
-from app.models.skill_lesson import SkillLessonDB, UserLessonProgressDB
+from app.models.skill_lesson import (
+    SkillLessonDB,
+    UserLessonPackProgressDB,
+    UserLessonProgressDB,
+)
+
+from app.models.theme_unit import LearningThemeUnitDB, ThemeUnitSkillDB
 
 from app.models.roadmap_step_skill import RoadmapStepSkillDB
 
@@ -51,26 +54,6 @@ from app.models.scenario import (
     ScenarioDB,
     RoadmapStepDB,
     UserProgressDB,
-)
-
-from app.models.chat import (
-    ChatSessionDB,
-    ChatMessageDB,
-)
-
-from app.models.vocabulary import (
-    VocabularyBankDB,
-    StoryVocabSelectionDB,
-    StoryVocabItemDB,
-    StoryExerciseDB,
-    StoryAnswerDB,
-)
-
-from app.models.gamification import (
-    QuizSessionDB,
-    UserStreakDB,
-    UserBadgeDB,
-    NotificationDB,
 )
 
 __all__ = [
@@ -82,14 +65,8 @@ __all__ = [
     # Level-first skill graph & quiz bank
     "LearningSkillDB", "SkillEdgeDB", "BookSkillSourceDB",
     "QuizPassageDB", "QuizQuestionDB", "PlacementAttemptDB", "PlacementAttemptAnswerDB",
-    "UserSkillMasteryDB", "SkillLessonDB", "UserLessonProgressDB", "RoadmapStepSkillDB",
+    "UserSkillMasteryDB", "SkillLessonDB", "UserLessonProgressDB", "UserLessonPackProgressDB",
+    "LearningThemeUnitDB", "ThemeUnitSkillDB", "RoadmapStepSkillDB",
     # Scenario & Roadmap
     "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
-    # Chat
-    "ChatSessionDB", "ChatMessageDB",
-    # Vocabulary & Story
-    "VocabularyBankDB", "StoryVocabSelectionDB", "StoryVocabItemDB",
-    "StoryExerciseDB", "StoryAnswerDB",
-    # Gamification
-    "QuizSessionDB", "UserStreakDB", "UserBadgeDB", "NotificationDB",
 ]

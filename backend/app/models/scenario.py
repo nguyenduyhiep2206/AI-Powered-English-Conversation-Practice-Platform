@@ -32,7 +32,6 @@ class ScenarioDB(Base):
     updated_at      = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now(), onupdate=func.now())
 
     roadmap_steps = relationship("RoadmapStepDB", back_populates="scenario")
-    chat_sessions = relationship("ChatSessionDB", back_populates="scenario")
 
 
 #  roadmap_steps
