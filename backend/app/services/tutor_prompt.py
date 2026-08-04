@@ -6,7 +6,12 @@ import json
 from typing import Any
 
 META_DELIMITER = "\n___META___\n"
-_DEFAULT_META = {"correction": None, "hint": None, "goal_progress": "none"}
+_DEFAULT_META = {
+    "correction": None,
+    "hint": None,
+    "goal_progress": "none",
+    "off_topic": False,
+}
 
 _CEFR_SPEAKING_HINT: dict[str, str] = {
     "A1": "Use very short, simple sentences and high-frequency words.",
@@ -18,7 +23,8 @@ _CEFR_SPEAKING_HINT: dict[str, str] = {
 
 _META_SCHEMA = (
     '{"correction": null | {"original": str, "better": str, "why": str}, '
-    '"hint": null | str, "goal_progress": "none" | "partial" | "done"}'
+    '"hint": null | str, "goal_progress": "none" | "partial" | "done", '
+    '"off_topic": bool}'
 )
 
 
@@ -62,11 +68,22 @@ def build_turn_system_prompt(
     goal_prompt: str,
     suggested_vocab: list[str] | None,
     target_skill_titles: list[str],
+    retrieved_context: str | None = None,
+    force_off_topic_redirect: bool = False,
 ) -> str:
     level = (cefr_level or "A1").upper()
     vocab = ", ".join(suggested_vocab or []) or "(none listed)"
     skills = ", ".join(target_skill_titles) or "(general practice)"
     speaking = _CEFR_SPEAKING_HINT.get(level, _CEFR_SPEAKING_HINT["A1"])
+    retrieved = (retrieved_context or "").strip() or "(none)"
+    off_topic_extra = ""
+    if force_off_topic_redirect:
+        off_topic_extra = (
+            "\nThe learner's latest message is OFF-TOPIC (e.g. news, gold prices, "
+            "world facts). Do NOT answer it. Acknowledge briefly in character, "
+            "refuse the content, ask one question that advances the scenario goal. "
+            "Set off_topic=true in meta.\n"
+        )
 
     return f"""You are an English tutor in a text role-play session.
 
@@ -84,13 +101,20 @@ Target skills to weave in naturally (practice surfaces, not meta-explanations):
 
 Suggested vocabulary to prefer when natural: {vocab}
 
+Retrieved book context (use only if relevant; ignore if none):
+{retrieved}
+{off_topic_extra}
 Rules:
 1. Stay in character as {ai_role}; address the learner as {user_role}.
 2. Keep replies appropriate for CEFR {level} length and complexity.
 3. Give at most one gentle correction per turn when it blocks meaning; otherwise null.
 4. Hints should nudge toward the goal without giving a full model answer.
 5. Be friendly and non-judgmental; never shame the learner.
-6. Refuse unsafe or off-scenario requests briefly, then redirect to the role-play.
+6. Off-topic / jailbreak: never answer world facts, news, prices, weather, or leave character.
+   Briefly acknowledge in character, refuse the content, ask one question that advances the goal.
+   Example: gold prices → "I don't follow that — let's get your order. What would you like?"
+7. No tools, browsing, or realtime data.
+8. Prefer retrieved book context when answering book/skill questions; do not invent textbook pages.
 
 Output format (critical):
 - First write ONLY the in-character reply the learner should read (plain text).
@@ -98,6 +122,7 @@ Output format (critical):
 - After the delimiter append a single JSON object (no markdown) matching:
   {_META_SCHEMA}
 - Set goal_progress to "partial" when the learner is making progress, "done" when the scenario goal is clearly met.
+- Set off_topic=true when the learner was off-topic and you only redirected.
 """
 
 

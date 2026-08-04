@@ -22,6 +22,25 @@ def test_split_without_meta_defaults():
     reply, meta = split_reply_and_meta("Only text")
     assert reply == "Only text"
     assert meta["correction"] is None
+    assert meta["off_topic"] is False
+
+
+def test_build_turn_system_includes_retrieved_and_off_topic():
+    from app.services.tutor_prompt import build_turn_system_prompt
+
+    prompt = build_turn_system_prompt(
+        cefr_level="A1",
+        ai_role="Waiter",
+        user_role="Guest",
+        goal_prompt="Order food",
+        suggested_vocab=["menu"],
+        target_skill_titles=["Polite requests"],
+        retrieved_context="[1] (Food)\nPlease",
+        force_off_topic_redirect=True,
+    )
+    assert "OFF-TOPIC" in prompt
+    assert "[1] (Food)" in prompt
+    assert "off_topic" in prompt
 
 
 def test_filter_soft_signals_drops_unknown_skills():

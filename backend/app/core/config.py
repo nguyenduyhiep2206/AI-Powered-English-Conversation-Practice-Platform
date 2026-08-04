@@ -70,5 +70,15 @@ class Settings(BaseSettings):
     TUTOR_MAX_USER_TURNS: int = 20
     TUTOR_MAX_MESSAGE_CHARS: int = 2000
 
+    # Tutor RAG + hybrid memory
+    TUTOR_RAG_ENABLED: bool = True
+    TUTOR_RAG_TOP_K: int = 4
+    TUTOR_RAG_MIN_SCORE: float = 0.25
+    TUTOR_RAG_MAX_CHARS: int = 2500
+    TUTOR_MEMORY_MAX_TURNS: int = 6
+    TUTOR_RAG_CACHE_TTL_SECONDS: int = 3600
+    TUTOR_RAG_ALWAYS_LIGHT: bool = False
+    TUTOR_RAG_CATALOG_LEVEL_FALLBACK: bool = False
+
 
 settings = Settings()
