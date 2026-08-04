@@ -1,8 +1,8 @@
 # Thiết kế: AI Tutor text role-play (skill-grounded)
 
 **Ngày:** 2026-08-04  
-**Trạng thái:** Draft — chờ review  
-**Plan:** *(sau khi spec được approve)*  
+**Trạng thái:** Accepted — ready for implementation  
+**Plan:** `docs/superpowers/plans/2026-08-04-ai-tutor-text-roleplay.md`  
 **Tham chiếu sản phẩm:** [Promova AI Tutor](https://promova.com/page/ai-tutor), [Press — AI Tutor](https://promova.com/press/promova-launches-ai-tutor), [Speak with AI](https://promova.com/page/speak-with-ai)  
 **Phạm vi:** `backend` (schema session/message, API tutor, LLM turn + end-summary), `frontend/my-app` (CTA roadmap → trang chat text, correction bubble, end summary)  
 **Phụ thuộc:** Roadmap ZPD + `roadmap_step_skills`, catalog `scenarios`, `user_profiles.current_level`, `chat_json` / writing-feedback patterns, weak-skill review (soft link)  
@@ -67,7 +67,7 @@ EnglishFlow đã có Learn + Practice chữ bám skill và roadmap theo tuần, 
 Dashboard roadmap
   → Step in_progress → CTA "Practice speaking"
   → POST /tutor/sessions { roadmap_step_id }
-  → UI /dashboard/tutor/[sessionId]
+  → UI /dashboard/ai-tutor/[sessionId]
        loop:
          user types message
          POST .../messages (Accept: text/event-stream)
