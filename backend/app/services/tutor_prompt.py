@@ -27,11 +27,15 @@ def split_reply_and_meta(full_text: str) -> tuple[str, dict]:
         return full_text.strip(), dict(_DEFAULT_META)
     reply, _, rest = full_text.partition(META_DELIMITER)
     try:
-        meta = json.loads(rest.strip())
+        parsed = json.loads(rest.strip())
     except json.JSONDecodeError:
+        parsed = None
+    if not isinstance(parsed, dict):
         meta = dict(_DEFAULT_META)
-    for k, v in _DEFAULT_META.items():
-        meta.setdefault(k, v)
+    else:
+        meta = parsed
+        for k, v in _DEFAULT_META.items():
+            meta.setdefault(k, v)
     return reply.strip(), meta
 
 

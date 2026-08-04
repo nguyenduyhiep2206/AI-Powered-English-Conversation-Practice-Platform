@@ -1,0 +1,157 @@
+"""Tests for tutor session orchestration."""
+
+from __future__ import annotations
+
+import pytest
+
+pytest_plugins = ["tests.tutor.conftest"]
+
+from sqlalchemy import select
+
+from app.models.enums import TutorSessionStatusEnum
+from app.models.tutor import TutorMessageDB
+from app.models.user_skill_mastery import UserSkillMasteryDB
+from app.services.tutor_prompt import META_DELIMITER
+from app.services.tutor_service import (
+    end_session,
+    iter_turn_sse,
+    snapshot_user_mastery,
+    start_session,
+)
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_locked_step(db_session, user_with_locked_step, tutor_seed):
+    with pytest.raises(ValueError, match="in_progress"):
+        await start_session(
+            db_session,
+            user_with_locked_step.id,
+            tutor_seed["step"].id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_start_creates_session_with_opener(
+    db_session, user_with_in_progress_step, tutor_seed
+):
+    session = await start_session(
+        db_session,
+        user_with_in_progress_step.id,
+        tutor_seed["step"].id,
+    )
+    assert session.status == TutorSessionStatusEnum.active
+    assert session.target_skill_ids == [tutor_seed["skill"].id]
+    assert session.message_count == 0
+
+    messages = (
+        await db_session.execute(
+            select(TutorMessageDB).where(TutorMessageDB.session_id == session.id)
+        )
+    ).scalars().all()
+    assert len(messages) == 1
+    assert messages[0].role.value == "assistant"
+    assert "Hotel receptionist" in messages[0].content
+
+
+@pytest.mark.asyncio
+async def test_end_filters_unknown_skill_ids(monkeypatch, db_session, active_tutor_session, tutor_seed):
+    user_id = tutor_seed["user"].id
+
+    def fake_chat_json(system, user):
+        return {
+            "went_well": ["ok"],
+            "fix_next": ["articles"],
+            "soft_skill_signals": [
+                {
+                    "skill_id": active_tutor_session.target_skill_ids[0],
+                    "signal": "needs_practice",
+                    "note": "a",
+                },
+                {"skill_id": 999999, "signal": "needs_practice", "note": "bad"},
+            ],
+        }
+
+    monkeypatch.setattr("app.services.tutor_service.chat_json", fake_chat_json)
+    summary = await end_session(db_session, user_id, active_tutor_session.id)
+    assert all(s["skill_id"] != 999999 for s in summary["soft_skill_signals"])
+    assert len(summary["soft_skill_signals"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_end_does_not_touch_mastery(monkeypatch, db_session, active_tutor_session, tutor_seed):
+    user_id = tutor_seed["user"].id
+    before = await snapshot_user_mastery(db_session, user_id)
+
+    def fake_chat_json(system, user):
+        return {
+            "went_well": ["good"],
+            "fix_next": [],
+            "soft_skill_signals": [],
+        }
+
+    monkeypatch.setattr("app.services.tutor_service.chat_json", fake_chat_json)
+    await end_session(db_session, user_id, active_tutor_session.id)
+    after = await snapshot_user_mastery(db_session, user_id)
+    assert before == after
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_streams_tokens_before_meta(monkeypatch, db_session, active_tutor_session, tutor_seed):
+    user_id = tutor_seed["user"].id
+    meta_json = '{"correction":null,"hint":null,"goal_progress":"partial"}'
+    full = f"Hello there!{META_DELIMITER}{meta_json}"
+
+    async def fake_stream(*, system, user):
+        for ch in full:
+            yield ch
+
+    monkeypatch.setattr("app.services.tutor_service.chat_stream_text", fake_stream)
+
+    events = []
+    async for event, payload in iter_turn_sse(
+        db_session, user_id, active_tutor_session.id, "I have a reservation."
+    ):
+        events.append((event, payload))
+
+    event_names = [e for e, _ in events]
+    assert event_names[0] == "user_message"
+    assert "token" in event_names
+    assert META_DELIMITER not in "".join(p.get("text", "") for e, p in events if e == "token")
+    assert "meta" in event_names
+    assert "assistant_message" in event_names
+    assert event_names[-1] == "done"
+
+    meta_idx = event_names.index("meta")
+    assistant_idx = event_names.index("assistant_message")
+    assert meta_idx < assistant_idx
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_yields_error_on_llm_failure(
+    monkeypatch, db_session, active_tutor_session, tutor_seed
+):
+    user_id = tutor_seed["user"].id
+
+    async def boom(*, system, user):
+        raise RuntimeError("LLM down")
+        yield ""  # pragma: no cover
+
+    monkeypatch.setattr("app.services.tutor_service.chat_stream_text", boom)
+
+    events = []
+    async for event, payload in iter_turn_sse(
+        db_session, user_id, active_tutor_session.id, "Hi"
+    ):
+        events.append((event, payload))
+
+    assert events[0][0] == "user_message"
+    assert any(e == "error" for e, _ in events)
+    user_msgs = (
+        await db_session.execute(
+            select(TutorMessageDB).where(
+                TutorMessageDB.session_id == active_tutor_session.id,
+                TutorMessageDB.role == "user",
+            )
+        )
+    ).scalars().all()
+    assert len(user_msgs) == 1
