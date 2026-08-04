@@ -1,11 +1,13 @@
 "use client";
 
-import type { CSSProperties } from "react";
+import { useState, type CSSProperties } from "react";
 import Link from "next/link";
-import { Check, Lock, Zap } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { Check, Lock, MessageCircle, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RoadmapWeek } from "@/lib/roadmap";
+import { startTutorSession } from "@/lib/tutor";
 
 const MASTERY_PASS = 0.7;
 
@@ -28,6 +30,10 @@ export function WeekNode({
   onComplete,
   onLockedTap,
 }: WeekNodeProps) {
+  const router = useRouter();
+  const [startingTutor, setStartingTutor] = useState(false);
+  const [tutorError, setTutorError] = useState<string | null>(null);
+
   const masteryPct = Math.round(week.mastery * 100);
   const canComplete =
     week.status === "in_progress" && week.mastery >= MASTERY_PASS;
@@ -77,7 +83,8 @@ export function WeekNode({
         )}
       >
         <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-          Week {week.week_number}
+          Step {week.week_number}
+          {week.level ? ` · ${week.level}` : ""}
         </p>
         <p className="mt-1.5 text-sm font-medium leading-tight text-foreground">
           {title}
@@ -105,7 +112,8 @@ export function WeekNode({
         {week.status === "in_progress" ? (
           <div className="mt-3 space-y-2">
             <p className="text-xs text-muted-foreground">
-              Practice this skill until mastery ≥ 70%, then complete the week.
+              Mini-unit: Learn → Practice quiz until mastery ≥ 70%, then
+              complete the week.
             </p>
             <Button
               asChild
@@ -115,8 +123,34 @@ export function WeekNode({
               className="w-full"
             >
               <Link href={`/dashboard/practice/${week.skill_id}`}>
-                Practice skill
+                Open week
               </Link>
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              className="w-full"
+              disabled={startingTutor}
+              onClick={async () => {
+                setTutorError(null);
+                setStartingTutor(true);
+                try {
+                  const session = await startTutorSession(week.roadmap_step_id);
+                  router.push(`/dashboard/tutor/${session.id}`);
+                } catch (err) {
+                  setTutorError(
+                    err instanceof Error
+                      ? err.message
+                      : "Could not start tutor session",
+                  );
+                } finally {
+                  setStartingTutor(false);
+                }
+              }}
+            >
+              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
+              {startingTutor ? "Starting…" : "Practice speaking"}
             </Button>
             <Button
               type="button"
@@ -127,6 +161,11 @@ export function WeekNode({
             >
               {completing ? "Completing…" : "Complete week"}
             </Button>
+            {tutorError ? (
+              <p className="text-xs text-destructive" role="alert">
+                {tutorError}
+              </p>
+            ) : null}
             {actionError ? (
               <p className="text-xs text-destructive" role="alert">
                 {actionError}
