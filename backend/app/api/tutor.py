@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +16,7 @@ from app.models.user import UserDB
 from app.schemas.tutor_schema import (
     TutorEndSummaryDTO,
     TutorMessageDTO,
+    TutorScenarioDTO,
     TutorSessionDTO,
     TutorStartSessionRequest,
     TutorTurnMessageRequest,
@@ -26,6 +27,7 @@ from app.services.tutor_service import (
     end_session,
     get_session_for_user,
     iter_turn_sse,
+    list_catalog_scenarios,
     start_session,
 )
 
@@ -42,7 +44,11 @@ def _map_tutor_error(exc: ValueError) -> HTTPException:
         return HTTPException(status_code=404, detail=msg)
     if msg == "Not allowed to access this tutor session":
         return HTTPException(status_code=403, detail=msg)
-    if msg in {"Roadmap step not found", "Roadmap step progress not found"}:
+    if msg in {
+        "Roadmap step not found",
+        "Roadmap step progress not found",
+        "Scenario not found",
+    }:
         return HTTPException(status_code=404, detail=msg)
     if msg == "Tutor session is not active":
         return HTTPException(status_code=409, detail=msg)
@@ -65,6 +71,33 @@ async def _session_to_dto(db: AsyncSession, session: TutorSessionDB) -> TutorSes
     )
 
 
+@router.get("/scenarios")
+async def get_scenarios(
+    level: str | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserDB = Depends(get_current_active_user),
+):
+    scenarios = await list_catalog_scenarios(db, int(current_user.id), level=level)
+    return {
+        "data": [
+            TutorScenarioDTO(
+                id=int(s.id),
+                title=s.title,
+                slug=s.slug,
+                description=s.description,
+                category=s.category.value if hasattr(s.category, "value") else str(s.category),
+                level=s.level.value if hasattr(s.level, "value") else str(s.level),
+                ai_role=s.ai_role,
+                user_role=s.user_role,
+                goal_prompt=s.goal_prompt,
+                suggested_vocab=s.suggested_vocab,
+                order_index=int(s.order_index),
+            )
+            for s in scenarios
+        ]
+    }
+
+
 @router.post("/sessions")
 async def create_session(
     body: TutorStartSessionRequest,
@@ -72,7 +105,12 @@ async def create_session(
     current_user: UserDB = Depends(get_current_active_user),
 ):
     try:
-        session = await start_session(db, int(current_user.id), body.roadmap_step_id)
+        session = await start_session(
+            db,
+            int(current_user.id),
+            roadmap_step_id=body.roadmap_step_id,
+            scenario_id=body.scenario_id,
+        )
     except ValueError as exc:
         raise _map_tutor_error(exc) from exc
     return {"data": await _session_to_dto(db, session)}
@@ -107,7 +145,9 @@ async def post_message(
         raise _map_tutor_error(exc) from exc
 
     async def gen():
-        async for event, payload in iter_turn_sse(db, user_id, session_id, body.content):
+        async for event, payload in iter_turn_sse(
+            db, user_id, session_id, body.content, debug=body.debug
+        ):
             yield _sse(event, payload)
 
     return StreamingResponse(gen(), media_type="text/event-stream")

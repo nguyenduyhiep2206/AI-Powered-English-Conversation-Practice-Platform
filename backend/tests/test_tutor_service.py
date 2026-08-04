@@ -27,7 +27,7 @@ async def test_start_rejects_locked_step(db_session, user_with_locked_step, tuto
         await start_session(
             db_session,
             user_with_locked_step.id,
-            tutor_seed["step"].id,
+            roadmap_step_id=tutor_seed["step"].id,
         )
 
 
@@ -38,7 +38,7 @@ async def test_start_creates_session_with_opener(
     session = await start_session(
         db_session,
         user_with_in_progress_step.id,
-        tutor_seed["step"].id,
+        roadmap_step_id=tutor_seed["step"].id,
     )
     assert session.status == TutorSessionStatusEnum.active
     assert session.target_skill_ids == [tutor_seed["skill"].id]
@@ -97,6 +97,64 @@ async def test_end_does_not_touch_mastery(monkeypatch, db_session, active_tutor_
 
 
 @pytest.mark.asyncio
+async def test_start_by_scenario_id_catalog(db_session, tutor_seed):
+    session = await start_session(
+        db_session,
+        tutor_seed["user"].id,
+        scenario_id=tutor_seed["scenario"].id,
+    )
+    assert session.roadmap_step_id is None
+    assert session.scenario_id == tutor_seed["scenario"].id
+    assert session.target_skill_ids == []
+    assert session.status == TutorSessionStatusEnum.active
+
+
+@pytest.mark.asyncio
+async def test_start_rejects_both_or_neither(db_session, tutor_seed):
+    with pytest.raises(ValueError, match="exactly one"):
+        await start_session(db_session, tutor_seed["user"].id)
+
+    with pytest.raises(ValueError, match="exactly one"):
+        await start_session(
+            db_session,
+            tutor_seed["user"].id,
+            scenario_id=tutor_seed["scenario"].id,
+            roadmap_step_id=tutor_seed["step"].id,
+        )
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_off_topic_sets_meta_and_debug(
+    monkeypatch, db_session, active_tutor_session, tutor_seed
+):
+    user_id = tutor_seed["user"].id
+    meta_json = '{"correction":null,"hint":null,"goal_progress":"none","off_topic":true}'
+    full = f"Let's stick to your order.{META_DELIMITER}{meta_json}"
+
+    async def fake_stream(*, system, user):
+        assert "OFF-TOPIC" in system
+        for ch in full:
+            yield ch
+
+    monkeypatch.setattr("app.services.tutor_service.chat_stream_text", fake_stream)
+
+    events = []
+    async for event, payload in iter_turn_sse(
+        db_session,
+        user_id,
+        active_tutor_session.id,
+        "What is the gold price today?",
+        debug=True,
+    ):
+        events.append((event, payload))
+
+    by_name = {e: p for e, p in events}
+    assert by_name["meta"]["off_topic"] is True
+    assert by_name["debug"]["route"] == "off_topic"
+    assert events[-1][0] == "done"
+
+
+@pytest.mark.asyncio
 async def test_iter_turn_sse_streams_tokens_before_meta(monkeypatch, db_session, active_tutor_session, tutor_seed):
     user_id = tutor_seed["user"].id
     meta_json = '{"correction":null,"hint":null,"goal_progress":"partial"}'
@@ -121,6 +179,7 @@ async def test_iter_turn_sse_streams_tokens_before_meta(monkeypatch, db_session,
     assert "meta" in event_names
     assert "assistant_message" in event_names
     assert event_names[-1] == "done"
+    assert "debug" not in event_names
 
     await db_session.refresh(active_tutor_session)
     assert active_tutor_session.message_count == 1

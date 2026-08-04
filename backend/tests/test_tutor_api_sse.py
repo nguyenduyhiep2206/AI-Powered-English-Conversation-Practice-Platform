@@ -43,7 +43,7 @@ async def test_post_message_streams_token_meta_done(api_client, monkeypatch):
     client, session = api_client
 
     async def fake_iter_turn_sse(
-        _db, _user_id, _session_id, _content
+        _db, _user_id, _session_id, _content, *, debug: bool = False
     ) -> AsyncIterator[tuple[str, dict]]:
         yield ("token", {"text": "Hello "})
         yield ("token", {"text": "there"})
@@ -51,6 +51,8 @@ async def test_post_message_streams_token_meta_done(api_client, monkeypatch):
             "meta",
             {"correction": None, "hint": None, "goal_progress": "none"},
         )
+        if debug:
+            yield ("debug", {"route": "roleplay", "cache_hit": False})
         yield ("done", {"ok": True})
 
     monkeypatch.setattr("app.api.tutor.iter_turn_sse", fake_iter_turn_sse)

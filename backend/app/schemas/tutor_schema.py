@@ -5,11 +5,36 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class TutorStartSessionRequest(BaseModel):
-    roadmap_step_id: int
+    roadmap_step_id: int | None = None
+    scenario_id: int | None = None
+
+    @model_validator(mode="after")
+    def exactly_one_entry(self) -> TutorStartSessionRequest:
+        has_step = self.roadmap_step_id is not None
+        has_scenario = self.scenario_id is not None
+        if has_step == has_scenario:
+            raise ValueError("Provide exactly one of scenario_id or roadmap_step_id")
+        return self
+
+
+class TutorScenarioDTO(BaseModel):
+    id: int
+    title: str
+    slug: str
+    description: str | None = None
+    category: str
+    level: str
+    ai_role: str
+    user_role: str
+    goal_prompt: str
+    suggested_vocab: list[str] | None = None
+    order_index: int
+
+    model_config = {"from_attributes": True}
 
 
 class TutorMessageDTO(BaseModel):
@@ -25,7 +50,7 @@ class TutorMessageDTO(BaseModel):
 class TutorSessionDTO(BaseModel):
     id: int
     user_id: int
-    roadmap_step_id: int
+    roadmap_step_id: int | None = None
     scenario_id: int
     status: Literal["active", "completed", "abandoned"]
     target_skill_ids: list[int]
@@ -40,12 +65,14 @@ class TutorSessionDTO(BaseModel):
 
 class TutorTurnMessageRequest(BaseModel):
     content: str = Field(..., min_length=1)
+    debug: bool = False
 
 
 class TutorTurnMetaDTO(BaseModel):
     correction: dict[str, str] | None = None
     hint: str | None = None
     goal_progress: Literal["none", "partial", "done"] = "none"
+    off_topic: bool = False
 
 
 class TutorSoftSkillSignalDTO(BaseModel):

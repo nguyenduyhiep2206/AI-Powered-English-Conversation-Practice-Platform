@@ -23,7 +23,7 @@ class TutorSessionDB(Base):
     roadmap_step_id = Column(
         BigInteger,
         ForeignKey("roadmap_steps.id", ondelete="RESTRICT"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
     scenario_id = Column(
