@@ -67,5 +67,8 @@ class Settings(BaseSettings):
     # Skill mini-unit Learn phase (read→check→write→feedback)
     LEARN_UNIT_ENABLED: bool = False
 
+    TUTOR_MAX_USER_TURNS: int = 20
+    TUTOR_MAX_MESSAGE_CHARS: int = 2000
+
 
 settings = Settings()
