@@ -6,7 +6,7 @@
 **Tham chiếu sản phẩm:** [Promova AI Tutor](https://promova.com/page/ai-tutor), [Press — AI Tutor](https://promova.com/press/promova-launches-ai-tutor), [Speak with AI](https://promova.com/page/speak-with-ai)  
 **Phạm vi:** `backend` (schema session/message, API tutor, LLM turn + end-summary), `frontend/my-app` (CTA roadmap → trang chat text, correction bubble, end summary)  
 **Phụ thuộc:** Roadmap ZPD + `roadmap_step_skills`, catalog `scenarios`, `user_profiles.current_level`, `chat_json` / writing-feedback patterns, weak-skill review (soft link)  
-**Ngoài phạm vi P0:** Voice-call / STT / TTS / pronunciation score, avatar, free-chat tab độc lập, mastery delta cứng như quiz, SSE streaming, streak/badge, human tutoring  
+**Ngoài phạm vi P0:** Voice-call / STT / TTS / pronunciation score, avatar, free-chat tab độc lập, mastery delta cứng như quiz, streak/badge, human tutoring  
 
 ---
 
@@ -31,6 +31,7 @@ EnglishFlow đã có Learn + Practice chữ bám skill và roadmap theo tuần, 
 - Feedback **nhẹ**: tối đa 1 correction/turn; không scoring kiểu quiz.
 - End session: summary + `soft_skill_signals` (gợi ý, **không** cập nhật `user_skill_mastery`).
 - Persist transcript để resume / audit; tái dùng `scenarios` hiện có.
+- **SSE streaming** cho assistant reply để UX gần chat realtime (Promova-like feel trên text).
 
 ### Không làm (P0)
 
@@ -40,7 +41,6 @@ EnglishFlow đã có Learn + Practice chữ bám skill và roadmap theo tuần, 
 | Avatar / “feels like a call” UI | Presentational; sau khi core chat ổn |
 | Tab AI Tutor catalog độc lập | Dễ lệch path học; P1 entry phụ |
 | Mastery ± như quiz khi end | Khuyến khích nói “an toàn”; kém tin cậy |
-| SSE stream reply | Nice-to-have; P0 dùng request/response `chat_json` |
 | Streak / badge / daily goals cho tutor | Gamification đã cắt; không mang lại |
 
 ---
@@ -55,8 +55,8 @@ EnglishFlow đã có Learn + Practice chữ bám skill và roadmap theo tuần, 
 | Level | `user_profiles.current_level` (A1–C1) điều khiển độ dài/complexity prompt |
 | Mastery | **Không** ghi mastery; chỉ soft signals trên end summary |
 | Persistence | Bảng mới `tutor_sessions` / `tutor_messages` (không tái dùng tên `chat_*`) |
-| LLM I/O | Structured JSON qua `chat_json` (cùng pattern writing feedback) |
-| Streaming | Không bắt buộc P0 |
+| LLM I/O | Turn: stream text + meta JSON cuối turn; end-summary vẫn 1-shot structured JSON |
+| Streaming | **Must P0** — SSE trên send-message |
 | Voice roadmap | Ghi P1 trong §8; không block P0 |
 
 ---
@@ -70,9 +70,10 @@ Dashboard roadmap
   → UI /dashboard/tutor/[sessionId]
        loop:
          user types message
-         POST .../messages → reply + optional correction/hint
+         POST .../messages (Accept: text/event-stream)
+           → SSE: token deltas của reply, rồi event `meta` (correction/hint/goal_progress), rồi `done`
        End:
-         POST .../end → summary + soft_skill_signals
+         POST .../end → summary + soft_skill_signals (JSON, không stream)
          → modal; optional link Weak skills review
 ```
 
@@ -139,16 +140,39 @@ Prefix gợi ý: `/api/tutor` (permission learner đã login).
 |--------|------|---------|
 | `POST` | `/sessions` | Body: `{ roadmap_step_id }`. Validate step thuộc user progress `in_progress`. Resolve scenario + target skills. Tạo session `active`. Optionally seed 1 assistant opener. |
 | `GET` | `/sessions/{id}` | Session + messages (owner only). |
-| `POST` | `/sessions/{id}/messages` | Body: `{ content }`. Append user msg → LLM → append assistant → return `{ message, correction?, hint?, goal_progress }`. |
-| `POST` | `/sessions/{id}/end` | Chỉ `active` → `completed`; 1 LLM summary call; persist `summary`. |
+| `POST` | `/sessions/{id}/messages` | Body: `{ content }`. **SSE stream** (xem §6.1). Append user msg trước stream; append assistant sau khi stream xong (hoặc partial + error flag). |
+| `POST` | `/sessions/{id}/end` | Chỉ `active` → `completed`; 1 LLM summary call (JSON); persist `summary`. Không SSE. |
 
 **Lỗi chính:** 404 session, 403 không owner, 409 session không `active`, 400 step không `in_progress` / quá message limit, 502 LLM fail (không mất user message đã lưu — retry policy trong plan).
+
+### 6.1 SSE contract (`POST .../messages`)
+
+`Content-Type: text/event-stream`. Mỗi event: `event:` + `data:` JSON.
+
+| `event` | Khi | `data` (ví dụ) |
+|---------|-----|----------------|
+| `user_message` | ngay sau persist user | `{ "id": 1, "content": "..." }` |
+| `token` | trong lúc generate reply | `{ "text": "partial " }` (delta; FE concat) |
+| `meta` | sau khi có đủ structured side-channel | `{ "correction": null\|object, "hint": null\|string, "goal_progress": "none\|partial\|done" }` |
+| `assistant_message` | sau persist assistant | `{ "id": 2, "content": "full reply", "meta": { ... } }` |
+| `error` | LLM/validate fail giữa chừng | `{ "code": "...", "message": "..." }` |
+| `done` | luôn cuối stream thành công | `{ "ok": true }` |
+
+**Quy tắc:**
+
+1. Persist **user** message trước khi gọi LLM (để không mất input nếu stream đứt).
+2. Stream **chỉ** phần `reply` dạng token; `correction` / `hint` / `goal_progress` gửi một lần ở `meta` (không stream từng field).
+3. Implementation prefer: LLM stream plain reply text **hoặc** stream JSON với `reply` accumulating + parse `meta` khi đủ — plan chọn 1 cách và mock được trong test.
+4. Nếu client disconnect giữa chừng: best-effort lưu partial assistant `content` + `meta.partial=true` (optional P0; tối thiểu log + không crash).
+5. `POST /end` giữ JSON đồng bộ (summary ngắn, không cần typing UX).
 
 ---
 
 ## 7. LLM contracts
 
-### 7.1 Turn response
+### 7.1 Turn — streaming + side meta
+
+Logical payload (sau khi đủ turn):
 
 ```json
 {
@@ -163,6 +187,16 @@ Prefix gợi ý: `/api/tutor` (permission learner đã login).
 - `hint`: nudge ngắn hướng goal, không spoil câu trả lời mẫu dài.
 - `goal_progress`: `none` \| `partial` \| `done`.
 
+**Streaming strategy (chốt):**
+
+| Option đã cân nhắc | Quyết định |
+|--------------------|------------|
+| A. Một completion JSON, fake stream cắt `reply` | Đơn giản nhưng latency-to-first-token kém |
+| B. Stream token `reply`; gọi 2nd small JSON cho meta | 2 LLM calls / turn — đắt |
+| **C. Stream `reply` text; model trả meta trong trailer / second structured parse** | **Chọn C biến thể pragmatic:** primary stream = natural-language `reply` only; sau cùng (cùng completion nếu provider hỗ trợ tool/json mode song song, **hoặc** postfix delimiter) extract meta. Plan implementation phải pick concrete provider API (`chat_json` sync không đủ — cần `chat_stream` mới trong `llm_client`). |
+
+Invariant: FE luôn nhận được `meta` trước `assistant_message` / `done`, kể cả `correction: null`.
+
 ### 7.2 System prompt pillars
 
 1. Stay in `ai_role`; user is `user_role`.  
@@ -174,7 +208,7 @@ Prefix gợi ý: `/api/tutor` (permission learner đã login).
 
 ### 7.3 End-summary call
 
-Input: transcript rút gọn + `target_skill_ids` metadata. Output khớp §5.3; empty `soft_skill_signals` hợp lệ.
+Input: transcript rút gọn + `target_skill_ids` metadata. Output khớp §5.3; empty `soft_skill_signals` hợp lệ. **Không stream.**
 
 ---
 
@@ -182,7 +216,8 @@ Input: transcript rút gọn + `target_skill_ids` metadata. Output khớp §5.3;
 
 - CTA trên step/WeekNode khi `in_progress` (copy English product UI theo app hiện tại).
 - Route: `/dashboard/tutor/[sessionId]`.
-- UI: transcript, text input, optional correction chip dưới bubble user, nút End → modal summary.
+- UI: transcript, text input, **render token stream** vào bubble assistant đang gõ, rồi gắn correction chip khi `meta` tới; nút End → modal summary.
+- AbortController: Cancel dừng đọc SSE (server best-effort).
 - Nếu có soft signals → deep-link tới weak-skills review hiện có (nếu surface đã có); không block nếu thiếu.
 - Không avatar, không mic P0.
 
@@ -190,7 +225,6 @@ Input: transcript rút gọn + `target_skill_ids` metadata. Output khớp §5.3;
 
 - Voice-call UX + STT/TTS + pronunciation tips (Promova-like).
 - Tab catalog scenarios độc lập + daily cadence.
-- SSE streaming replies.
 - Optional soft mastery hint channel (vẫn không hard delta nếu chưa có calibration).
 
 ---
@@ -208,11 +242,13 @@ Input: transcript rút gọn + `target_skill_ids` metadata. Output khớp §5.3;
 ## 10. Kiểm chứng (DoD P0)
 
 1. Start session từ step `in_progress` thành công; step `locked`/`completed` bị từ chối.  
-2. Round-trip message lưu DB + trả correction nullable.  
-3. End ghi summary; `soft_skill_signals[].skill_id` ⊆ `target_skill_ids`.  
-4. Không có write vào `user_skill_mastery` từ tutor paths (test assert).  
-5. FE: mở chat từ roadmap, gửi tin, end thấy summary.  
-6. Migration Alembic mới; không phụ thuộc bảng đã drop.
+2. Round-trip message lưu DB; SSE emit `token`* → `meta` → `assistant_message` → `done`.  
+3. Correction nullable qua event `meta`.  
+4. End ghi summary; `soft_skill_signals[].skill_id` ⊆ `target_skill_ids`.  
+5. Không có write vào `user_skill_mastery` từ tutor paths (test assert).  
+6. FE: mở chat từ roadmap, thấy reply stream, end thấy summary.  
+7. Migration Alembic mới; không phụ thuộc bảng đã drop.  
+8. Có `chat_stream` (hoặc tương đương) trong LLM client + unit test giả stream.
 
 ---
 
@@ -237,3 +273,4 @@ Khi implement: cập nhật `docs/REQUIREMENTS.md` — chuyển một phần “
 | Date | Note |
 |------|------|
 | 2026-08-04 | Draft từ brainstorm: Promova research (Exa) + §1–§3 approved |
+| 2026-08-04 | Revision: SSE streaming là Must P0 (§6.1, §7.1, FE, DoD) |
