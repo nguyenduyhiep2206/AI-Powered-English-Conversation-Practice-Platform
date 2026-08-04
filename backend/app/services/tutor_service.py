@@ -298,6 +298,11 @@ async def _stream_assistant_turn(
         if delta:
             yield ("token", {"text": delta})
 
+    if META_DELIMITER not in accumulated:
+        remaining = accumulated[emitted_len:]
+        if remaining:
+            yield ("token", {"text": remaining})
+
     reply, meta = split_reply_and_meta(accumulated)
     yield ("meta", meta)
 

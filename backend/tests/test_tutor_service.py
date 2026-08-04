@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.models.enums import TutorSessionStatusEnum
 from app.models.tutor import TutorMessageDB
 from app.models.user_skill_mastery import UserSkillMasteryDB
+from app.core.config import settings
 from app.services.tutor_prompt import META_DELIMITER
 from app.services.tutor_service import (
     end_session,
@@ -155,3 +156,57 @@ async def test_iter_turn_sse_yields_error_on_llm_failure(
         )
     ).scalars().all()
     assert len(user_msgs) == 1
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_flushes_tokens_without_meta_delimiter(
+    monkeypatch, db_session, active_tutor_session, tutor_seed
+):
+    """Reply with no META_DELIMITER must still emit all held-back tail chars."""
+    user_id = tutor_seed["user"].id
+    full_reply = "Hello there!"
+
+    async def fake_stream(*, system, user):
+        for ch in ["Hel", "lo ", "there!"]:
+            yield ch
+
+    monkeypatch.setattr("app.services.tutor_service.chat_stream_text", fake_stream)
+
+    events = []
+    async for event, payload in iter_turn_sse(
+        db_session, user_id, active_tutor_session.id, "Hi"
+    ):
+        events.append((event, payload))
+
+    token_text = "".join(p["text"] for e, p in events if e == "token")
+    assert token_text == full_reply
+    assert META_DELIMITER not in token_text
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_rejects_message_over_max_chars(
+    db_session, active_tutor_session, tutor_seed
+):
+    user_id = tutor_seed["user"].id
+    too_long = "x" * (settings.TUTOR_MAX_MESSAGE_CHARS + 1)
+
+    with pytest.raises(ValueError, match="maximum length"):
+        async for _ in iter_turn_sse(
+            db_session, user_id, active_tutor_session.id, too_long
+        ):
+            pass
+
+
+@pytest.mark.asyncio
+async def test_iter_turn_sse_rejects_when_max_user_turns_reached(
+    db_session, active_tutor_session, tutor_seed
+):
+    user_id = tutor_seed["user"].id
+    active_tutor_session.message_count = settings.TUTOR_MAX_USER_TURNS
+    await db_session.commit()
+
+    with pytest.raises(ValueError, match="Maximum user turns"):
+        async for _ in iter_turn_sse(
+            db_session, user_id, active_tutor_session.id, "One more turn"
+        ):
+            pass
