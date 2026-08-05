@@ -62,6 +62,7 @@ def test_plan_next_steps_returns_empty_when_no_candidates():
         with (
             patch.object(ras, "_require_profile", AsyncMock(return_value=profile)),
             patch.object(ras, "load_active_skills", AsyncMock(return_value=[skill])),
+            patch.object(ras, "load_covered_skill_ids", AsyncMock(return_value={1})),
             patch.object(ras, "_load_assigned_skill_ids", AsyncMock(return_value={1})),
             patch.object(ras, "load_mastery_map", AsyncMock(return_value={1: 0.2})),
         ):
@@ -76,14 +77,14 @@ def test_plan_next_steps_returns_empty_when_no_candidates():
     asyncio.run(run())
 
 
-def test_assemble_request_defaults_to_three_and_clamps_api_range():
-    assert AssembleRequest().max_steps == 3
+def test_assemble_request_defaults_to_full_path_and_clamps_api_range():
+    assert AssembleRequest().max_steps == 30
     assert AssembleRequest(max_steps=1).max_steps == 1
-    assert AssembleRequest(max_steps=5).max_steps == 5
+    assert AssembleRequest(max_steps=40).max_steps == 40
     with pytest.raises(ValidationError):
         AssembleRequest(max_steps=0)
     with pytest.raises(ValidationError):
-        AssembleRequest(max_steps=6)
+        AssembleRequest(max_steps=41)
 
 
 def test_next_week_number_from_existing_weeks():

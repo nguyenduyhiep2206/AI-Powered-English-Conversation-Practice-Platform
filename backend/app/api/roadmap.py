@@ -18,7 +18,7 @@ router = APIRouter()
 
 class AssembleRequest(BaseModel):
     level: CEFRLevel | None = None
-    max_steps: int = Field(default=3, ge=1, le=5)
+    max_steps: int = Field(default=30, ge=1, le=40)
 
 
 @router.get("")
