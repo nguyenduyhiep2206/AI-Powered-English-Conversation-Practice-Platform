@@ -1,16 +1,13 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Check, Loader2, X } from "lucide-react";
-import AppHeader from "@/components/AppHeader";
+import { Loader2 } from "lucide-react";
 import LessonMiniUnit from "@/components/lesson/LessonMiniUnit";
-import LessonQaPanel from "@/components/lesson/LessonQaPanel";
-import LessonContentWindow from "@/components/lesson/LessonContentWindow";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { PracticeShell } from "@/components/practice/PracticeShell";
+import { QaDock } from "@/components/practice/QaDock";
+import { QuizCard } from "@/components/practice/QuizCard";
+import type { StepChip } from "@/components/practice/StepChips";
 import {
   completeSkillLesson,
   fetchSkillLesson,
@@ -166,324 +163,146 @@ export default function PracticeSkillPage() {
     lessonMeta?.learn_available &&
     lessonMeta.lesson != null;
 
+  const steps: StepChip[] = hasLearn
+    ? [
+        {
+          id: "learn",
+          label: "Learn",
+          detail:
+            lessonMeta?.pack_total && lessonMeta.pack_total > 1
+              ? `${lessonMeta.pack_completed_count ?? 0}/${lessonMeta.pack_total}`
+              : undefined,
+          state:
+            phase === "learn" ? "active" : learnDone ? "done" : "upcoming",
+        },
+        {
+          id: "practice",
+          label: "Practice quiz",
+          state: phase === "practice" ? "active" : "upcoming",
+        },
+        {
+          id: "path",
+          label: "Path",
+          state: readyToComplete ? "done" : "upcoming",
+        },
+      ]
+    : [
+        {
+          id: "practice",
+          label: "Practice quiz",
+          state: phase === "practice" ? "active" : "upcoming",
+        },
+        {
+          id: "path",
+          label: "Path",
+          state: readyToComplete ? "done" : "upcoming",
+        },
+      ];
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      <AppHeader />
-
-      <main className="mx-auto max-w-2xl px-6 py-10">
+    <PracticeShell
+      title={lessonMeta?.lesson?.title ?? "This week"}
+      masteryPct={masteryPct}
+      readyToComplete={readyToComplete}
+      steps={steps}
+      showSteps={hasLearn || questions.length > 0 || phase === "practice"}
+      phase={phase === "learn" ? "learn" : "practice"}
+      loading={loading}
+      loadingLabel={
+        phase === "learn" ? "Opening lesson…" : "Loading questions…"
+      }
+      banner={
         <>
-          <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <Button asChild variant="ghost" size="sm" className="-ml-2">
-                <Link href="/dashboard">
-                  <ArrowLeft className="mr-2 h-4 w-4" />
-                  Back to path
-                </Link>
-              </Button>
-              <h1 className="mt-2 text-2xl font-semibold tracking-tight">
-                This week
-              </h1>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Learn the skill, then practice until mastery ≥ 70%.
-              </p>
-              {hasLearn ? (
-                <ol className="mt-3 flex flex-wrap gap-2 text-xs">
-                  <li
-                    className={`rounded-md border px-2.5 py-1 ${
-                      phase === "learn"
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : learnDone
-                          ? "border-[#346538]/30 bg-[#EDF3EC] text-[#346538]"
-                          : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    1. Learn
-                    {lessonMeta?.pack_total && lessonMeta.pack_total > 1
-                      ? ` ${lessonMeta.pack_completed_count ?? 0}/${lessonMeta.pack_total}`
-                      : ""}
-                    {learnDone && phase !== "learn" ? " ✓" : ""}
-                  </li>
-                  <li
-                    className={`rounded-md border px-2.5 py-1 ${
-                      phase === "practice"
-                        ? "border-primary bg-primary/10 text-foreground"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    2. Practice quiz
-                  </li>
-                  <li
-                    className={`rounded-md border px-2.5 py-1 ${
-                      readyToComplete
-                        ? "border-[#346538]/30 bg-[#EDF3EC] text-[#346538]"
-                        : "border-border text-muted-foreground"
-                    }`}
-                  >
-                    3. Complete week
-                    {readyToComplete ? " ✓" : ""}
-                  </li>
-                </ol>
-              ) : null}
-              {showReviewLearn ? (
-                <button
-                  type="button"
-                  className="mt-2 text-sm text-[#1F6C9F] underline-offset-2 hover:underline"
-                  onClick={() => setPhase("learn")}
-                >
-                  Review lesson
-                </button>
-              ) : null}
-            </div>
-            {masteryPct != null ? (
-              <Badge variant={readyToComplete ? "default" : "outline"}>
-                Mastery {masteryPct}%
-              </Badge>
-            ) : null}
-          </div>
-
-          {loading ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" />
-              {phase === "learn" ? "Opening lesson…" : "Loading questions…"}
-            </div>
-          ) : error && !current ? (
-            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-sm text-destructive">
+          {error && !current && phase === "practice" ? (
+            <div
+              role="alert"
+              className="mb-5 rounded-2xl bg-[#FFF0EE] px-4 py-3 text-[0.875rem] text-[#C24B3A] ring-1 ring-[#FF8A6B]/25"
+            >
               {error}
             </div>
-          ) : current ? (
-            <section className="rounded-xl border border-border bg-card/60 p-6">
-              <div className="mb-4 flex flex-wrap items-center gap-2">
-                <Badge variant="secondary">
-                  Question {index + 1} / {questions.length}
-                </Badge>
-                <Badge variant="outline">{current.question_type}</Badge>
-                {current.toeic_part ? (
-                  <Badge variant="outline">{current.toeic_part.toUpperCase()}</Badge>
-                ) : null}
-              </div>
-
-              {current.passage ? (
-                <div className="mb-5 border-l-2 border-primary/40 pl-4">
-                  <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                    Passage
-                  </p>
-                  <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-foreground/90">
-                    {current.passage}
-                  </p>
-                </div>
-              ) : null}
-
-              <p className="text-base font-medium leading-relaxed">
-                {current.question_type === "fix_grammar"
-                  ? "Fix the sentence"
-                  : current.stem}
-              </p>
-              {current.question_type === "fix_grammar" ? (
-                <p className="mt-3 rounded-lg border border-border bg-muted/40 px-4 py-3 text-sm leading-relaxed text-foreground/90">
-                  {current.stem}
-                </p>
-              ) : null}
-
-              {feedback ? (
-                <div className="mt-5 space-y-4">
-                  <div
-                    className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
-                      feedback.correct
-                        ? "border-[#346538]/30 bg-[#EDF3EC] text-[#346538]"
-                        : "border-destructive/40 bg-destructive/10 text-destructive"
-                    }`}
-                  >
-                    {feedback.correct ? (
-                      <Check className="mt-0.5 h-4 w-4 shrink-0" />
-                    ) : (
-                      <X className="mt-0.5 h-4 w-4 shrink-0" />
-                    )}
-                    <div>
-                      <p>{feedback.correct ? "Correct" : "Not quite"}</p>
-                      {feedback.explanation ? (
-                        <p className="mt-1 text-muted-foreground">
-                          {feedback.explanation}
-                        </p>
-                      ) : null}
-                    </div>
-                  </div>
-
-                  {readyToComplete ? (
-                    <Button
-                      type="button"
-                      size="lg"
-                      className="w-full"
-                      onClick={() => router.push("/dashboard")}
-                    >
-                      Mastery reached — back to path
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="lg"
-                      className="w-full"
-                      onClick={goNext}
-                    >
-                      Next question
-                      <ArrowRight className="ml-2 h-4 w-4" />
-                    </Button>
-                  )}
-                </div>
-              ) : (
-                <>
-                  {current.question_type === "mcq" && current.options?.length ? (
-                    <div className="mt-5 grid gap-2">
-                      {current.options.map((option) => {
-                        const selected = answer === option;
-                        return (
-                          <button
-                            key={option}
-                            type="button"
-                            onClick={() => {
-                              setAnswer(option);
-                              setError(null);
-                            }}
-                            className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
-                              selected
-                                ? "border-primary bg-primary/15 text-foreground"
-                                : "border-border bg-background/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                            }`}
-                          >
-                            {option}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  ) : current.question_type === "cloze" ? (
-                    <div className="mt-5 space-y-3">
-                      {current.options?.length ? (
-                        <div className="grid gap-2">
-                          {current.options.map((option) => {
-                            const selected = answer === option;
-                            return (
-                              <button
-                                key={option}
-                                type="button"
-                                onClick={() => {
-                                  setAnswer(option);
-                                  setError(null);
-                                }}
-                                className={`rounded-lg border px-4 py-3 text-left text-sm transition-colors ${
-                                  selected
-                                    ? "border-primary bg-primary/15 text-foreground"
-                                    : "border-border bg-background/40 text-muted-foreground hover:border-primary/40 hover:text-foreground"
-                                }`}
-                              >
-                                {option}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      ) : (
-                        <Input
-                          value={answer}
-                          onChange={(e) => {
-                            setAnswer(e.target.value);
-                            setError(null);
-                          }}
-                          placeholder="Fill the blank"
-                        />
-                      )}
-                    </div>
-                  ) : (
-                    <Input
-                      className="mt-5"
-                      value={answer}
-                      onChange={(e) => {
-                        setAnswer(e.target.value);
-                        setError(null);
-                      }}
-                      placeholder={
-                        current.question_type === "fix_grammar"
-                          ? "Type the corrected sentence"
-                          : "Your answer"
-                      }
-                    />
-                  )}
-
-                  {error ? (
-                    <p className="mt-4 text-sm text-destructive" role="alert">
-                      {error}
-                    </p>
-                  ) : null}
-
-                  <Button
-                    type="button"
-                    size="lg"
-                    className="mt-6 w-full"
-                    disabled={submitting || !answer.trim()}
-                    onClick={handleSubmit}
-                  >
-                    {submitting ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Checking…
-                      </>
-                    ) : (
-                      "Check answer"
-                    )}
-                  </Button>
-                </>
-              )}
-            </section>
+          ) : null}
+          {showReviewLearn ? (
+            <button
+              type="button"
+              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8]"
+              onClick={() => setPhase("learn")}
+            >
+              Review lesson
+            </button>
+          ) : null}
+          {phase === "learn" && lessonMeta?.can_skip ? (
+            <button
+              type="button"
+              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8]"
+              onClick={() => void openPractice()}
+            >
+              Skip to practice
+            </button>
           ) : null}
         </>
-
-        {phase === "learn" && lessonMeta?.lesson ? (
-          <LessonContentWindow
-            open
-            title={
-              lessonMeta.pack_total && lessonMeta.pack_total > 1
-                ? `${lessonMeta.lesson.title} (${(lessonMeta.pack_completed_count ?? 0) + 1}/${lessonMeta.pack_total})`
-                : lessonMeta.lesson.title
-            }
-            dismissible={Boolean(lessonMeta.can_skip)}
-            onClose={() => {
-              void openPractice();
+      }
+      lesson={
+        phase === "learn" && lessonMeta?.lesson ? (
+          completingLesson ? (
+            <div className="flex items-center justify-center gap-2 py-16 text-[#8A8396]">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              Saving progress…
+            </div>
+          ) : (
+            <LessonMiniUnit
+              key={`${lessonMeta.lesson.id}-${lessonMeta.lesson.pack_index ?? 0}`}
+              skillId={skillId}
+              title={lessonMeta.lesson.title}
+              objective={lessonMeta.lesson.objective}
+              content={lessonMeta.lesson.content}
+              packIndex={lessonMeta.lesson.pack_index ?? 0}
+              packLabel={
+                lessonMeta.pack_total && lessonMeta.pack_total > 1
+                  ? `${(lessonMeta.pack_completed_count ?? 0) + 1}/${lessonMeta.pack_total}`
+                  : null
+              }
+              onFinished={() => void handleLessonFinished()}
+              embedded
+            />
+          )
+        ) : null
+      }
+      quiz={
+        current ? (
+          <QuizCard
+            question={current}
+            index={index}
+            total={questions.length}
+            answer={answer}
+            onAnswerChange={(v) => {
+              setAnswer(v);
+              setError(null);
             }}
-          >
-            {completingLesson ? (
-              <div className="flex items-center justify-center gap-2 py-16 text-[#787774]">
-                <Loader2 className="h-5 w-5 animate-spin" />
-                {lessonMeta?.lesson_completed
-                  ? "Opening practice…"
-                  : "Saving progress…"}
-              </div>
-            ) : (
-              <LessonMiniUnit
-                key={`${lessonMeta.lesson.id}-${lessonMeta.lesson.pack_index ?? 0}`}
-                skillId={skillId}
-                title={lessonMeta.lesson.title}
-                objective={lessonMeta.lesson.objective}
-                content={lessonMeta.lesson.content}
-                packIndex={lessonMeta.lesson.pack_index ?? 0}
-                packLabel={
-                  lessonMeta.pack_total && lessonMeta.pack_total > 1
-                    ? `${(lessonMeta.pack_completed_count ?? 0) + 1}/${lessonMeta.pack_total}`
-                    : null
-                }
-                onFinished={() => void handleLessonFinished()}
-                embedded
-              />
-            )}
-          </LessonContentWindow>
-        ) : null}
-
-        {phase === "learn" &&
-        lessonMeta?.lesson &&
-        !completingLesson ? (
-          <LessonQaPanel
+            feedback={
+              feedback
+                ? {
+                    correct: feedback.correct,
+                    explanation: feedback.explanation,
+                  }
+                : null
+            }
+            submitting={submitting}
+            error={error}
+            readyToComplete={readyToComplete}
+            onSubmit={() => void handleSubmit()}
+            onNext={goNext}
+            onBackToPath={() => router.push("/dashboard")}
+          />
+        ) : null
+      }
+      qa={
+        phase === "learn" && lessonMeta?.lesson && !completingLesson ? (
+          <QaDock
             skillId={skillId}
             lessonTitle={lessonMeta.lesson.title}
           />
-        ) : null}
-      </main>
-    </div>
+        ) : null
+      }
+    />
   );
 }
