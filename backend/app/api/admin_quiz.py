@@ -15,7 +15,10 @@ from app.schemas.quiz_schema import (
     QuizQuestionListResponse,
     QuizQuestionOut,
 )
-from app.services.quiz_generation_service import generate_quiz_for_skill
+from app.services.quiz_generation_service import (
+    generate_quiz_for_skill,
+    should_skip_skill_drill_publish,
+)
 from app.services.skill_graph_service import (
     list_book_skill_sources,
     sources_with_titles,
@@ -91,7 +94,9 @@ async def admin_generate_quiz(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        rows = await generate_quiz_for_skill(db, skill_id, count=body.count)
+        rows = await generate_quiz_for_skill(
+            db, skill_id, count=body.count, mode=body.mode
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -161,11 +166,16 @@ async def admin_publish_questions(
     )
     published = 0
     skipped = 0
+    skipped_alignment = 0
     passage_ids: set[int] = set()
     for row in rows:
         part = row.toeic_part.value if row.toeic_part else None
         if part in {"w1", "w2", "w3"} and not writing_publishable(row):
             skipped += 1
+            continue
+        if should_skip_skill_drill_publish(row):
+            skipped += 1
+            skipped_alignment += 1
             continue
         row.status = QuizQuestionStatusEnum.published
         published += 1
@@ -193,6 +203,7 @@ async def admin_publish_questions(
         "data": {
             "published": published,
             "skipped": skipped,
+            "skipped_alignment": skipped_alignment,
             "passages_published": passages_published,
         }
     }

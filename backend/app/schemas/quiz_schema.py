@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -6,7 +6,8 @@ from app.models.enums import QuizQuestionStatusEnum, QuizQuestionTypeEnum, Toeic
 
 
 class GenerateQuizRequest(BaseModel):
-    count: int = Field(default=8, ge=1, le=15)
+    count: int = Field(default=10, ge=1, le=15)
+    mode: Literal["skill_drill", "toeic"] = "skill_drill"
 
 
 class GenerateWritingRequest(BaseModel):

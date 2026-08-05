@@ -24,6 +24,7 @@ from app.models.enums import (
 from app.models.learning_skill import LearningSkillDB
 from app.models.quiz_passage import QuizPassageDB
 from app.models.quiz_question import QuizQuestionDB
+from app.models.skill_lesson import SkillLessonDB
 from app.services.book_chunk_service import PackMode, get_unit_context
 from app.services.cefr_descriptors import (
     blueprint_as_prompt_lines,
@@ -32,6 +33,12 @@ from app.services.cefr_descriptors import (
     passage_length_range,
 )
 from app.services.llm_client import chat_json
+from app.services.skill_drill_align import (
+    align_score,
+    batch_align_ratio,
+    expand_surfaces,
+)
+from app.services.skill_drill_blueprint import blueprint_for_skill_drill
 
 SYSTEM_PROMPT = """You are an expert TOEIC Reading (RC) item writer.
 Write items ONLY from the provided textbook EXCERPT (business/workplace English tone like official TOEIC RC).
@@ -75,6 +82,34 @@ an unrelated corporate story with zero words from the EXCERPT.
 _ALLOWED_READING_TYPES = {"mcq"}
 _ALLOWED_TOEIC_PARTS = {"r5", "r6", "r7"}
 _LEGACY_REJECTED_TYPES = {"cloze", "fix_grammar"}
+_ALLOWED_SKILL_DRILL_TYPES = {"mcq", "cloze", "fix_grammar"}
+_SKILL_DRILL_ALIGN_MIN = 0.8
+
+SKILL_DRILL_SYSTEM_PROMPT = """You are an ESL skill-drill item writer (English→English).
+Write practice items that train ONE skill's target forms/words — NOT TOEIC Parts 5–7
+unless item_kind is reading_target.
+
+Return JSON: {{"questions":[...]}} with fields per item:
+type (mcq|cloze|fix_grammar), item_kind (from blueprint),
+stem, options (mcq: exactly 4 strings; cloze: 0–4 optional hints; fix_grammar: []),
+answer (exact correct string), explanation (short English),
+difficulty (easy|medium|hard), passage (optional short context; usually null),
+toeic_part (omit / null).
+
+Item kinds:
+- form_choose (mcq): choose the correct form for a blank or short prompt.
+- cloze_form (cloze): stem has a blank; answer is the missing word/phrase.
+- fix_grammar (fix_grammar): stem is a wrong sentence; answer is the corrected sentence.
+- contrast (mcq): choose which form fits (am/is/are, a/an, etc.).
+- paraphrase (mcq): meaning/paraphrase of a target.
+- reading_target (mcq): short mini-passage OK; still must use a target surface.
+
+Rules:
+- Follow the blueprint order: matching type + item_kind for each index.
+- Every item MUST use at least one TARGET surface (word-boundary) in stem, answer, or options.
+- CEFR {cefr}; skill type {skill_type}; keep language simple.
+- No Vietnamese. No unrelated corporate reading trivia.
+"""
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
 PASSAGE_GROUNDING_RATIO = 0.55
@@ -563,6 +598,9 @@ def _build_draft_row(
 ) -> QuizQuestionDB:
     toeic_raw = item.get("toeic_part")
     toeic_part = ToeicPartEnum(toeic_raw) if toeic_raw in _ALLOWED_TOEIC_PARTS else None
+    options = item.get("options")
+    if options is None:
+        options = []
     return QuizQuestionDB(
         skill_id=skill.id,
         book_id=primary.book_id,
@@ -572,14 +610,15 @@ def _build_draft_row(
         passage=item.get("passage"),
         passage_id=passage_id,
         toeic_part=toeic_part,
-        options=item["options"],
+        options=options,
         answer=item["answer"],
         explanation=item.get("explanation"),
         cefr_level=skill.cefr_level,
         difficulty=item["difficulty"],
         status=QuizQuestionStatusEnum.draft,
         generation_batch_id=batch_id,
-        source_chunk_ids=ctx["chunk_ids"],
+        source_chunk_ids=ctx.get("chunk_ids"),
+        task_brief=item.get("task_brief"),
     )
 
 
@@ -638,16 +677,304 @@ async def _persist_draft_questions(
     return rows
 
 
+def _form_row_surfaces(row: dict[str, Any]) -> set[str]:
+    """Prefer form examples; keep short form tokens only (skip prose explanations)."""
+    out: set[str] = set()
+    example = str(row.get("example") or "").strip()
+    if example:
+        out.add(example)
+    pattern = str(row.get("pattern") or "").strip()
+    # Keep "am / is" style tokens; drop "Before consonant sounds".
+    words = pattern.split()
+    if pattern and (("/" in pattern and len(words) <= 5) or len(words) == 1):
+        out.add(pattern)
+    return out
+
+
+def surfaces_from_lesson_content(content: dict[str, Any] | None) -> set[str]:
+    """Collect target surfaces + usable form tokens from a lesson content object."""
+    if not isinstance(content, dict):
+        return set()
+    out: set[str] = set()
+    for t in content.get("targets") or []:
+        if isinstance(t, dict):
+            s = str(t.get("surface") or "").strip()
+            if s:
+                out.add(s)
+    form = content.get("form")
+    if isinstance(form, dict):
+        for row in form.get("rows") or []:
+            if isinstance(row, dict):
+                out |= _form_row_surfaces(row)
+    return expand_surfaces(out)
+
+
+def surfaces_from_lessons(lessons: list[dict[str, Any]] | list[Any]) -> set[str]:
+    """Union surfaces across LessonPack items (dict with content or ORM-like)."""
+    out: set[str] = set()
+    for lesson in lessons:
+        content = None
+        if isinstance(lesson, dict):
+            content = lesson.get("content")
+        else:
+            content = getattr(lesson, "content", None)
+        out |= surfaces_from_lesson_content(
+            content if isinstance(content, dict) else None
+        )
+    return expand_surfaces(out)
+
+
+def heuristic_surfaces_from_skill(skill: LearningSkillDB) -> set[str]:
+    """Fallback surfaces when no published lesson (non-grammar)."""
+    title = str(skill.title or "").strip()
+    parts = [p for p in re.split(r"[\s/|,;:]+", title) if len(p) >= 2]
+    return set(parts[:8]) if parts else {title} if title else set()
+
+
+async def _load_published_lessons(
+    db: AsyncSession, skill_id: int
+) -> list[SkillLessonDB]:
+    return list(
+        (
+            await db.execute(
+                select(SkillLessonDB)
+                .where(
+                    SkillLessonDB.skill_id == skill_id,
+                    SkillLessonDB.status == "published",
+                )
+                .order_by(SkillLessonDB.pack_index.asc())
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _load_published_lesson(
+    db: AsyncSession, skill_id: int
+) -> SkillLessonDB | None:
+    rows = await _load_published_lessons(db, skill_id)
+    return rows[0] if rows else None
+
+
+def validate_skill_drill_questions(
+    items: list[dict[str, Any]],
+    *,
+    blueprint: list[dict[str, Any]],
+    surfaces: set[str],
+    alignment: str,
+) -> list[dict[str, Any]]:
+    """Validate LLM skill-drill items (mcq/cloze/fix_grammar)."""
+    valid: list[dict[str, Any]] = []
+    for index, item in enumerate(items):
+        if not isinstance(item, dict):
+            continue
+        qtype = str(item.get("type") or "").strip().lower()
+        if qtype not in _ALLOWED_SKILL_DRILL_TYPES:
+            continue
+        stem = str(item.get("stem") or "").strip()
+        answer = str(item.get("answer") or "").strip()
+        if not stem or not answer:
+            continue
+
+        expected_type = None
+        expected_kind = None
+        if index < len(blueprint):
+            expected_type = blueprint[index].get("question_type")
+            expected_kind = blueprint[index].get("item_kind")
+            if expected_type and qtype != expected_type:
+                # Allow LLM type if still in allowed set and kind matches loosely
+                if qtype not in _ALLOWED_SKILL_DRILL_TYPES:
+                    continue
+
+        item_kind = str(item.get("item_kind") or expected_kind or "form_choose").strip()
+
+        options_raw = item.get("options")
+        options: list[str] = []
+        if isinstance(options_raw, list):
+            options = [str(o).strip() for o in options_raw if str(o).strip()]
+
+        if qtype == "mcq":
+            if len(options) < 2:
+                continue
+            if answer not in options:
+                continue
+            if len(options) > 4:
+                options = options[:4]
+            # Pad to 4 if needed is not required for skill_drill; keep as-is if >=2
+        elif qtype in {"cloze", "fix_grammar"}:
+            # options optional
+            pass
+
+        difficulty = str(item.get("difficulty") or "medium").strip() or "medium"
+        passage_raw = item.get("passage")
+        passage = (
+            (passage_raw or "").strip() if isinstance(passage_raw, str) else None
+        ) or None
+
+        normalized = {
+            "type": qtype,
+            "toeic_part": None,
+            "stem": stem,
+            "passage": passage,
+            "passage_group": None,
+            "options": options,
+            "answer": answer,
+            "explanation": item.get("explanation"),
+            "skill": item.get("skill") or "grammar",
+            "difficulty": difficulty,
+            "cefr_focus": item.get("cefr_focus"),
+            "item_kind": item_kind,
+            "task_brief": {
+                "mode": "skill_drill",
+                "item_kind": item_kind,
+                "alignment": alignment,
+                "surfaces": sorted(surfaces),
+            },
+        }
+        valid.append(normalized)
+    return valid
+
+
+def _build_skill_drill_user_prompt(
+    skill: LearningSkillDB,
+    ctx: dict[str, Any],
+    count: int,
+    blueprint: list[dict[str, Any]],
+    surfaces: set[str],
+) -> str:
+    cefr = skill.cefr_level
+    cefr_s = cefr.value if hasattr(cefr, "value") else str(cefr)
+    st = skill.skill_type or SkillTypeEnum.grammar
+    st_s = st.value if hasattr(st, "value") else str(st)
+    lines = [
+        f"Skill title: {skill.title}",
+        f"CEFR: {cefr_s}",
+        f"Skill type: {st_s}",
+        f"TARGETS (must appear in items): {', '.join(sorted(surfaces))}",
+        f"Generate exactly {count} questions matching this blueprint:",
+    ]
+    for i, b in enumerate(blueprint, start=1):
+        lines.append(
+            f"{i}. item_kind={b['item_kind']} type={b['question_type']}"
+        )
+    lines.append(f"\nEXCERPT (optional grounding):\n{ctx.get('text') or '(none)'}\n")
+    return "\n".join(lines)
+
+
+def _request_skill_drill_items(
+    skill: LearningSkillDB,
+    ctx: dict[str, Any],
+    count: int,
+    surfaces: set[str],
+    alignment: str,
+) -> list[dict[str, Any]]:
+    skill_type = skill.skill_type or SkillTypeEnum.grammar
+    st_s = (
+        skill_type.value if hasattr(skill_type, "value") else str(skill_type)
+    )
+    cefr = skill.cefr_level
+    cefr_s = cefr.value if hasattr(cefr, "value") else str(cefr or "A1")
+    blueprint = blueprint_for_skill_drill(st_s, count)
+    system = SKILL_DRILL_SYSTEM_PROMPT.format(cefr=cefr_s, skill_type=st_s)
+    user_prompt = _build_skill_drill_user_prompt(
+        skill, ctx, count, blueprint, surfaces
+    )
+
+    best: list[dict[str, Any]] = []
+    last_ratio = 0.0
+    for attempt in range(2):
+        prompt = user_prompt
+        if attempt > 0:
+            prompt += (
+                f"\nRETRY: previous alignment ratio was {last_ratio:.2f} "
+                f"(need ≥ {_SKILL_DRILL_ALIGN_MIN}). "
+                "Every item must include a TARGET as a whole word in stem/answer/options.\n"
+            )
+        payload = chat_json(system, prompt)
+        raw = payload.get("questions") if isinstance(payload, dict) else payload
+        if not isinstance(raw, list):
+            raw = []
+        validated = validate_skill_drill_questions(
+            raw,
+            blueprint=blueprint,
+            surfaces=surfaces,
+            alignment=alignment,
+        )
+        if surfaces:
+            last_ratio = batch_align_ratio(validated, surfaces)
+            if last_ratio < _SKILL_DRILL_ALIGN_MIN:
+                if attempt == 0:
+                    continue
+                raise ValueError(
+                    f"Skill-drill alignment too low ({last_ratio:.2f} < "
+                    f"{_SKILL_DRILL_ALIGN_MIN}). Regenerate or fix lesson targets."
+                )
+        if len(validated) > len(best):
+            best = validated
+        if len(best) >= count:
+            break
+
+    if not best:
+        raise ValueError("No valid skill-drill questions after validation.")
+    if len(best) < max(2, count // 2):
+        raise ValueError(
+            f"Only {len(best)}/{count} skill-drill questions passed validation."
+        )
+    return best[:count]
+
+
 async def generate_quiz_for_skill(
     db: AsyncSession,
     skill_id: int,
-    count: int = 8,
+    count: int = 10,
+    mode: str = "skill_drill",
 ) -> list[QuizQuestionDB]:
-    """Generate CEFR-aware quiz: blueprint + passage grounding → draft rows."""
+    """Generate quiz drafts. Default mode=skill_drill; use mode=toeic for TOEIC RC."""
     skill = await _require_skill(db, skill_id)
     primary = await _resolve_primary_source(db, skill_id)
     book = await _require_source_book(db, int(primary.book_id))
-
     ctx = _load_unit_context(skill, book, primary)
-    validated = _request_validated_items(skill, book, primary, ctx, count)
+
+    mode_norm = (mode or "skill_drill").strip().lower()
+    if mode_norm == "toeic":
+        validated = _request_validated_items(skill, book, primary, ctx, count)
+        return await _persist_draft_questions(db, skill, primary, ctx, validated)
+
+    skill_type = skill.skill_type or SkillTypeEnum.grammar
+    st_s = skill_type.value if hasattr(skill_type, "value") else str(skill_type)
+    lessons = await _load_published_lessons(db, skill_id)
+    surfaces = surfaces_from_lessons(lessons)
+    alignment = "lesson"
+    if not surfaces:
+        if st_s == "grammar":
+            raise ValueError(
+                "Grammar skill_drill requires a published lesson with targets/form."
+            )
+        surfaces = heuristic_surfaces_from_skill(skill)
+        alignment = "heuristic"
+        if not surfaces:
+            raise ValueError("No target surfaces available for skill_drill.")
+
+    validated = _request_skill_drill_items(
+        skill, ctx, count, surfaces, alignment
+    )
     return await _persist_draft_questions(db, skill, primary, ctx, validated)
+
+
+def should_skip_skill_drill_publish(row: QuizQuestionDB) -> bool:
+    """True if skill_drill row fails alignment against its stored surfaces."""
+    brief = row.task_brief if isinstance(row.task_brief, dict) else None
+    if not brief or brief.get("mode") != "skill_drill":
+        return False
+    surfaces_raw = brief.get("surfaces") or []
+    surfaces = {str(s).strip() for s in surfaces_raw if str(s).strip()}
+    if not surfaces:
+        return False
+    item = {
+        "stem": row.stem or "",
+        "passage": row.passage or "",
+        "answer": row.answer or "",
+        "options": row.options if isinstance(row.options, list) else [],
+    }
+    return not align_score(item, surfaces)
