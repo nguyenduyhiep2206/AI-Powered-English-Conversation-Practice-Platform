@@ -129,7 +129,7 @@
   }
 }
 
-/* minimalist-ui: quiet staggered scroll/mount entry (transform + opacity only) */
+/* Quiet staggered scroll/mount entry (transform + opacity only) */
 @keyframes ef-fade-up {
   from {
     opacity: 0;
@@ -147,9 +147,27 @@
   animation-delay: calc(var(--ef-index, 0) * 80ms);
 }
 
+@keyframes login-bob {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-4px);
+  }
+}
+
+.login-bob {
+  animation: login-bob 2.8s ease-in-out infinite alternate;
+  animation-delay: calc(var(--login-bob-delay, 0) * 1ms);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ef-fade-up {
     opacity: 1;
+    animation: none;
+  }
+
+  .login-bob {
     animation: none;
   }
 }
