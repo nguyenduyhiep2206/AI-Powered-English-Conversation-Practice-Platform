@@ -60,12 +60,23 @@ backend/
 
 ### Learn lesson → Practice skill_drill
 
-1. Publish a Learn lesson for the skill (grammar requires `form` with ≥2 rows).
-2. `POST /api/v1/admin/quiz/skills/{skill_id}/generate` with body `{"count": 6}` — default `mode=skill_drill`.
+1. Prefer a LessonPack: `POST /api/v1/admin/lessons/skills/{skill_id}/generate-pack` then `.../publish-pack` (3 micro-lessons). Single-lesson generate/publish still works for legacy.
+2. `POST /api/v1/admin/quiz/skills/{skill_id}/generate` with body `{"count": 6}` — default `mode=skill_drill` (targets = union of all published pack surfaces).
 3. Publish drafts: `POST /api/v1/admin/quiz/questions/publish` with `question_ids`. Misaligned skill_drill items are skipped (`skipped_alignment`).
 4. For classic TOEIC Parts 5–7: pass `"mode": "toeic"` on generate.
 
 Breaking note: generate defaults to `skill_drill` (not TOEIC). Use `mode=toeic` explicitly when needed.
+
+### Theme units (roadmap grouping)
+
+After catalog seed, map skills into can-do units:
+
+```bash
+python -m app.seeds.cefr_ladder_a1_a2
+python -m app.seeds.theme_units_a1_a2
+```
+
+Roadmap weeks expose `theme_unit_*` fields; the learner dashboard groups by unit and shows a light weak-skills review hub.
 
 ---
 
