@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from unittest.mock import MagicMock
+
+import pytest
+
 from app.services.tutor_memory import estimate_tokens, window_transcript
 from app.services.tutor_rag import (
     cosine,
     format_retrieved_block,
     is_off_topic,
     needs_rag,
+    retrieve_for_session,
     select_top_chunks,
 )
 from app.services.tutor_rag_cache import cache_key, normalize_query
@@ -59,6 +64,31 @@ def test_cache_key_stable():
     b = cache_key("hello", [1, 2, 3])
     assert a == b
     assert a.startswith("tutor:rag:")
+
+
+@pytest.mark.asyncio
+async def test_retrieve_for_session_enabled_override(monkeypatch):
+    monkeypatch.setattr("app.services.tutor_rag.settings.TUTOR_RAG_ENABLED", False)
+
+    async def fake_scope(db, skill_ids):
+        return [(1, 2)]
+
+    monkeypatch.setattr("app.services.tutor_rag.resolve_unit_scope", fake_scope)
+    monkeypatch.setattr(
+        "app.services.tutor_rag.load_embedded_chunks",
+        lambda scope, limit_per_unit=40: [
+            {"embedding": [1.0, 0.0], "text": "hello world", "unit_title": "U1", "_id": "1"}
+        ],
+    )
+    monkeypatch.setattr("app.services.tutor_rag.embed_texts", lambda qs: [[1.0, 0.0]])
+
+    db = MagicMock()
+    query = "What does reservation mean?"
+
+    assert await retrieve_for_session(db, skill_ids=[1], query=query) == []
+    result = await retrieve_for_session(db, skill_ids=[1], query=query, enabled=True)
+    assert len(result) == 1
+    assert result[0]["unit_title"] == "U1"
 
 
 def test_hybrid_token_budget_under_half_baseline():

@@ -182,8 +182,9 @@ async def retrieve_for_session(
     *,
     skill_ids: list[int],
     query: str,
+    enabled: bool | None = None,
 ) -> list[dict[str, Any]]:
-    if not settings.TUTOR_RAG_ENABLED:
+    if not (settings.TUTOR_RAG_ENABLED if enabled is None else enabled):
         return []
     if not skill_ids and not settings.TUTOR_RAG_CATALOG_LEVEL_FALLBACK:
         return []
