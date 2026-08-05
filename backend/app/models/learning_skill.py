@@ -28,6 +28,7 @@ class LearningSkillDB(Base):
     skill_type = Column(skill_type_enum, nullable=False, server_default="grammar")
     difficulty_in_level = Column(SmallInteger, nullable=True)
     is_active = Column(Boolean, nullable=False, server_default="true")
+    origin = Column(String(20), nullable=False, server_default="legacy")
     created_at = Column(TIMESTAMP(timezone=True), nullable=False, server_default=func.now())
 
     sources = relationship("BookSkillSourceDB", back_populates="skill")

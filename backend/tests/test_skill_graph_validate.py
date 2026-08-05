@@ -1,7 +1,10 @@
 # backend/tests/test_skill_graph_validate.py
 import pytest
 
-from app.services.skill_graph_validate import validate_llm_graph_payload
+from app.services.skill_graph_validate import (
+    validate_llm_attach_payload,
+    validate_llm_graph_payload,
+)
 
 ALLOWED = {"grammar", "vocabulary", "reading", "functional"}
 
@@ -107,3 +110,31 @@ def test_validate_reuses_existing_slug_in_prereq():
         allowed_skill_types=ALLOWED,
     )
     assert edges == [("be_present", "present_simple")]
+
+
+def test_validate_attach_rejects_unknown_slug():
+    with pytest.raises(ValueError, match="not in the catalog"):
+        validate_llm_attach_payload(
+            {
+                "unit_mappings": [
+                    {"unit_index": 1, "slug": "not_in_catalog", "exclude": False},
+                ]
+            },
+            unit_indexes={1},
+            catalog_slugs={"present_simple"},
+        )
+
+
+def test_validate_attach_allows_null_slug_unmapped():
+    out = validate_llm_attach_payload(
+        {
+            "unit_mappings": [
+                {"unit_index": 1, "slug": None, "exclude": False},
+                {"unit_index": 2, "slug": "present_simple", "exclude": False},
+            ]
+        },
+        unit_indexes={1, 2},
+        catalog_slugs={"present_simple"},
+    )
+    assert out[0]["slug"] is None
+    assert out[1]["slug"] == "present_simple"

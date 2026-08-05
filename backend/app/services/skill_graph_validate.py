@@ -120,6 +120,53 @@ def _normalize_prereq_edges(
     return edges
 
 
+def _normalize_attach_item(item: Any, *, catalog_slugs: set[str]) -> dict[str, Any] | None:
+    """Normalize one attach mapping, or None if soft-dropped."""
+    if not isinstance(item, dict):
+        return None
+    try:
+        unit_index = int(item["unit_index"])
+    except (KeyError, TypeError, ValueError):
+        return None
+
+    exclude = bool(item.get("exclude", False))
+    raw_slug = item.get("slug")
+    if raw_slug is None or (isinstance(raw_slug, str) and not raw_slug.strip()):
+        return {"unit_index": unit_index, "slug": None, "exclude": exclude}
+
+    slug = str(raw_slug).strip().lower()
+    if slug not in catalog_slugs:
+        raise ValueError(f"slug {slug!r} is not in the catalog for this level")
+    return {"unit_index": unit_index, "slug": slug, "exclude": exclude}
+
+
+def validate_llm_attach_payload(
+    payload: dict[str, Any],
+    *,
+    unit_indexes: set[int],
+    catalog_slugs: set[str],
+) -> list[dict[str, Any]]:
+    """Return attach mappings; slug must be catalog member or null.
+
+    Raises if a non-null slug is outside the catalog, or unit coverage is incomplete.
+    """
+    raw_mappings = _require_unit_mappings(payload)
+    expected = {int(i) for i in unit_indexes}
+    catalog = {str(s).strip().lower() for s in catalog_slugs}
+
+    mappings: list[dict[str, Any]] = []
+    seen_indexes: set[int] = set()
+    for item in raw_mappings:
+        normalized = _normalize_attach_item(item, catalog_slugs=catalog)
+        if normalized is None or normalized["unit_index"] in seen_indexes:
+            continue
+        mappings.append(normalized)
+        seen_indexes.add(normalized["unit_index"])
+
+    _require_full_coverage(seen_indexes, expected)
+    return mappings
+
+
 def validate_llm_graph_payload(
     payload: dict[str, Any],
     *,
