@@ -52,11 +52,20 @@ backend/
 
 ## Admin ops flow
 
-**Preferred Admin UI:** **Books** (upload → index) → **Attach** (`/admin/quiz`, sync catalog) → **Skills** list (badges for lesson / quiz drafts / book).
+**Preferred Admin UI:** **Books** (upload → index) → **Attach** (`/admin/quiz`, sync catalog) → **Skills** workspace (lesson → skill_drill → publish).
 
 - Generate/publish lesson and drills in **Skills workspace** (`/admin/skills/{id}`): `GET /api/v1/admin/skills/{id}/workspace`.
 - Attach page is for catalog sync / re-enrich, not dual-path drill generate.
 - Skills list badges: `GET /api/v1/admin/lessons/skills` includes `quiz_draft_count`, `quiz_published_count`, `has_book_source`.
+
+### Learn lesson → Practice skill_drill
+
+1. Publish a Learn lesson for the skill (grammar requires `form` with ≥2 rows).
+2. `POST /api/v1/admin/quiz/skills/{skill_id}/generate` with body `{"count": 6}` — default `mode=skill_drill`.
+3. Publish drafts: `POST /api/v1/admin/quiz/questions/publish` with `question_ids`. Misaligned skill_drill items are skipped (`skipped_alignment`).
+4. For classic TOEIC Parts 5–7: pass `"mode": "toeic"` on generate.
+
+Breaking note: generate defaults to `skill_drill` (not TOEIC). Use `mode=toeic` explicitly when needed.
 
 ---
 
@@ -100,6 +109,7 @@ Nhóm biến chính (từ `app/core/config.py`):
 | Mongo | `MONGODB_URL`, `MONGODB_DB_NAME` |
 | AI | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `VOYAGE_API_KEY` |
 | Feature | `LEARN_UNIT_ENABLED` (Learn mini-unit; mặc định `false` trong code) |
+| Lesson targets | `LEARN_LESSON_MIN_TARGETS` / `LEARN_LESSON_MAX_TARGETS` (mặc định `4` / `7`) |
 
 Không commit `.env` chứa secret.
 
