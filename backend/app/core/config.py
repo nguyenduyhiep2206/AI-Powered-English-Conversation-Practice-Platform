@@ -82,5 +82,9 @@ class Settings(BaseSettings):
     TUTOR_RAG_ALWAYS_LIGHT: bool = False
     TUTOR_RAG_CATALOG_LEVEL_FALLBACK: bool = False
 
+    # Lesson Q&A RAG (practice lesson chat)
+    LESSON_QA_RAG_ENABLED: bool = True
+    LESSON_QA_MEMORY_MAX_TURNS: int = 6
+
 
 settings = Settings()
