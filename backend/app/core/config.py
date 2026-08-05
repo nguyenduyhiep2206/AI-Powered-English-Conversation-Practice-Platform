@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     LEARN_LESSON_MIN_TARGETS: int = 4
     LEARN_LESSON_MAX_TARGETS: int = 7
 
+    # Book unit signal enrichment (attach pipeline)
+    UNIT_ENRICH_ENABLED: bool = True
+    UNIT_ENRICH_MAX_CHARS: int = 3000
+    UNIT_ENRICH_LLM_ENABLED: bool = True
+
     TUTOR_MAX_USER_TURNS: int = 20
     TUTOR_MAX_MESSAGE_CHARS: int = 2000
 

@@ -1,6 +1,15 @@
 from typing import Optional
 
-from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, UploadFile, status
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    status,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user, require_permission
@@ -192,3 +201,18 @@ async def admin_retry_embeddings(
     book = await get_book(db, book_id)
     background_tasks.add_task(retry_embeddings, book_id)
     return BookResponse(data=_to_admin(book))
+
+
+@router.post(
+    "/{book_id}/enrich-units",
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_enrich_units(book_id: int, db: AsyncSession = Depends(get_db)):
+    """Force re-enrich structure units for a ready book (heuristic ± weak LLM)."""
+    try:
+        from app.services.unit_enrichment_service import enrich_units_for_book
+
+        meta = await enrich_units_for_book(db, book_id, force=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"data": {"book_id": book_id, **meta}}

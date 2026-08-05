@@ -65,6 +65,14 @@ class StructureUnitPreview(BaseModel):
     detection_method: str
     confidence: float
     depth_or_source: Optional[str] = None
+    language_focus: Optional[str] = None
+    grammar_cues: Optional[list[str]] = None
+    vocab_cues: Optional[list[str]] = None
+    content_summary: Optional[str] = None
+    enrichment_status: Optional[str] = None
+    enriched_at: Optional[datetime] = None
+    enrichment_source: Optional[str] = None
+    enrichment_method: Optional[str] = None
 
     model_config = {"from_attributes": True}
 

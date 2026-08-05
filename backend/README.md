@@ -78,6 +78,20 @@ python -m app.seeds.theme_units_a1_a2
 
 Roadmap weeks expose `theme_unit_*` fields; the learner dashboard groups by unit and shows a light weak-skills review hub.
 
+### Enrich unit signals (attach)
+
+On a **ready** book that already has Mongo chunks, re-enrich structure units without re-uploading:
+
+```bash
+# Force re-enrich (heuristic ± weak LLM)
+POST /api/v1/admin/books/{id}/enrich-units
+
+# Then re-sync attach (also enriches missing units)
+POST /api/v1/admin/quiz/books/{id}/sync-skills
+```
+
+Scenario chat seed (optional): `python -m app.seeds.scenarios`
+
 ---
 
 ## Setup local (không Docker API)
@@ -121,6 +135,7 @@ Nhóm biến chính (từ `app/core/config.py`):
 | AI | `OPENAI_API_KEY`, `OPENAI_MODEL`, `OPENAI_BASE_URL`, `VOYAGE_API_KEY` |
 | Feature | `LEARN_UNIT_ENABLED` (Learn mini-unit; mặc định `false` trong code) |
 | Lesson targets | `LEARN_LESSON_MIN_TARGETS` / `LEARN_LESSON_MAX_TARGETS` (mặc định `4` / `7`) |
+| Unit enrich | `UNIT_ENRICH_ENABLED`, `UNIT_ENRICH_MAX_CHARS`, `UNIT_ENRICH_LLM_ENABLED` |
 
 Không commit `.env` chứa secret.
 
