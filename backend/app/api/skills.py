@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ router = APIRouter()
 
 class WritingFeedbackRequest(BaseModel):
     text: str = Field(min_length=1)
+    pack_index: int | None = None
 
 
 @router.get("/{skill_id}/lesson")
@@ -37,7 +38,7 @@ async def post_skill_lesson_writing_feedback(
     current_user: UserDB = Depends(get_current_active_user),
 ):
     _ = current_user
-    lesson = await get_published_lesson(db, skill_id)
+    lesson = await get_published_lesson(db, skill_id, pack_index=body.pack_index)
     if lesson is None:
         raise HTTPException(status_code=404, detail="Published lesson not found")
     skill = (
@@ -78,8 +79,11 @@ async def post_skill_lesson_complete(
     skill_id: int,
     db: AsyncSession = Depends(get_db),
     current_user: UserDB = Depends(get_current_active_user),
+    pack_index: int = Query(default=0, ge=0, le=10),
 ):
     try:
-        return await complete_lesson(db, int(current_user.id), skill_id)
+        return await complete_lesson(
+            db, int(current_user.id), skill_id, pack_index=pack_index
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

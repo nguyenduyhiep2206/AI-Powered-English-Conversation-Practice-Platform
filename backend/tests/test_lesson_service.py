@@ -1,5 +1,42 @@
-from app.services.lesson_service import compute_can_skip, compute_learn_available
+from app.services.lesson_service import (
+    attach_quiz_book_badges,
+    compute_can_skip,
+    compute_learn_available,
+)
 from app.services.lesson_writing_feedback import feedback_on_writing
+
+
+def test_attach_quiz_book_badges_defaults_and_lookup():
+    rows = [
+        {
+            "skill_id": 1,
+            "title": "Be",
+            "skill_type": "grammar",
+            "cefr_level": "A1",
+            "lesson_status": "published",
+            "lesson_id": 10,
+        },
+        {
+            "skill_id": 2,
+            "title": "Food",
+            "skill_type": "vocab",
+            "cefr_level": "A1",
+            "lesson_status": None,
+            "lesson_id": None,
+        },
+    ]
+    out = attach_quiz_book_badges(
+        rows,
+        draft_by_skill={1: 3},
+        published_by_skill={1: 8},
+        skills_with_book={1},
+    )
+    assert out[0]["quiz_draft_count"] == 3
+    assert out[0]["quiz_published_count"] == 8
+    assert out[0]["has_book_source"] is True
+    assert out[1]["quiz_draft_count"] == 0
+    assert out[1]["quiz_published_count"] == 0
+    assert out[1]["has_book_source"] is False
 
 
 def test_learn_available_requires_flag_and_published():
@@ -45,44 +82,3 @@ def test_writing_feedback_happy(monkeypatch):
     assert out["original"].startswith("I gets")
     assert "get up" in out["corrected"].lower() or out["corrected"]
     assert out["notes"]
-
-
-from app.services.lesson_service import (
-    attach_quiz_book_badges,
-    compute_can_skip,
-    compute_learn_available,
-)
-
-
-def test_attach_quiz_book_badges_defaults_and_lookup():
-    rows = [
-        {
-            "skill_id": 1,
-            "title": "Be",
-            "skill_type": "grammar",
-            "cefr_level": "A1",
-            "lesson_status": "published",
-            "lesson_id": 10,
-        },
-        {
-            "skill_id": 2,
-            "title": "Food",
-            "skill_type": "vocab",
-            "cefr_level": "A1",
-            "lesson_status": None,
-            "lesson_id": None,
-        },
-    ]
-    out = attach_quiz_book_badges(
-        rows,
-        draft_by_skill={1: 3},
-        published_by_skill={1: 8},
-        skills_with_book={1},
-    )
-    assert out[0]["quiz_draft_count"] == 3
-    assert out[0]["quiz_published_count"] == 8
-    assert out[0]["has_book_source"] is True
-    assert out[1]["quiz_draft_count"] == 0
-    assert out[1]["quiz_published_count"] == 0
-    assert out[1]["has_book_source"] is False
-
