@@ -48,8 +48,8 @@ export default function AdminSkillsPage() {
         </p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight">Skills</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Triage skills by lesson status, quiz drafts, and book attach. Workspace
-          opens after skill-aligned / admin-skill-workspace land.
+          Open a skill workspace to generate lesson and practice drills in one
+          place.
         </p>
       </header>
 
@@ -133,15 +133,18 @@ export default function AdminSkillsPage() {
                       )}
                     </td>
                     <td className="px-4 py-3">
-                      {row.has_book_source ? (
-                        <span className="text-xs text-[#787774]">
-                          Workspace soon
-                        </span>
-                      ) : (
+                      <div className="flex flex-wrap gap-2">
                         <Button asChild size="sm" variant="outline">
-                          <Link href="/admin/quiz">Open Attach</Link>
+                          <Link href={`/admin/skills/${row.skill_id}`}>
+                            Open workspace
+                          </Link>
                         </Button>
-                      )}
+                        {!row.has_book_source ? (
+                          <Button asChild size="sm" variant="ghost">
+                            <Link href="/admin/quiz">Attach</Link>
+                          </Button>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 ))}
