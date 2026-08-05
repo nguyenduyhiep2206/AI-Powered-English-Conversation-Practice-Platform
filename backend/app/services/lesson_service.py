@@ -5,11 +5,14 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
+from app.models.book_skill_source import BookSkillSourceDB
+from app.models.enums import QuizQuestionStatusEnum
 from app.models.learning_skill import LearningSkillDB
+from app.models.quiz_question import QuizQuestionDB
 from app.models.skill_lesson import SkillLessonDB, UserLessonProgressDB
 from app.models.user_skill_mastery import UserSkillMasteryDB
 from app.services.lesson_generation_service import lesson_to_dict
@@ -109,6 +112,25 @@ async def complete_lesson(db: AsyncSession, user_id: int, skill_id: int) -> dict
     return await get_lesson_for_user(db, user_id, skill_id)
 
 
+
+def attach_quiz_book_badges(
+    rows: list[dict[str, Any]],
+    *,
+    draft_by_skill: dict[int, int],
+    published_by_skill: dict[int, int],
+    skills_with_book: set[int],
+) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for row in rows:
+        enriched = dict(row)
+        sid = int(enriched["skill_id"])
+        enriched["quiz_draft_count"] = int(draft_by_skill.get(sid, 0))
+        enriched["quiz_published_count"] = int(published_by_skill.get(sid, 0))
+        enriched["has_book_source"] = sid in skills_with_book
+        out.append(enriched)
+    return out
+
+
 async def list_skills_with_lesson_status(
     db: AsyncSession, *, cefr_level: str | None = None
 ) -> list[dict[str, Any]]:
@@ -116,12 +138,53 @@ async def list_skills_with_lesson_status(
     if cefr_level:
         q = q.where(LearningSkillDB.cefr_level == cefr_level)
     skills = list((await db.execute(q.order_by(LearningSkillDB.id))).scalars().all())
+    skill_ids = [int(s.id) for s in skills]
     lessons = {
         int(row.skill_id): row
         for row in (
-            await db.execute(select(SkillLessonDB).where(SkillLessonDB.skill_id.in_([s.id for s in skills])))
+            await db.execute(
+                select(SkillLessonDB).where(SkillLessonDB.skill_id.in_(skill_ids))
+            )
         ).scalars().all()
-    } if skills else {}
+    } if skill_ids else {}
+
+    draft_by_skill: dict[int, int] = {}
+    published_by_skill: dict[int, int] = {}
+    skills_with_book: set[int] = set()
+    if skill_ids:
+        count_rows = (
+            await db.execute(
+                select(
+                    QuizQuestionDB.skill_id,
+                    QuizQuestionDB.status,
+                    func.count().label("n"),
+                )
+                .where(QuizQuestionDB.skill_id.in_(skill_ids))
+                .group_by(QuizQuestionDB.skill_id, QuizQuestionDB.status)
+            )
+        ).all()
+        for skill_id, status, n in count_rows:
+            sid = int(skill_id)
+            status_val = status.value if hasattr(status, "value") else str(status)
+            if status_val == QuizQuestionStatusEnum.draft.value or status_val == "draft":
+                draft_by_skill[sid] = int(n)
+            elif (
+                status_val == QuizQuestionStatusEnum.published.value
+                or status_val == "published"
+            ):
+                published_by_skill[sid] = int(n)
+
+        book_ids = (
+            await db.execute(
+                select(BookSkillSourceDB.skill_id)
+                .where(
+                    BookSkillSourceDB.skill_id.in_(skill_ids),
+                    BookSkillSourceDB.is_excluded.is_(False),
+                )
+                .distinct()
+            )
+        ).scalars().all()
+        skills_with_book = {int(sid) for sid in book_ids}
 
     out: list[dict[str, Any]] = []
     for skill in skills:
@@ -140,7 +203,12 @@ async def list_skills_with_lesson_status(
                 "lesson_id": int(lesson.id) if lesson else None,
             }
         )
-    return out
+    return attach_quiz_book_badges(
+        out,
+        draft_by_skill=draft_by_skill,
+        published_by_skill=published_by_skill,
+        skills_with_book=skills_with_book,
+    )
 
 
 async def get_admin_lesson(db: AsyncSession, skill_id: int) -> dict[str, Any]:
