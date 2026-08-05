@@ -66,6 +66,8 @@ class Settings(BaseSettings):
 
     # Skill mini-unit Learn phase (read→check→write→feedback)
     LEARN_UNIT_ENABLED: bool = False
+    LEARN_LESSON_MIN_TARGETS: int = 4
+    LEARN_LESSON_MAX_TARGETS: int = 7
 
     TUTOR_MAX_USER_TURNS: int = 20
     TUTOR_MAX_MESSAGE_CHARS: int = 2000
