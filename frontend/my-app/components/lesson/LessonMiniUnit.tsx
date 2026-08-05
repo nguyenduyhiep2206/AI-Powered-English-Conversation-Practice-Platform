@@ -26,11 +26,20 @@ type Props = {
   objective: string;
   content: LessonContent;
   onFinished: () => void;
-  /** Hide title block when shown inside LessonContentWindow. */
+  /** Compact title/objective header for PracticeShell (no modal title bar). */
   embedded?: boolean;
   packIndex?: number;
   packLabel?: string | null;
 };
+
+const PRIMARY_BTN =
+  "h-11 w-full rounded-2xl bg-[#FF8A6B] font-semibold text-white hover:bg-[#F47A5A]";
+
+const PANEL =
+  "space-y-5 rounded-[1.75rem] border border-[#EDE6E0] bg-white p-6 shadow-[0_12px_40px_rgba(42,36,56,0.04)]";
+
+const EYEBROW =
+  "text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#8A8396]";
 
 function buildStepOrder(content: LessonContent): Step[] {
   const steps: Step[] = [];
@@ -66,11 +75,11 @@ function CheckPanel({
     answer.trim().toLowerCase() === check.answer.trim().toLowerCase();
 
   return (
-    <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-      <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-        {label}
+    <div className={PANEL}>
+      <p className={EYEBROW}>{label}</p>
+      <p className="text-[0.9375rem] font-medium text-[#2A2438]">
+        {check.prompt}
       </p>
-      <p className="text-base font-medium text-[#2F3437]">{check.prompt}</p>
 
       {check.type === "mcq" && check.options?.length ? (
         <div className="grid gap-2">
@@ -83,12 +92,12 @@ function CheckPanel({
                 type="button"
                 disabled={revealed}
                 onClick={() => onAnswer(option)}
-                className={`rounded-[8px] border px-4 py-3 text-left text-sm ${
+                className={`rounded-[12px] border px-4 py-3 text-left text-[0.875rem] transition-colors ${
                   revealed && isCorrect
-                    ? "border-[#346538]/40 bg-[#EDF3EC] text-[#346538]"
+                    ? "border-[#8CC6E8]/50 bg-[rgba(140,198,232,0.18)] text-[#3D7FA0]"
                     : selected
-                      ? "border-[#2F3437] bg-[#F7F6F3] text-[#2F3437]"
-                      : "border-[#EAEAEA] text-[#787774]"
+                      ? "border-[#FF8A6B] bg-[#FFF0E8] text-[#2A2438]"
+                      : "border-[#EDE6E0] text-[#6B6478] hover:border-[#FF8A6B]/40"
                 }`}
               >
                 {option}
@@ -102,15 +111,20 @@ function CheckPanel({
           disabled={revealed}
           onChange={(e) => onAnswer(e.target.value)}
           placeholder="Your answer"
+          className="h-11 rounded-[12px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#8A8396] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
         />
       )}
 
       {revealed ? (
         <div className="space-y-3">
-          <p className={`text-sm ${correct ? "text-[#346538]" : "text-[#9F2F2D]"}`}>
+          <p
+            className={`text-[0.875rem] ${
+              correct ? "text-[#3D7FA0]" : "text-[#C24B3A]"
+            }`}
+          >
             {correct ? "Correct" : `Answer: ${check.answer}`}
           </p>
-          <Button type="button" size="lg" className="w-full" onClick={onContinue}>
+          <Button type="button" size="lg" className={PRIMARY_BTN} onClick={onContinue}>
             Continue
           </Button>
         </div>
@@ -118,7 +132,7 @@ function CheckPanel({
         <Button
           type="button"
           size="lg"
-          className="w-full"
+          className={PRIMARY_BTN}
           disabled={!answer.trim()}
           onClick={onReveal}
         >
@@ -206,36 +220,47 @@ export default function LessonMiniUnit({
   }
 
   return (
-    <section className="space-y-6">
+    <section className="space-y-6 text-[#2A2438]">
       {embedded ? (
-        <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-            Learn{packLabel ? ` · ${packLabel}` : ""} · {step}
-          </p>
-          <p className="mt-2 text-sm leading-relaxed text-[#787774]">{objective}</p>
+        <div className="mb-5 border-b border-[#EDE6E0] pb-4">
+          {packLabel ? (
+            <p className="text-[0.75rem] font-medium text-[#FF8A6B]">
+              Part {packLabel}
+            </p>
+          ) : null}
+          <h2 className="text-[1.25rem] font-semibold tracking-tight text-[#2A2438]">
+            {title}
+          </h2>
+          {objective ? (
+            <p className="mt-1 text-[0.875rem] text-[#8A8396]">{objective}</p>
+          ) : null}
         </div>
       ) : (
         <div>
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
+          <p className={EYEBROW}>
             Learn{packLabel ? ` · ${packLabel}` : ""} · {step}
           </p>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-[#2F3437]">
+          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
             {title}
           </h1>
-          <p className="mt-2 text-sm leading-relaxed text-[#787774]">{objective}</p>
+          {objective ? (
+            <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6B6478]">
+              {objective}
+            </p>
+          ) : null}
         </div>
       )}
 
       {step === "hook" && content.hook ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-            Hook
+        <div className={PANEL}>
+          <p className={EYEBROW}>Hook</p>
+          <p className="text-[0.9375rem] leading-relaxed text-[#2A2438]">
+            {content.hook}
           </p>
-          <p className="text-base leading-relaxed text-[#2F3437]">{content.hook}</p>
           <Button
             type="button"
             size="lg"
-            className="w-full"
+            className={PRIMARY_BTN}
             onClick={() => advanceFrom("hook")}
           >
             Continue
@@ -244,20 +269,18 @@ export default function LessonMiniUnit({
       ) : null}
 
       {step === "notice" ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-            Notice
-          </p>
+        <div className={PANEL}>
+          <p className={EYEBROW}>Notice</p>
           {content.passage.gloss ? (
-            <p className="text-sm text-[#787774]">{content.passage.gloss}</p>
+            <p className="text-[0.875rem] text-[#6B6478]">{content.passage.gloss}</p>
           ) : null}
-          <p className="whitespace-pre-wrap text-base leading-relaxed text-[#2F3437]">
+          <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed text-[#2A2438]">
             {content.passage.text}
           </p>
           <Button
             type="button"
             size="lg"
-            className="w-full"
+            className={PRIMARY_BTN}
             onClick={() => advanceFrom("notice")}
           >
             Continue
@@ -266,17 +289,15 @@ export default function LessonMiniUnit({
       ) : null}
 
       {step === "form" && content.form?.rows?.length ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-            Form
-          </p>
-          <h2 className="text-lg font-medium text-[#2F3437]">
+        <div className={PANEL}>
+          <p className={EYEBROW}>Form</p>
+          <h2 className="text-[1.25rem] font-medium text-[#2A2438]">
             {content.form.title || "Pattern"}
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[280px] border-collapse text-sm">
+            <table className="w-full min-w-[280px] border-collapse text-[0.875rem]">
               <thead>
-                <tr className="border-b border-[#EAEAEA] text-left text-[#787774]">
+                <tr className="border-b border-[#EDE6E0] text-left text-[#6B6478]">
                   <th className="py-2 pr-3 font-medium">Label</th>
                   <th className="py-2 pr-3 font-medium">Pattern</th>
                   <th className="py-2 font-medium">Example</th>
@@ -284,12 +305,12 @@ export default function LessonMiniUnit({
               </thead>
               <tbody>
                 {content.form.rows.map((row, i) => (
-                  <tr key={`${row.pattern}-${i}`} className="border-b border-[#F0F0F0]">
-                    <td className="py-2.5 pr-3 text-[#787774]">{row.label || "—"}</td>
-                    <td className="py-2.5 pr-3 font-medium text-[#2F3437]">
+                  <tr key={`${row.pattern}-${i}`} className="border-b border-[#EDE6E0]/70">
+                    <td className="py-2.5 pr-3 text-[#6B6478]">{row.label || "—"}</td>
+                    <td className="py-2.5 pr-3 font-medium text-[#2A2438]">
                       {row.pattern}
                     </td>
-                    <td className="py-2.5 text-[#2F3437]">{row.example || "—"}</td>
+                    <td className="py-2.5 text-[#2A2438]">{row.example || "—"}</td>
                   </tr>
                 ))}
               </tbody>
@@ -298,7 +319,7 @@ export default function LessonMiniUnit({
           <Button
             type="button"
             size="lg"
-            className="w-full"
+            className={PRIMARY_BTN}
             onClick={() => advanceFrom("form")}
           >
             Continue
@@ -307,21 +328,19 @@ export default function LessonMiniUnit({
       ) : null}
 
       {step === "meaning" ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-            Meaning
-          </p>
+        <div className={PANEL}>
+          <p className={EYEBROW}>Meaning</p>
           <ul className="flex flex-wrap gap-2">
             {content.targets.map((t) => {
               const gloss = t.gloss || "";
               return (
                 <li
                   key={t.surface}
-                  className="rounded-[8px] border border-[#EAEAEA] bg-[#F7F6F3] px-3 py-2 text-sm"
+                  className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem]"
                 >
-                  <span className="font-medium text-[#2F3437]">{t.surface}</span>
+                  <span className="font-medium text-[#2A2438]">{t.surface}</span>
                   {gloss ? (
-                    <span className="ml-2 text-[#787774]"> — {gloss}</span>
+                    <span className="ml-2 text-[#6B6478]"> — {gloss}</span>
                   ) : null}
                 </li>
               );
@@ -330,7 +349,7 @@ export default function LessonMiniUnit({
           <Button
             type="button"
             size="lg"
-            className="w-full"
+            className={PRIMARY_BTN}
             onClick={() => advanceFrom("meaning")}
           >
             Continue
@@ -351,28 +370,30 @@ export default function LessonMiniUnit({
       ) : null}
 
       {step === "write" ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-          <p className="text-base font-medium text-[#2F3437]">{content.writing.prompt}</p>
+        <div className={PANEL}>
+          <p className="text-[0.9375rem] font-medium text-[#2A2438]">
+            {content.writing.prompt}
+          </p>
           {content.writing.must_use?.length ? (
-            <p className="text-sm text-[#787774]">
+            <p className="text-[0.875rem] text-[#6B6478]">
               Try to use: {content.writing.must_use.join(", ")}
             </p>
           ) : null}
           <textarea
-            className="min-h-[140px] w-full rounded-[8px] border border-[#EAEAEA] bg-[#FBFBFA] px-3 py-2 text-sm text-[#2F3437] outline-none focus:border-[#2F3437]"
+            className="min-h-[140px] w-full rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem] text-[#2A2438] outline-none placeholder:text-[#8A8396] focus:border-[#FF8A6B]"
             value={writingText}
             onChange={(e) => setWritingText(e.target.value)}
             placeholder="Write in English…"
           />
           {writingError ? (
-            <p className="text-sm text-[#9F2F2D]" role="alert">
+            <p className="text-[0.875rem] text-[#C24B3A]" role="alert">
               {writingError}
             </p>
           ) : null}
           <Button
             type="button"
             size="lg"
-            className="w-full"
+            className={PRIMARY_BTN}
             disabled={writingBusy || !writingText.trim()}
             onClick={() => void submitWriting()}
           >
@@ -382,31 +403,32 @@ export default function LessonMiniUnit({
       ) : null}
 
       {step === "feedback" && feedback ? (
-        <div className="space-y-5 rounded-[12px] border border-[#EAEAEA] bg-white p-6">
+        <div className={PANEL}>
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-              Your writing
-            </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#787774]">
+            <p className={EYEBROW}>Your writing</p>
+            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#6B6478]">
               {feedback.original}
             </p>
           </div>
           <div>
-            <p className="text-[11px] uppercase tracking-[0.14em] text-[#787774]">
-              Suggested
-            </p>
-            <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#2F3437]">
+            <p className={EYEBROW}>Suggested</p>
+            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#2A2438]">
               {feedback.corrected}
             </p>
           </div>
           {feedback.notes.length ? (
-            <ul className="list-disc space-y-1 pl-5 text-sm text-[#787774]">
+            <ul className="list-disc space-y-1 pl-5 text-[0.875rem] text-[#6B6478]">
               {feedback.notes.map((note) => (
                 <li key={note}>{note}</li>
               ))}
             </ul>
           ) : null}
-          <Button type="button" size="lg" className="w-full" onClick={finishAfterFeedback}>
+          <Button
+            type="button"
+            size="lg"
+            className={PRIMARY_BTN}
+            onClick={finishAfterFeedback}
+          >
             {content.exit_check ? "One more check" : "Continue to practice"}
           </Button>
         </div>
