@@ -108,20 +108,28 @@ function AdminQuizPageInner() {
           Content pipeline
         </p>
         <h1 className="mt-2 text-3xl font-semibold tracking-[-0.03em] text-[#111111]">
-          Quiz
+          Attach
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#787774]">
-          Pick an indexed book, sync skills from its units, generate draft questions,
-          then publish.
+          Pick an indexed book, map units onto the CEFR catalog, then continue in Skills
+          for lesson and drills. Optionally publish book-wide drafts here.
         </p>
       </header>
 
       <main className="mx-auto w-full flex-1 space-y-8 p-6 md:p-10">
+        <div className="rounded-[8px] border border-[#E1F3FE] bg-[#E1F3FE]/40 px-4 py-3 text-sm text-[#1F6C9F]">
+          After attach: open{" "}
+          <Link href="/admin/skills" className="font-medium underline underline-offset-2">
+            Skill workspace
+          </Link>{" "}
+          to generate lesson and drills. This page is for catalog attach / sync only.
+        </div>
+
         <ol className="grid gap-3 sm:grid-cols-3">
           {[
-            { step: "01", label: "Sync skills", hint: "Map units → skill graph" },
-            { step: "02", label: "Generate", hint: "Draft questions per skill" },
-            { step: "03", label: "Publish", hint: "Select drafts → live" },
+            { step: "01", label: "Attach", hint: "Map units → CEFR catalog" },
+            { step: "02", label: "Skills", hint: "Lesson + drill in workspace" },
+            { step: "03", label: "Publish drafts", hint: "Optional book-wide publish" },
           ].map((item) => (
             <li
               key={item.step}

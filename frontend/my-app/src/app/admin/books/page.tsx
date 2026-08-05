@@ -247,8 +247,8 @@ export default function AdminBooksPage() {
           Books
         </h1>
         <p className="mt-2 max-w-2xl text-sm leading-relaxed text-[#787774]">
-          Upload a PDF, verify structure, then index. Sync skills and generate quiz
-          live on the Quiz page.
+          Upload a PDF, verify structure, then index. Attach units to the CEFR
+          catalog on the Attach page, then open Skills workspace for lesson/drills.
         </p>
       </header>
 
@@ -435,7 +435,7 @@ export default function AdminBooksPage() {
                                   className="rounded-[6px] bg-[#111111] text-white hover:bg-[#333333]"
                                 >
                                   <Link href={`/admin/quiz?bookId=${book.id}`}>
-                                    Open quiz
+                                    Open Attach
                                     <ArrowRight className="ml-1 h-3.5 w-3.5" />
                                   </Link>
                                 </Button>

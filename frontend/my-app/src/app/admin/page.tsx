@@ -18,12 +18,27 @@ export default function AdminPage() {
           Welcome back, {displayName}
         </h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Manage content, users, and system settings from here.
+          Books → Attach → Skills workspace for lesson and drills.
         </p>
       </header>
 
       <main className="flex-1 p-6">
         <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          <Link
+            href="/admin/skills"
+            className="ef-card-hover ef-card block rounded-[12px] border border-[#EAEAEA] bg-white p-6 transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <h2 className="text-sm font-semibold tracking-tight">Skills</h2>
+              <Badge className="rounded-full bg-[#EDF3EC] text-[10px] uppercase tracking-[0.05em] text-[#346538] hover:bg-[#EDF3EC]">
+                Preferred
+              </Badge>
+            </div>
+            <p className="mt-2 text-sm leading-relaxed text-[#787774]">
+              Lesson + skill drill + writing for one skill in a single workspace.
+            </p>
+          </Link>
+
           <Link
             href="/admin/books"
             className="ef-card-hover ef-card block rounded-[12px] border border-[#EAEAEA] bg-white p-6 transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
@@ -44,54 +59,15 @@ export default function AdminPage() {
             className="ef-card-hover ef-card block rounded-[12px] border border-[#EAEAEA] bg-white p-6 transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
           >
             <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Quiz</h2>
+              <h2 className="text-sm font-semibold tracking-tight">Attach</h2>
               <Badge className="rounded-full bg-[#E1F3FE] text-[10px] uppercase tracking-[0.05em] text-[#1F6C9F] hover:bg-[#E1F3FE]">
                 Active
               </Badge>
             </div>
             <p className="mt-2 text-sm leading-relaxed text-[#787774]">
-              Sync skills from indexed books, generate drafts, and publish.
+              Map indexed book units onto the CEFR catalog, then continue in Skills.
             </p>
           </Link>
-
-          <Link
-            href="/admin/lessons"
-            className="ef-card-hover ef-card block rounded-[12px] border border-[#EAEAEA] bg-white p-6 transition-all duration-200 hover:shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
-          >
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Lessons</h2>
-              <Badge className="rounded-full bg-[#FBF3DB] text-[10px] uppercase tracking-[0.05em] text-[#956400] hover:bg-[#FBF3DB]">
-                Active
-              </Badge>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#787774]">
-              Generate mini-unit Learn content and publish for practice.
-            </p>
-          </Link>
-
-          <section className="ef-card rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Survey questions</h2>
-              <Badge variant="outline" className="rounded-full text-[10px] uppercase tracking-[0.05em]">
-                Soon
-              </Badge>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#787774]">
-              Create and edit onboarding survey questions.
-            </p>
-          </section>
-
-          <section className="ef-card rounded-[12px] border border-[#EAEAEA] bg-white p-6">
-            <div className="flex items-center justify-between gap-2">
-              <h2 className="text-sm font-semibold tracking-tight">Users & roles</h2>
-              <Badge variant="outline" className="rounded-full text-[10px] uppercase tracking-[0.05em]">
-                Soon
-              </Badge>
-            </div>
-            <p className="mt-2 text-sm leading-relaxed text-[#787774]">
-              View learners and assign admin or learner roles.
-            </p>
-          </section>
 
           <section className="ef-card rounded-[12px] border border-[#EAEAEA] bg-white p-6">
             <div className="flex items-center justify-between gap-2">

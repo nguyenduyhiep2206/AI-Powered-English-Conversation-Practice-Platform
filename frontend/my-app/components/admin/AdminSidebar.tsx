@@ -4,11 +4,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   BookOpen,
-  ClipboardList,
+  GraduationCap,
   LayoutDashboard,
-  ListChecks,
+  Link2,
   Sparkles,
-  Users,
 } from "lucide-react";
 import LogoutButton from "@/components/ui/LogoutButton";
 import { cn } from "@/lib/utils";
@@ -16,11 +15,9 @@ import type { MeData } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/admin", label: "Overview", icon: LayoutDashboard, enabled: true, exact: true },
+  { href: "/admin/skills", label: "Skills", icon: GraduationCap, enabled: true, exact: false },
   { href: "/admin/books", label: "Books", icon: BookOpen, enabled: true, exact: false },
-  { href: "/admin/quiz", label: "Quiz", icon: ListChecks, enabled: true, exact: false },
-  { href: "/admin/lessons", label: "Lessons", icon: ClipboardList, enabled: true, exact: false },
-  { href: "/admin/survey", label: "Survey", icon: ClipboardList, enabled: false, exact: false },
-  { href: "/admin/users", label: "Users", icon: Users, enabled: false, exact: false },
+  { href: "/admin/quiz", label: "Attach", icon: Link2, enabled: true, exact: false },
 ] as const;
 
 type AdminSidebarProps = {
