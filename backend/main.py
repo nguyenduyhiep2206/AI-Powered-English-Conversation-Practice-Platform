@@ -11,6 +11,7 @@ from app.api import (
     admin_books,
     admin_quiz,
     admin_lessons,
+    admin_skills,
     quiz,
     roadmap,
     skills,
@@ -50,6 +51,7 @@ app.include_router(admin_survey.router, prefix="/api/v1/admin/survey", tags=["ad
 app.include_router(admin_books.router, prefix="/api/v1/admin/books", tags=["admin-books"])
 app.include_router(admin_quiz.router, prefix="/api/v1/admin/quiz", tags=["admin-quiz"])
 app.include_router(admin_lessons.router, prefix="/api/v1/admin/lessons", tags=["admin-lessons"])
+app.include_router(admin_skills.router, prefix="/api/v1/admin/skills", tags=["admin-skills"])
 app.include_router(quiz.router, prefix="/api/v1/quiz", tags=["quiz"])
 app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
 app.include_router(roadmap.router, prefix="/api/v1/roadmap", tags=["roadmap"])
