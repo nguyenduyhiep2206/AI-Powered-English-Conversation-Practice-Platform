@@ -13,8 +13,15 @@ export type LessonCheck = {
   answer: string;
 };
 
+export type LessonForm = {
+  title: string;
+  rows: { label: string; pattern: string; example?: string }[];
+};
+
 export type LessonContent = {
+  hook?: string | null;
   passage: { text: string; gloss?: string | null };
+  form?: LessonForm | null;
   targets: LessonTarget[];
   checks: LessonCheck[];
   writing: {
@@ -22,11 +29,13 @@ export type LessonContent = {
     min_words: number;
     must_use: string[];
   };
+  exit_check?: LessonCheck | null;
 };
 
 export type SkillLesson = {
   id: number;
   skill_id: number;
+  pack_index?: number;
   title: string;
   objective: string;
   content: LessonContent;
@@ -41,6 +50,9 @@ export type SkillLessonResponse = {
   lesson_completed: boolean;
   mastery: number;
   lesson: SkillLesson | null;
+  pack_total?: number;
+  pack_completed_count?: number;
+  pack?: SkillLesson[];
 };
 
 export type WritingFeedback = {
@@ -58,10 +70,16 @@ export async function fetchSkillLesson(skillId: number): Promise<SkillLessonResp
   return (await res.json()) as SkillLessonResponse;
 }
 
-export async function completeSkillLesson(skillId: number): Promise<SkillLessonResponse> {
-  const res = await authFetch(`/api/v1/skills/${skillId}/lesson/complete`, {
-    method: "POST",
-  });
+export async function completeSkillLesson(
+  skillId: number,
+  packIndex = 0,
+): Promise<SkillLessonResponse> {
+  const res = await authFetch(
+    `/api/v1/skills/${skillId}/lesson/complete?pack_index=${packIndex}`,
+    {
+      method: "POST",
+    },
+  );
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
     throw new Error(extractErrorMessage(error, "Failed to complete lesson"));
@@ -72,10 +90,13 @@ export async function completeSkillLesson(skillId: number): Promise<SkillLessonR
 export async function requestWritingFeedback(
   skillId: number,
   text: string,
+  packIndex?: number,
 ): Promise<WritingFeedback> {
+  const body: { text: string; pack_index?: number } = { text };
+  if (packIndex != null) body.pack_index = packIndex;
   const res = await authFetch(`/api/v1/skills/${skillId}/lesson/writing/feedback`, {
     method: "POST",
-    body: JSON.stringify({ text }),
+    body: JSON.stringify(body),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
