@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -30,6 +30,23 @@ from app.services.writing_generation_service import (
 )
 
 router = APIRouter()
+
+
+@router.get(
+    "/skills/{skill_id}/questions",
+    response_model=QuizQuestionListResponse,
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_list_skill_questions(
+    skill_id: int,
+    status_filter: QuizQuestionStatusEnum | None = Query(default=None),
+    db: AsyncSession = Depends(get_db),
+):
+    q = select(QuizQuestionDB).where(QuizQuestionDB.skill_id == skill_id)
+    if status_filter is not None:
+        q = q.where(QuizQuestionDB.status == status_filter)
+    rows = list((await db.execute(q.order_by(QuizQuestionDB.id.desc()))).scalars().all())
+    return QuizQuestionListResponse(data=[QuizQuestionOut.model_validate(r) for r in rows])
 
 
 @router.get(

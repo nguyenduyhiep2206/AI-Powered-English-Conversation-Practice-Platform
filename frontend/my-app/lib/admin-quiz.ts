@@ -87,11 +87,12 @@ export async function syncBookSkills(bookId: number): Promise<SyncSkillsResult> 
 
 export async function generateSkillQuiz(
   skillId: number,
-  count = 6,
+  count = 10,
+  mode: "skill_drill" | "toeic" = "skill_drill",
 ): Promise<QuizQuestionRow[]> {
   const res = await authFetch(`/api/v1/admin/quiz/skills/${skillId}/generate`, {
     method: "POST",
-    body: JSON.stringify({ count }),
+    body: JSON.stringify({ count, mode }),
   });
   if (!res.ok) {
     const error = await res.json().catch(() => ({}));
@@ -134,9 +135,25 @@ export async function listBookQuestions(
   return body.data;
 }
 
+export async function listSkillQuestions(
+  skillId: number,
+  statusFilter?: "draft" | "published",
+): Promise<QuizQuestionRow[]> {
+  const q = statusFilter ? `?status_filter=${statusFilter}` : "";
+  const res = await authFetch(
+    `/api/v1/admin/quiz/skills/${skillId}/questions${q}`,
+  );
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load skill questions"));
+  }
+  const body = (await res.json()) as { data: QuizQuestionRow[] };
+  return body.data;
+}
+
 export async function publishQuestions(
   questionIds: number[],
-): Promise<{ published: number; skipped: number }> {
+): Promise<{ published: number; skipped: number; skipped_alignment: number }> {
   const res = await authFetch(`/api/v1/admin/quiz/questions/publish`, {
     method: "POST",
     body: JSON.stringify({ question_ids: questionIds }),
@@ -146,10 +163,15 @@ export async function publishQuestions(
     throw new Error(extractErrorMessage(error, "Failed to publish questions"));
   }
   const body = (await res.json()) as {
-    data: { published: number; skipped?: number };
+    data: {
+      published: number;
+      skipped?: number;
+      skipped_alignment?: number;
+    };
   };
   return {
     published: body.data.published,
     skipped: body.data.skipped ?? 0,
+    skipped_alignment: body.data.skipped_alignment ?? 0,
   };
 }
