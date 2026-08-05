@@ -26,3 +26,16 @@ const PRESET_URLS = new Set(AVATAR_PRESETS.map((p) => p.url));
 export function isPresetAvatar(url: string | null | undefined): boolean {
   return Boolean(url && PRESET_URLS.has(url));
 }
+
+export function pickRandomAvatarPreset(): AvatarPreset {
+  const index = Math.floor(Math.random() * AVATAR_PRESETS.length);
+  return AVATAR_PRESETS[index] ?? AVATAR_PRESETS[0];
+}
+
+export function avatarInitial(
+  fullName?: string | null,
+  username?: string | null,
+): string {
+  const source = (fullName || username || "U").trim();
+  return (source.charAt(0) || "U").toUpperCase();
+}

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.core.config import settings
+from app.core.avatar_presets import pick_random_avatar_url
 from app.models.auth import RoleDB
 from app.models.user import UserDB
 from app.schemas.user_schema import UserCreate
@@ -91,12 +92,13 @@ async def _load_learner_role(db: AsyncSession) -> RoleDB | None:
 
 
 def _build_user_from_register(payload: UserCreate) -> UserDB:
+    avatar_url = (payload.avatar_url or "").strip() or pick_random_avatar_url()
     return UserDB(
         username=payload.username,
         email=payload.email,
         password_hash=get_password_hash(payload.password),
         full_name=payload.full_name,
-        avatar_url=payload.avatar_url,
+        avatar_url=avatar_url,
         is_active=True,
     )
 
