@@ -16,7 +16,40 @@ export type RoadmapWeek = {
   status: RoadmapWeekStatus;
   mastery: number;
   level: string;
+  theme_unit_slug?: string | null;
+  theme_unit_title?: string | null;
+  theme_unit_can_do?: string | null;
+  theme_unit_position?: number | null;
 };
+
+export type ThemeUnitGroup = {
+  unitKey: string;
+  title: string;
+  canDo: string;
+  weeks: RoadmapWeek[];
+};
+
+/** Group roadmap weeks by theme unit (order preserved). */
+export function groupWeeksByThemeUnit(weeks: RoadmapWeek[]): ThemeUnitGroup[] {
+  const groups: ThemeUnitGroup[] = [];
+  const indexByKey = new Map<string, number>();
+  for (const week of weeks) {
+    const key = week.theme_unit_slug?.trim() || `_skill_${week.skill_id}`;
+    const existing = indexByKey.get(key);
+    if (existing == null) {
+      indexByKey.set(key, groups.length);
+      groups.push({
+        unitKey: key,
+        title: week.theme_unit_title?.trim() || week.skill_title || week.title,
+        canDo: week.theme_unit_can_do?.trim() || "",
+        weeks: [week],
+      });
+    } else {
+      groups[existing].weeks.push(week);
+    }
+  }
+  return groups;
+}
 
 export type CompleteRoadmapStepResult = {
   step_id: number;
@@ -31,6 +64,16 @@ export type AssembleRoadmapOptions = {
   level?: string;
   max_steps?: number;
 };
+
+const CEFR_ORDER = ["A1", "A2", "B1", "B2", "C1"] as const;
+
+/** Next CEFR band after `level`, or null at C1 / unknown. */
+export function nextCefrBand(level: string | null | undefined): string | null {
+  if (!level) return null;
+  const i = CEFR_ORDER.indexOf(level as (typeof CEFR_ORDER)[number]);
+  if (i < 0 || i >= CEFR_ORDER.length - 1) return null;
+  return CEFR_ORDER[i + 1];
+}
 
 export async function fetchRoadmap(): Promise<RoadmapWeek[]> {
   const res = await authFetch("/api/v1/roadmap");
@@ -49,7 +92,7 @@ export async function assembleRoadmap(
     method: "POST",
     body: JSON.stringify({
       ...(opts?.level ? { level: opts.level } : {}),
-      max_steps: opts?.max_steps ?? 3,
+      max_steps: opts?.max_steps ?? 30,
     }),
   });
   if (!res.ok) {
