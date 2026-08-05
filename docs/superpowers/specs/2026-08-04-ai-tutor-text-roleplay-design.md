@@ -6,7 +6,7 @@
 **Tham chiếu sản phẩm:** [Promova AI Tutor](https://promova.com/page/ai-tutor), [Press — AI Tutor](https://promova.com/press/promova-launches-ai-tutor), [Speak with AI](https://promova.com/page/speak-with-ai)  
 **Phạm vi:** `backend` (schema session/message, API tutor, LLM turn + end-summary), `frontend/my-app` (topic catalog kiểu Promova + chat text, correction bubble, end summary; CTA roadmap giữ như entry phụ)  
 **Phụ thuộc:** Roadmap ZPD + `roadmap_step_skills`, catalog `scenarios`, `user_profiles.current_level`, `chat_json` / writing-feedback patterns, weak-skill review (soft link)  
-**Liên quan:** RAG + hybrid memory + debug — `2026-08-04-tutor-rag-hybrid-memory-design.md`  
+**Liên quan (lab RAG tuần):** Hybrid memory + vector retrieve + Redis cache + debug UI — `2026-08-04-tutor-rag-hybrid-memory-design.md` (map đề siêu thị → corpus `book_chunks`, rubrik 5 buổi + token &lt; 50%).  
 **Ngoài phạm vi P0:** Voice-call / STT / TTS / pronunciation score, avatar Usyk-like / Change persona, mastery delta cứng như quiz, streak/badge, human tutoring, open-world ChatGPT (tin tức / giá vàng / kiến thức ngoài topic)  
 
 ---
@@ -53,7 +53,7 @@ EnglishFlow đã có Learn + Practice chữ bám skill và roadmap theo tuần, 
 | Chủ đề | Quyết định |
 |--------|------------|
 | Product slice | Text role-play + grammar/word-choice correction |
-| Entry **chính** | Topic catalog `/ai-tutor` — list scenario cards → START |
+| Entry **chính** | Topic catalog `/ai-tutor` — curated Promova-like pack (~16 topics × CEFR); xem `2026-08-04-tutor-promova-topic-catalog-design.md` |
 | Entry phụ | CTA roadmap `in_progress` → `POST /sessions` với `roadmap_step_id` |
 | Start body | `{ scenario_id }` **hoặc** `{ roadmap_step_id }` (một trong hai bắt buộc) |
 | Grounding | Luôn có `scenario_id`; nếu từ roadmap thì thêm `target_skill_ids` (≤3); catalog-only có thể để `target_skill_ids=[]` hoặc skill mặc định theo level sau |
@@ -327,3 +327,4 @@ Khi implement: cập nhật `docs/REQUIREMENTS.md` — chuyển một phần “
 | 2026-08-04 | Draft từ brainstorm: Promova research (Exa) + §1–§3 approved |
 | 2026-08-04 | Revision: SSE streaming là Must P0 (§6.1, §7.1, FE, DoD) |
 | 2026-08-04 | Revision: Promova topic catalog + off-topic policy; roadmap CTA phụ |
+| 2026-08-04 | Cross-link: lab RAG rubric sống trong spec `tutor-rag-hybrid-memory` |
