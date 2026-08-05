@@ -15,12 +15,13 @@ def test_beginner_sets_a1_and_score_1():
     assert next_step == "completed"
 
 
-def test_self_selected_requires_cefr_and_sets_score_5():
+def test_self_selected_requires_cefr_and_sets_score_1():
+    """Self-declared level has no measured sub-level — start at band floor."""
     level, score, next_step = resolve_level_for_survey(
-        {"mode": "self_selected", "cefr_level": "B1"}
+        {"mode": "self_selected", "cefr_level": "A2"}
     )
-    assert level == CEFRLevel.B1
-    assert score == 5
+    assert level == CEFRLevel.A2
+    assert score == 1
     assert next_step == "completed"
 
 

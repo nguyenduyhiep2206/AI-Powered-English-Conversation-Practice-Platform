@@ -31,7 +31,7 @@ def resolve_level_for_survey(
         if cefr is None:
             raise LevelResolutionError("cefr_level is required when mode is self_selected")
         level = cefr if isinstance(cefr, CEFRLevel) else CEFRLevel(str(cefr))
-        return level, 5, "completed"
+        return level, 1, "completed"
     if mode == "placement":
         return None, None, "placement"
     raise LevelResolutionError(f"Unknown level mode: {mode}")

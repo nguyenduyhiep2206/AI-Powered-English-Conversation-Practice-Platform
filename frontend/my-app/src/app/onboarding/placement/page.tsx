@@ -430,6 +430,15 @@ export default function PlacementPage() {
             <strong>{session.placement_score}</strong>
           </p>
           <p className="text-sm text-stone-600">
+            Next: a short path of catalog skills at {session.current_level}
+            {session.current_level === "A1"
+              ? ", on the way to A2"
+              : session.current_level === "A2"
+                ? ", on the way to B1"
+                : ""}
+            .
+          </p>
+          <p className="text-sm text-stone-600">
             Reading {session.reading_scale} · Writing {session.writing_scale}
           </p>
           {session.writing_feedback && session.writing_feedback.length > 0 && (
@@ -444,7 +453,7 @@ export default function PlacementPage() {
           {error && <p className="text-sm text-red-700">{error}</p>}
           <div className="flex gap-3">
             <Button onClick={handleAssembleRoadmap} disabled={assembling}>
-              {assembling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Build roadmap"}
+              {assembling ? <Loader2 className="h-4 w-4 animate-spin" /> : "Build my band path"}
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
             <Button variant="outline" asChild>
