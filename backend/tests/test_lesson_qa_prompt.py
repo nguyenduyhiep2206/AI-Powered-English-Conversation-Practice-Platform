@@ -17,6 +17,8 @@ def test_prompt_includes_cefr_and_retrieved():
     assert "Making a reservation" in p
     assert "Answer ONLY using retrieved" in p
     assert "Prefer retrieved" not in p
+    assert "English only" in p
+    assert "Vietnamese" not in p or "no Vietnamese" in p
 
 
 def test_prompt_smalltalk_skips_book_only_constraint():

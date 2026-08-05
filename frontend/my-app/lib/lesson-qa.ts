@@ -151,5 +151,5 @@ export function formatLessonQaCite(
     .filter(Boolean)
     .slice(0, 3);
   if (titles.length === 0) return null;
-  return `Theo sách: ${titles.join(" · ")}`;
+  return `From the book: ${titles.join(" · ")}`;
 }
