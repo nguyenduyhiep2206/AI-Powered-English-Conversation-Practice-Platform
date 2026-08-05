@@ -171,3 +171,22 @@ tutor_session_status_enum = SAEnum(
 tutor_message_role_enum = SAEnum(
     TutorMessageRoleEnum, name="tutor_message_role_enum", create_type=True
 )
+
+
+class LessonQaSessionStatusEnum(str, enum.Enum):
+    active = "active"
+    ended = "ended"
+
+
+class LessonQaMessageRoleEnum(str, enum.Enum):
+    user = "user"
+    assistant = "assistant"
+    system = "system"
+
+
+lesson_qa_session_status_enum = SAEnum(
+    LessonQaSessionStatusEnum, name="lesson_qa_session_status_enum", create_type=True
+)
+lesson_qa_message_role_enum = SAEnum(
+    LessonQaMessageRoleEnum, name="lesson_qa_message_role_enum", create_type=True
+)

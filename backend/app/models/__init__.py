@@ -58,6 +58,8 @@ from app.models.scenario import (
 
 from app.models.tutor import TutorMessageDB, TutorSessionDB
 
+from app.models.lesson_qa import LessonQaMessageDB, LessonQaSessionDB
+
 __all__ = [
     # Auth & RBAC
     "UserDB", "RoleDB", "PermissionDB", "RefreshTokenDB",
@@ -73,4 +75,6 @@ __all__ = [
     "ScenarioDB", "RoadmapStepDB", "UserProgressDB",
     # AI Tutor
     "TutorSessionDB", "TutorMessageDB",
+    # Lesson Q&A
+    "LessonQaSessionDB", "LessonQaMessageDB",
 ]
