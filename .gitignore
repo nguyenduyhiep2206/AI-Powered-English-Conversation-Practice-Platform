@@ -1,0 +1,5 @@
+# Local editor / agent tooling
+.agents/
+.cursor/
+.superpowers/
+.vscode/
