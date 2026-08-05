@@ -116,3 +116,21 @@ export async function completeRoadmapStep(
   const body = (await res.json()) as { data: CompleteRoadmapStepResult };
   return body.data;
 }
+
+export type WeakSkill = {
+  skill_id: number;
+  title: string;
+  skill_slug: string;
+  mastery: number;
+  attempts: number;
+};
+
+export async function fetchWeakSkills(limit = 5): Promise<WeakSkill[]> {
+  const res = await authFetch(`/api/v1/roadmap/weak-skills?limit=${limit}`);
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to load weak skills"));
+  }
+  const body = (await res.json()) as { data: WeakSkill[] };
+  return body.data;
+}

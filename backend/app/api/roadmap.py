@@ -12,6 +12,7 @@ from app.services.roadmap_assembler_service import (
     get_user_roadmap,
 )
 from app.services.roadmap_progress_service import complete_roadmap_week
+from app.services.weak_skill_review import list_weak_skills
 
 router = APIRouter()
 
@@ -27,6 +28,16 @@ async def get_roadmap(
     current_user: UserDB = Depends(get_current_active_user),
 ):
     data = await get_user_roadmap(db, int(current_user.id))
+    return {"data": data}
+
+
+@router.get("/weak-skills")
+async def get_weak_skills(
+    db: AsyncSession = Depends(get_db),
+    current_user: UserDB = Depends(get_current_active_user),
+    limit: int = 5,
+):
+    data = await list_weak_skills(db, int(current_user.id), limit=max(1, min(limit, 20)))
     return {"data": data}
 
 
