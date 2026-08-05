@@ -29,27 +29,26 @@ export function RoadmapPath({
   let globalIndex = 0;
 
   return (
-    <div className="relative mx-auto flex w-full max-w-lg flex-col items-stretch gap-10 py-2">
+    <div className="relative mx-auto flex w-full max-w-lg flex-col items-stretch gap-10 py-1">
       <div
-        className="pointer-events-none absolute top-8 bottom-8 left-1/2 w-px -translate-x-1/2 bg-border/80"
+        className="pointer-events-none absolute top-8 bottom-8 left-1/2 w-[3px] -translate-x-1/2 rounded-full bg-gradient-to-b from-[#FF8A6B]/50 via-[#8CC6E8]/40 to-[#C4B0E8]/45"
         aria-hidden
       />
 
       {groups.map((group) => (
         <section key={group.unitKey} className="relative z-10 space-y-6">
           {hasThemeUnits ? (
-            <header className="px-2 text-center">
-              <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
-                Unit
-              </p>
-              <h2 className="mt-1 text-lg font-semibold tracking-tight text-foreground">
-                {group.title}
-              </h2>
-              {group.canDo ? (
-                <p className="mt-1.5 text-sm leading-relaxed text-muted-foreground">
-                  {group.canDo}
-                </p>
-              ) : null}
+            <header className="relative flex flex-col items-center px-3 text-center">
+              <div className="rounded-2xl bg-white/90 px-4 py-2.5 shadow-[0_4px_14px_rgba(42,36,56,0.05)] ring-1 ring-[#2A2438]/06">
+                <h2 className="text-[0.9375rem] font-semibold tracking-tight text-[#2A2438]">
+                  {group.title}
+                </h2>
+                {group.canDo ? (
+                  <p className="mt-1 max-w-xs text-[0.8125rem] leading-relaxed text-[#6B6478]">
+                    {group.canDo}
+                  </p>
+                ) : null}
+              </div>
             </header>
           ) : null}
 
@@ -75,7 +74,7 @@ export function RoadmapPath({
                 onComplete={onComplete}
                 onLockedTap={() =>
                   setLockedHint(
-                    "Finish the current step first — future steps may change as you progress.",
+                    "Finish the current step first — later steps may change as you progress.",
                   )
                 }
               />
@@ -85,7 +84,10 @@ export function RoadmapPath({
       ))}
 
       {lockedHint ? (
-        <p className="text-center text-xs text-muted-foreground" role="status">
+        <p
+          className="relative z-10 mx-auto max-w-sm rounded-2xl bg-white px-4 py-2.5 text-center text-[0.8125rem] leading-relaxed text-[#6B6478] shadow-[0_4px_14px_rgba(42,36,56,0.05)] ring-1 ring-[#2A2438]/06"
+          role="status"
+        >
           {lockedHint}
         </p>
       ) : null}
