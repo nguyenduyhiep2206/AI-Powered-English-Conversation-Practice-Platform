@@ -58,6 +58,7 @@ export type TutorSession = {
   started_at: string;
   ended_at: string | null;
   messages?: TutorMessage[];
+  scenario?: TutorScenario | null;
 };
 
 export type TutorSessionDetail = TutorSession & {
@@ -72,6 +73,21 @@ export type TutorSummary = {
     signal: string;
     note: string;
   }[];
+};
+
+/** Shared SSE sink used by tutor + lesson Q&A streams. */
+export type SseStreamHandlers = {
+  onUserMessage?: (msg: { id: number; content: string }) => void;
+  onToken?: (text: string) => void;
+  onMeta?: (meta: Record<string, unknown>) => void;
+  onAssistantMessage?: (msg: {
+    id: number;
+    content: string;
+    meta: Record<string, unknown> | null;
+  }) => void;
+  onDebug?: (info: Record<string, unknown>) => void;
+  onError?: (err: { code?: string; message: string }) => void;
+  onDone?: () => void;
 };
 
 export type StreamTutorMessageHandlers = {
@@ -97,7 +113,7 @@ async function parseApiError(res: Response, fallback: string): Promise<never> {
 
 function dispatchSseBlock(
   block: string,
-  handlers: StreamTutorMessageHandlers,
+  handlers: SseStreamHandlers,
 ): void {
   let event = "message";
   let data = "";
@@ -125,17 +141,20 @@ function dispatchSseBlock(
       handlers.onToken?.(String(payload.text ?? ""));
       break;
     case "meta":
-      handlers.onMeta?.(payload as TutorTurnMeta);
+      handlers.onMeta?.(payload);
       break;
     case "assistant_message":
       handlers.onAssistantMessage?.({
         id: Number(payload.id),
         content: String(payload.content ?? ""),
-        meta: (payload.meta as TutorTurnMeta | null) ?? null,
+        meta:
+          payload.meta && typeof payload.meta === "object"
+            ? (payload.meta as Record<string, unknown>)
+            : null,
       });
       break;
     case "debug":
-      handlers.onDebug?.(payload as TutorDebugInfo);
+      handlers.onDebug?.(payload);
       break;
     case "error":
       handlers.onError?.({
@@ -151,9 +170,9 @@ function dispatchSseBlock(
   }
 }
 
-async function readSseStream(
+export async function readSseStream(
   reader: ReadableStreamDefaultReader<Uint8Array>,
-  handlers: StreamTutorMessageHandlers,
+  handlers: SseStreamHandlers,
   signal?: AbortSignal,
 ): Promise<void> {
   const decoder = new TextDecoder();
@@ -205,17 +224,11 @@ export async function listTutorScenarios(
 }
 
 export async function startTutorSession(input: {
-  roadmapStepId?: number;
-  scenarioId?: number;
+  scenarioId: number;
 }): Promise<TutorSession> {
-  const body =
-    input.scenarioId != null
-      ? { scenario_id: input.scenarioId }
-      : { roadmap_step_id: input.roadmapStepId };
-
   const res = await authFetch(`${TUTOR_PREFIX}/sessions`, {
     method: "POST",
-    body: JSON.stringify(body),
+    body: JSON.stringify({ scenario_id: input.scenarioId }),
   });
 
   if (!res.ok) {
@@ -261,7 +274,30 @@ export async function streamTutorMessage(
     throw new Error("Streaming response unavailable");
   }
 
-  await readSseStream(reader, handlers, options?.signal);
+  await readSseStream(
+    reader,
+    {
+      onUserMessage: handlers.onUserMessage,
+      onToken: handlers.onToken,
+      onMeta: handlers.onMeta
+        ? (meta) => handlers.onMeta?.(meta as TutorTurnMeta)
+        : undefined,
+      onAssistantMessage: handlers.onAssistantMessage
+        ? (msg) =>
+            handlers.onAssistantMessage?.({
+              id: msg.id,
+              content: msg.content,
+              meta: (msg.meta as TutorTurnMeta | null) ?? null,
+            })
+        : undefined,
+      onDebug: handlers.onDebug
+        ? (info) => handlers.onDebug?.(info as TutorDebugInfo)
+        : undefined,
+      onError: handlers.onError,
+      onDone: handlers.onDone,
+    },
+    options?.signal,
+  );
 }
 
 export async function endTutorSession(id: number): Promise<TutorSummary> {

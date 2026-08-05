@@ -12,14 +12,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.models.enums import (
     CEFRLevel,
-    ProgressStatusEnum,
     TutorMessageRoleEnum,
     TutorSessionStatusEnum,
 )
 from app.models.learning_skill import LearningSkillDB
 from app.models.profile import UserProfileDB
-from app.models.roadmap_step_skill import RoadmapStepSkillDB
-from app.models.scenario import RoadmapStepDB, ScenarioDB, UserProgressDB
+from app.models.scenario import ScenarioDB
 from app.models.tutor import TutorMessageDB, TutorSessionDB
 from app.models.user_skill_mastery import UserSkillMasteryDB
 from app.services.llm_client import chat_json, chat_stream_text
@@ -51,34 +49,16 @@ async def start_session(
     db: AsyncSession,
     user_id: int,
     *,
-    roadmap_step_id: int | None = None,
-    scenario_id: int | None = None,
+    scenario_id: int,
 ) -> TutorSessionDB:
-    has_step = roadmap_step_id is not None
-    has_scenario = scenario_id is not None
-    if has_step == has_scenario:
-        raise ValueError("Provide exactly one of scenario_id or roadmap_step_id")
-
-    if has_step:
-        await _require_in_progress_progress(db, user_id, int(roadmap_step_id))
-        step, scenario = await _load_step_and_scenario(db, int(roadmap_step_id))
-        skill_ids = await _load_target_skill_ids(db, int(roadmap_step_id))
-        session = await _insert_session(
-            db,
-            user_id,
-            scenario=scenario,
-            skill_ids=skill_ids,
-            roadmap_step_id=step.id,
-        )
-    else:
-        scenario = await _load_active_scenario(db, int(scenario_id))
-        session = await _insert_session(
-            db,
-            user_id,
-            scenario=scenario,
-            skill_ids=[],
-            roadmap_step_id=None,
-        )
+    scenario = await _load_active_scenario(db, int(scenario_id))
+    session = await _insert_session(
+        db,
+        user_id,
+        scenario=scenario,
+        skill_ids=[],
+        roadmap_step_id=None,
+    )
 
     await _insert_opener_message(db, session.id, scenario)
     await db.commit()
@@ -160,39 +140,6 @@ async def snapshot_user_mastery(db: AsyncSession, user_id: int) -> list[tuple[in
     return [(int(r.skill_id), float(r.mastery), int(r.attempts), int(r.correct)) for r in rows]
 
 
-async def _require_in_progress_progress(
-    db: AsyncSession, user_id: int, roadmap_step_id: int
-) -> UserProgressDB:
-    progress = (
-        await db.execute(
-            select(UserProgressDB).where(
-                UserProgressDB.user_id == user_id,
-                UserProgressDB.roadmap_step_id == roadmap_step_id,
-            )
-        )
-    ).scalar_one_or_none()
-    if progress is None:
-        raise ValueError("Roadmap step progress not found")
-    if progress.status != ProgressStatusEnum.in_progress:
-        raise ValueError("Roadmap step must be in_progress to start a tutor session")
-    return progress
-
-
-async def _load_step_and_scenario(
-    db: AsyncSession, roadmap_step_id: int
-) -> tuple[RoadmapStepDB, ScenarioDB]:
-    row = (
-        await db.execute(
-            select(RoadmapStepDB, ScenarioDB)
-            .join(ScenarioDB, ScenarioDB.id == RoadmapStepDB.scenario_id)
-            .where(RoadmapStepDB.id == roadmap_step_id)
-        )
-    ).one_or_none()
-    if row is None:
-        raise ValueError("Roadmap step not found")
-    return row[0], row[1]
-
-
 async def _load_active_scenario(db: AsyncSession, scenario_id: int) -> ScenarioDB:
     scenario = (
         await db.execute(select(ScenarioDB).where(ScenarioDB.id == scenario_id))
@@ -211,18 +158,6 @@ async def _load_scenario(db: AsyncSession, scenario_id: int) -> ScenarioDB:
     if scenario is None:
         raise ValueError("Scenario not found")
     return scenario
-
-
-async def _load_target_skill_ids(db: AsyncSession, roadmap_step_id: int) -> list[int]:
-    rows = (
-        await db.execute(
-            select(RoadmapStepSkillDB.skill_id)
-            .where(RoadmapStepSkillDB.roadmap_step_id == roadmap_step_id)
-            .order_by(RoadmapStepSkillDB.id)
-            .limit(3)
-        )
-    ).scalars().all()
-    return [int(sid) for sid in rows]
 
 
 async def _insert_session(

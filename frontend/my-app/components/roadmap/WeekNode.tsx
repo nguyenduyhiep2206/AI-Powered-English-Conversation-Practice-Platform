@@ -1,13 +1,11 @@
 "use client";
 
-import { useState, type CSSProperties } from "react";
+import type { CSSProperties } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Check, Lock, MessageCircle, Zap } from "lucide-react";
+import { Check, Lock, Zap } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RoadmapWeek } from "@/lib/roadmap";
-import { startTutorSession } from "@/lib/tutor";
 
 const MASTERY_PASS = 0.7;
 
@@ -30,10 +28,6 @@ export function WeekNode({
   onComplete,
   onLockedTap,
 }: WeekNodeProps) {
-  const router = useRouter();
-  const [startingTutor, setStartingTutor] = useState(false);
-  const [tutorError, setTutorError] = useState<string | null>(null);
-
   const masteryPct = Math.round(week.mastery * 100);
   const canComplete =
     week.status === "in_progress" && week.mastery >= MASTERY_PASS;
@@ -129,45 +123,12 @@ export function WeekNode({
             <Button
               type="button"
               size="sm"
-              variant="outline"
-              className="w-full"
-              disabled={startingTutor}
-              onClick={async () => {
-                setTutorError(null);
-                setStartingTutor(true);
-                try {
-                  const session = await startTutorSession({
-                    roadmapStepId: week.roadmap_step_id,
-                  });
-                  router.push(`/ai-tutor/${session.id}`);
-                } catch (err) {
-                  setTutorError(
-                    err instanceof Error
-                      ? err.message
-                      : "Could not start tutor session",
-                  );
-                } finally {
-                  setStartingTutor(false);
-                }
-              }}
-            >
-              <MessageCircle className="mr-1.5 h-3.5 w-3.5" />
-              {startingTutor ? "Starting…" : "Practice speaking"}
-            </Button>
-            <Button
-              type="button"
-              size="sm"
               className="w-full"
               disabled={!canComplete || completing}
               onClick={() => onComplete(week)}
             >
               {completing ? "Completing…" : "Complete week"}
             </Button>
-            {tutorError ? (
-              <p className="text-xs text-destructive" role="alert">
-                {tutorError}
-              </p>
-            ) : null}
             {actionError ? (
               <p className="text-xs text-destructive" role="alert">
                 {actionError}

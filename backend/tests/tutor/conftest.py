@@ -18,7 +18,6 @@ def _sqlite_bigint(type_, compiler, **kw):
 from app.models.enums import (
     CEFRLevel,
     GoalEnum,
-    ProgressStatusEnum,
     ScenarioCategoryEnum,
     TutorMessageRoleEnum,
     TutorSessionStatusEnum,
@@ -124,36 +123,10 @@ async def tutor_seed(db_session: AsyncSession):
 
 
 @pytest_asyncio.fixture
-async def user_with_locked_step(db_session: AsyncSession, tutor_seed):
-    db_session.add(
-        UserProgressDB(
-            user_id=tutor_seed["user"].id,
-            roadmap_step_id=tutor_seed["step"].id,
-            status=ProgressStatusEnum.locked,
-        )
-    )
-    await db_session.commit()
-    return tutor_seed["user"]
-
-
-@pytest_asyncio.fixture
-async def user_with_in_progress_step(db_session: AsyncSession, tutor_seed):
-    db_session.add(
-        UserProgressDB(
-            user_id=tutor_seed["user"].id,
-            roadmap_step_id=tutor_seed["step"].id,
-            status=ProgressStatusEnum.in_progress,
-        )
-    )
-    await db_session.commit()
-    return tutor_seed["user"]
-
-
-@pytest_asyncio.fixture
-async def active_tutor_session(db_session: AsyncSession, tutor_seed, user_with_in_progress_step):
+async def active_tutor_session(db_session: AsyncSession, tutor_seed):
     session = TutorSessionDB(
         user_id=tutor_seed["user"].id,
-        roadmap_step_id=tutor_seed["step"].id,
+        roadmap_step_id=None,
         scenario_id=tutor_seed["scenario"].id,
         status=TutorSessionStatusEnum.active,
         target_skill_ids=[tutor_seed["skill"].id],

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_active_user
 from app.core.database import get_db
+from app.models.scenario import ScenarioDB
 from app.models.tutor import TutorMessageDB, TutorSessionDB
 from app.models.user import UserDB
 from app.schemas.tutor_schema import (
@@ -55,6 +56,24 @@ def _map_tutor_error(exc: ValueError) -> HTTPException:
     return HTTPException(status_code=400, detail=msg)
 
 
+def _scenario_to_dto(scenario: ScenarioDB) -> TutorScenarioDTO:
+    return TutorScenarioDTO(
+        id=int(scenario.id),
+        title=scenario.title,
+        slug=scenario.slug,
+        description=scenario.description,
+        category=scenario.category.value
+        if hasattr(scenario.category, "value")
+        else str(scenario.category),
+        level=scenario.level.value if hasattr(scenario.level, "value") else str(scenario.level),
+        ai_role=scenario.ai_role,
+        user_role=scenario.user_role,
+        goal_prompt=scenario.goal_prompt,
+        suggested_vocab=scenario.suggested_vocab,
+        order_index=int(scenario.order_index),
+    )
+
+
 async def _session_to_dto(db: AsyncSession, session: TutorSessionDB) -> TutorSessionDTO:
     messages = (
         await db.execute(
@@ -63,10 +82,14 @@ async def _session_to_dto(db: AsyncSession, session: TutorSessionDB) -> TutorSes
             .order_by(TutorMessageDB.id)
         )
     ).scalars().all()
+    scenario = (
+        await db.execute(select(ScenarioDB).where(ScenarioDB.id == session.scenario_id))
+    ).scalar_one_or_none()
     dto = TutorSessionDTO.model_validate(session)
     return dto.model_copy(
         update={
             "messages": [TutorMessageDTO.model_validate(message) for message in messages],
+            "scenario": _scenario_to_dto(scenario) if scenario else None,
         }
     )
 
@@ -108,7 +131,6 @@ async def create_session(
         session = await start_session(
             db,
             int(current_user.id),
-            roadmap_step_id=body.roadmap_step_id,
             scenario_id=body.scenario_id,
         )
     except ValueError as exc:

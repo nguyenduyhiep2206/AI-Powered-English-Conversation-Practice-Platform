@@ -39,6 +39,21 @@ async def api_client(db_session, tutor_seed, active_tutor_session):
 
 
 @pytest.mark.asyncio
+async def test_get_session_includes_scenario(api_client):
+    client, session = api_client
+
+    response = await client.get(f"/api/v1/tutor/sessions/{session.id}")
+
+    assert response.status_code == 200
+    data = response.json()["data"]
+    assert data["scenario"]["id"] == session.scenario_id
+    assert data["scenario"]["title"]
+    assert data["scenario"]["ai_role"]
+    assert data["scenario"]["user_role"]
+    assert "goal_prompt" in data["scenario"]
+
+
+@pytest.mark.asyncio
 async def test_post_message_streams_token_meta_done(api_client, monkeypatch):
     client, session = api_client
 

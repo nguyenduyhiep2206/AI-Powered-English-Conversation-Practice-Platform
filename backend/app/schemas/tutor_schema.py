@@ -5,20 +5,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field
 
 
 class TutorStartSessionRequest(BaseModel):
-    roadmap_step_id: int | None = None
-    scenario_id: int | None = None
-
-    @model_validator(mode="after")
-    def exactly_one_entry(self) -> TutorStartSessionRequest:
-        has_step = self.roadmap_step_id is not None
-        has_scenario = self.scenario_id is not None
-        if has_step == has_scenario:
-            raise ValueError("Provide exactly one of scenario_id or roadmap_step_id")
-        return self
+    scenario_id: int
 
 
 class TutorScenarioDTO(BaseModel):
@@ -59,6 +50,7 @@ class TutorSessionDTO(BaseModel):
     started_at: datetime
     ended_at: datetime | None = None
     messages: list[TutorMessageDTO] = Field(default_factory=list)
+    scenario: TutorScenarioDTO | None = None
 
     model_config = {"from_attributes": True}
 

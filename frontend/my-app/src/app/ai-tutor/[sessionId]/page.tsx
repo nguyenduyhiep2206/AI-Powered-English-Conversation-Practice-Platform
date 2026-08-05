@@ -1,50 +1,31 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { ArrowLeft, Loader2, MessageSquare } from "lucide-react";
+import { ArrowLeft, Lightbulb, Loader2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
+import TutorFeedbackRail from "@/components/tutor/TutorFeedbackRail";
+import TutorScenarioRail from "@/components/tutor/TutorScenarioRail";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
+  collectFeedbackItems,
+  type TutorFeedbackItem,
+} from "@/lib/tutor-feedback";
+import {
   endTutorSession,
   getTutorSession,
   streamTutorMessage,
-  type TutorDebugInfo,
   type TutorMessage,
   type TutorSessionDetail,
   type TutorSummary,
   type TutorTurnMeta,
 } from "@/lib/tutor";
 
-function isTurnMeta(
-  meta: TutorMessage["meta"],
-): meta is TutorTurnMeta {
-  return meta != null && typeof meta === "object" && "goal_progress" in meta;
-}
-
-function CorrectionChip({ meta }: { meta: TutorTurnMeta }) {
-  const correction = meta.correction;
-  if (!correction) return null;
-
-  return (
-    <div className="mt-2 rounded-lg border border-amber-200/80 bg-amber-50/80 px-3 py-2 text-xs text-amber-950">
-      <p>
-        <span className="text-muted-foreground">Try: </span>
-        <span className="font-medium">{correction.better}</span>
-      </p>
-      {correction.why ? (
-        <p className="mt-1 text-muted-foreground">{correction.why}</p>
-      ) : null}
-    </div>
-  );
-}
-
 function MessageBubble({ message }: { message: TutorMessage }) {
   const isUser = message.role === "user";
-  const meta = isTurnMeta(message.meta) ? message.meta : null;
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -57,14 +38,6 @@ function MessageBubble({ message }: { message: TutorMessage }) {
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
-        {!isUser && meta ? (
-          <>
-            {meta.hint ? (
-              <p className="mt-2 text-xs text-muted-foreground">{meta.hint}</p>
-            ) : null}
-            <CorrectionChip meta={meta} />
-          </>
-        ) : null}
       </div>
     </div>
   );
@@ -160,6 +133,30 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
   );
 }
 
+function feedbackFromStreamingMeta(
+  meta: TutorTurnMeta | null,
+): TutorFeedbackItem[] {
+  if (!meta) return [];
+  const items: TutorFeedbackItem[] = [];
+  if (meta.correction) {
+    items.push({
+      id: "c-streaming",
+      kind: "correction",
+      original: meta.correction.original,
+      corrected: meta.correction.better,
+      note: meta.correction.why ?? "",
+    });
+  }
+  if (meta.hint?.trim()) {
+    items.push({
+      id: "h-streaming",
+      kind: "hint",
+      note: meta.hint.trim(),
+    });
+  }
+  return items;
+}
+
 export default function TutorSessionPage() {
   const router = useRouter();
   const params = useParams();
@@ -177,11 +174,12 @@ export default function TutorSessionPage() {
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [summary, setSummary] = useState<TutorSummary | null>(null);
-  const [debugEnabled, setDebugEnabled] = useState(false);
-  const [debugInfo, setDebugInfo] = useState<TutorDebugInfo | null>(null);
+  const [feedbackOpen, setFeedbackOpen] = useState(false);
+  const [revealedHint, setRevealedHint] = useState<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
   const bottomRef = useRef<HTMLDivElement | null>(null);
+  const autoOpenedFeedback = useRef(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -219,9 +217,28 @@ export default function TutorSessionPage() {
     };
   }, [sessionId]);
 
+  const feedbackItems = useMemo(() => {
+    const fromMessages = collectFeedbackItems(messages);
+    const fromStream = feedbackFromStreamingMeta(streamingMeta);
+    if (fromStream.length === 0) return fromMessages;
+    return [...fromMessages, ...fromStream];
+  }, [messages, streamingMeta]);
+
+  useEffect(() => {
+    if (feedbackItems.length > 0 && !autoOpenedFeedback.current) {
+      if (
+        typeof window !== "undefined" &&
+        window.matchMedia("(min-width: 1024px)").matches
+      ) {
+        autoOpenedFeedback.current = true;
+        setFeedbackOpen(true);
+      }
+    }
+  }, [feedbackItems.length]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, streamingText, streamingMeta]);
+  }, [messages, streamingText]);
 
   useEffect(() => {
     return () => {
@@ -231,6 +248,14 @@ export default function TutorSessionPage() {
 
   const isActive = session?.status === "active";
   const isStreaming = sending && Boolean(streamingText || streamingMeta);
+  const scenario = session?.scenario ?? null;
+  const latestHint = useMemo(() => {
+    for (let i = feedbackItems.length - 1; i >= 0; i -= 1) {
+      const item = feedbackItems[i];
+      if (item.kind === "hint" && item.note.trim()) return item.note;
+    }
+    return null;
+  }, [feedbackItems]);
 
   async function handleSend(event: React.FormEvent) {
     event.preventDefault();
@@ -242,7 +267,7 @@ export default function TutorSessionPage() {
     setDraft("");
     setStreamingText("");
     setStreamingMeta(null);
-    setDebugInfo(null);
+    setRevealedHint(null);
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -284,9 +309,6 @@ export default function TutorSessionPage() {
             setStreamingText("");
             setStreamingMeta(null);
           },
-          onDebug: (info) => {
-            setDebugInfo(info);
-          },
           onError: (err) => {
             setError(err.message);
           },
@@ -294,7 +316,7 @@ export default function TutorSessionPage() {
             setStreamingText("");
           },
         },
-        { signal: controller.signal, debug: debugEnabled },
+        { signal: controller.signal },
       );
     } catch (err) {
       if (!(err instanceof DOMException && err.name === "AbortError")) {
@@ -327,45 +349,60 @@ export default function TutorSessionPage() {
     }
   }
 
+  function handleHint() {
+    if (!latestHint) return;
+    setRevealedHint(latestHint);
+    setFeedbackOpen(true);
+  }
+
+  const title = scenario?.title ?? "AI Tutor";
+
   return (
     <div className="flex min-h-screen flex-col bg-background">
       <AppHeader />
 
-      <main className="mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 py-6 sm:px-6">
-        <div className="mb-4 flex flex-wrap items-center gap-3">
+      <div className="flex min-h-0 flex-1 flex-col">
+        <header className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-6">
           <Button asChild type="button" variant="ghost" size="sm">
             <Link href="/ai-tutor">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
               Topics
             </Link>
           </Button>
-          {session ? (
-            <Badge variant="outline" className="capitalize">
-              {session.status}
+
+          {scenario ? (
+            <Badge variant="outline" className="uppercase">
+              {scenario.level}
             </Badge>
           ) : null}
-          <label className="ml-auto inline-flex items-center gap-2 text-xs text-muted-foreground">
-            <input
-              type="checkbox"
-              checked={debugEnabled}
-              onChange={(event) => setDebugEnabled(event.target.checked)}
-              className="h-3.5 w-3.5 rounded border-border"
-            />
-            Debug
-          </label>
-        </div>
 
-        <div className="mb-4">
-          <div className="flex items-center gap-2">
-            <MessageSquare className="h-5 w-5 text-primary" />
-            <h1 className="text-xl font-semibold tracking-tight text-foreground">
-              Practice speaking
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
+              {title}
             </h1>
+            <p className="text-xs text-muted-foreground">
+              {session
+                ? isActive
+                  ? "Session in progress"
+                  : "Session completed"
+                : loading
+                  ? "Loading…"
+                  : "—"}
+            </p>
           </div>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Role-play in text — stay in character and respond naturally.
-          </p>
-        </div>
+
+          {isActive ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={ending || loading}
+              onClick={() => void handleEnd()}
+            >
+              {ending ? "Ending…" : "End session"}
+            </Button>
+          ) : null}
+        </header>
 
         {loading ? (
           <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground">
@@ -373,114 +410,124 @@ export default function TutorSessionPage() {
             Loading session…
           </div>
         ) : error && !session ? (
-          <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-sm text-destructive">
-            {error}
+          <div className="mx-auto w-full max-w-lg px-4 py-8">
+            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-sm text-destructive">
+              {error}
+            </div>
           </div>
         ) : (
-          <>
-            <div className="flex min-h-[320px] flex-1 flex-col gap-4 overflow-y-auto rounded-xl border border-border/60 bg-muted/10 p-4">
-              {messages.length === 0 && !isStreaming ? (
-                <p className="text-center text-sm text-muted-foreground">
-                  Send your first message to start the conversation.
+          <div className="relative flex min-h-0 flex-1">
+            {scenario ? (
+              <TutorScenarioRail scenario={scenario} status={session?.status} />
+            ) : null}
+
+            <section className="flex min-w-0 flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:px-6">
+                {messages.length === 0 && !isStreaming ? (
+                  <p className="py-8 text-center text-sm text-muted-foreground">
+                    Send your first message to start the conversation.
+                  </p>
+                ) : null}
+
+                {messages.map((message) => (
+                  <MessageBubble key={message.id} message={message} />
+                ))}
+
+                {streamingText || (sending && !streamingText) ? (
+                  <div className="flex justify-start">
+                    <div className="max-w-[85%] rounded-2xl border border-border/60 bg-card px-4 py-3 text-sm leading-relaxed">
+                      {streamingText ? (
+                        <p className="whitespace-pre-wrap">{streamingText}</p>
+                      ) : (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+
+                <div ref={bottomRef} />
+              </div>
+
+              {error ? (
+                <p
+                  className="border-t border-border/40 px-4 py-2 text-sm text-destructive sm:px-6"
+                  role="alert"
+                >
+                  {error}
                 </p>
               ) : null}
 
-              {messages.map((message) => (
-                <MessageBubble key={message.id} message={message} />
-              ))}
-
-              {streamingText || streamingMeta ? (
-                <div className="flex justify-start">
-                  <div className="max-w-[85%] rounded-2xl border border-border/60 bg-card px-4 py-3 text-sm leading-relaxed">
-                    {streamingText ? (
-                      <p className="whitespace-pre-wrap">{streamingText}</p>
-                    ) : (
-                      <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                    )}
-                    {streamingMeta ? <CorrectionChip meta={streamingMeta} /> : null}
-                  </div>
+              {revealedHint ? (
+                <div className="border-t border-amber-200/60 bg-amber-50/60 px-4 py-2.5 text-sm text-amber-950 sm:px-6 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                  <span className="font-medium">Hint: </span>
+                  {revealedHint}
                 </div>
               ) : null}
 
-              <div ref={bottomRef} />
-            </div>
-
-            {error ? (
-              <p className="mt-3 text-sm text-destructive" role="alert">
-                {error}
-              </p>
-            ) : null}
-
-            {debugEnabled && debugInfo ? (
-              <div className="mt-3 rounded-lg border border-border/70 bg-muted/20 px-3 py-3 font-mono text-xs text-muted-foreground">
-                <p>
-                  route={debugInfo.route} · cache=
-                  {debugInfo.cache_hit ? "hit" : "miss"} · memory≈
-                  {debugInfo.memory_tokens ?? "?"} · retrieved≈
-                  {debugInfo.retrieved_tokens ?? "?"} · chunks=
-                  {debugInfo.chunk_count ?? 0}
-                </p>
-                {debugInfo.chunks && debugInfo.chunks.length > 0 ? (
-                  <ul className="mt-2 space-y-1">
-                    {debugInfo.chunks.map((chunk, index) => (
-                      <li key={`${chunk.unit_id ?? index}-${index}`}>
-                        [{index + 1}] {chunk.unit_title ?? "unit"} (
-                        {chunk.score ?? "?"}): {chunk.preview}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </div>
-            ) : null}
-
-            {isActive ? (
-              <form onSubmit={handleSend} className="mt-4 space-y-3">
-                <textarea
-                  value={draft}
-                  onChange={(event) => setDraft(event.target.value)}
-                  placeholder="Type your reply…"
-                  rows={3}
-                  disabled={sending}
-                  className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60"
-                />
-                <div className="flex flex-wrap gap-2">
-                  <Button type="submit" disabled={sending || !draft.trim()}>
-                    {sending ? (
-                      <>
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        Sending…
-                      </>
-                    ) : (
-                      "Send"
-                    )}
-                  </Button>
+              {isActive ? (
+                <form
+                  onSubmit={handleSend}
+                  className="border-t border-border/60 px-4 py-3 sm:px-6"
+                >
+                  <textarea
+                    value={draft}
+                    onChange={(event) => setDraft(event.target.value)}
+                    placeholder="Type your reply…"
+                    rows={3}
+                    disabled={sending}
+                    className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60"
+                  />
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Button type="submit" disabled={sending || !draft.trim()}>
+                      {sending ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Sending…
+                        </>
+                      ) : (
+                        "Send"
+                      )}
+                    </Button>
+                    <span
+                      className="inline-flex"
+                      title={latestHint ? undefined : "No hint yet"}
+                    >
+                      <Button
+                        type="button"
+                        variant="outline"
+                        disabled={!latestHint || sending}
+                        onClick={handleHint}
+                      >
+                        <Lightbulb className="mr-1.5 h-4 w-4" />
+                        Hint
+                      </Button>
+                    </span>
+                  </div>
+                </form>
+              ) : (
+                <div className="border-t border-border/60 px-4 py-5 text-center sm:px-6">
+                  <p className="text-sm text-muted-foreground">
+                    This session is no longer active.
+                  </p>
                   <Button
                     type="button"
-                    variant="outline"
-                    disabled={ending}
-                    onClick={() => void handleEnd()}
+                    className="mt-3"
+                    onClick={() => router.push("/ai-tutor")}
                   >
-                    {ending ? "Ending…" : "End session"}
+                    Back to topics
                   </Button>
                 </div>
-              </form>
-            ) : (
-              <div className="mt-4 rounded-xl border border-border/60 bg-card/40 px-4 py-5 text-center">
-                <p className="text-sm text-muted-foreground">
-                  This session is no longer active.
-                </p>
-                <Button
-                  type="button"
-                  className="mt-3"
-                  onClick={() => router.push("/ai-tutor")}
-                >
-                  Back to topics
-                </Button>
-              </div>
-            )}
-          </>
+              )}
+            </section>
+
+            <TutorFeedbackRail
+              items={feedbackItems}
+              open={feedbackOpen}
+              onOpenChange={setFeedbackOpen}
+            />
+          </div>
         )}
-      </main>
+      </div>
 
       {summary ? (
         <SummaryModal

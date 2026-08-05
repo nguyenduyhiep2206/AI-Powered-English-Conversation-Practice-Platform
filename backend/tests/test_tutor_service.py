@@ -22,26 +22,15 @@ from app.services.tutor_service import (
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_locked_step(db_session, user_with_locked_step, tutor_seed):
-    with pytest.raises(ValueError, match="in_progress"):
-        await start_session(
-            db_session,
-            user_with_locked_step.id,
-            roadmap_step_id=tutor_seed["step"].id,
-        )
-
-
-@pytest.mark.asyncio
-async def test_start_creates_session_with_opener(
-    db_session, user_with_in_progress_step, tutor_seed
-):
+async def test_start_creates_session_with_opener(db_session, tutor_seed):
     session = await start_session(
         db_session,
-        user_with_in_progress_step.id,
-        roadmap_step_id=tutor_seed["step"].id,
+        tutor_seed["user"].id,
+        scenario_id=tutor_seed["scenario"].id,
     )
     assert session.status == TutorSessionStatusEnum.active
-    assert session.target_skill_ids == [tutor_seed["skill"].id]
+    assert session.roadmap_step_id is None
+    assert session.target_skill_ids == []
     assert session.message_count == 0
 
     messages = (
@@ -110,16 +99,16 @@ async def test_start_by_scenario_id_catalog(db_session, tutor_seed):
 
 
 @pytest.mark.asyncio
-async def test_start_rejects_both_or_neither(db_session, tutor_seed):
-    with pytest.raises(ValueError, match="exactly one"):
-        await start_session(db_session, tutor_seed["user"].id)
+async def test_start_rejects_inactive_scenario(db_session, tutor_seed):
+    scenario = tutor_seed["scenario"]
+    scenario.is_active = False
+    await db_session.commit()
 
-    with pytest.raises(ValueError, match="exactly one"):
+    with pytest.raises(ValueError, match="not active"):
         await start_session(
             db_session,
             tutor_seed["user"].id,
-            scenario_id=tutor_seed["scenario"].id,
-            roadmap_step_id=tutor_seed["step"].id,
+            scenario_id=scenario.id,
         )
 
 
