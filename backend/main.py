@@ -16,6 +16,7 @@ from app.api import (
     roadmap,
     skills,
     tutor,
+    lesson_qa,
 )
 from app.core.config import settings
 from app.core.mongodb import connect_mongo, disconnect_mongo
@@ -56,6 +57,7 @@ app.include_router(quiz.router, prefix="/api/v1/quiz", tags=["quiz"])
 app.include_router(skills.router, prefix="/api/v1/skills", tags=["skills"])
 app.include_router(roadmap.router, prefix="/api/v1/roadmap", tags=["roadmap"])
 app.include_router(tutor.router, prefix="/api/v1/tutor", tags=["tutor"])
+app.include_router(lesson_qa.router, prefix="/api/v1/lessons", tags=["lesson-qa"])
 
 
 @app.get("/ping", status_code=status.HTTP_200_OK)
