@@ -8,6 +8,9 @@ export type AdminLessonSkillRow = {
   cefr_level: string;
   lesson_status: string | null;
   lesson_id: number | null;
+  quiz_draft_count?: number;
+  quiz_published_count?: number;
+  has_book_source?: boolean;
 };
 
 export async function listAdminLessonSkills(

@@ -87,7 +87,7 @@ export async function syncBookSkills(bookId: number): Promise<SyncSkillsResult> 
 
 export async function generateSkillQuiz(
   skillId: number,
-  count = 8,
+  count = 6,
 ): Promise<QuizQuestionRow[]> {
   const res = await authFetch(`/api/v1/admin/quiz/skills/${skillId}/generate`, {
     method: "POST",
