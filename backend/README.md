@@ -54,7 +54,7 @@ backend/
 
 **Preferred Admin UI:** **Books** (upload → index) → **Attach** (`/admin/quiz`, sync catalog) → **Skills** list (badges for lesson / quiz drafts / book).
 
-- Generate/publish lesson and drills belong in Skills workspace (ships with admin-skill-workspace + skill-aligned).
+- Generate/publish lesson and drills in **Skills workspace** (`/admin/skills/{id}`): `GET /api/v1/admin/skills/{id}/workspace`.
 - Attach page is for catalog sync / re-enrich, not dual-path drill generate.
 - Skills list badges: `GET /api/v1/admin/lessons/skills` includes `quiz_draft_count`, `quiz_published_count`, `has_book_source`.
 
