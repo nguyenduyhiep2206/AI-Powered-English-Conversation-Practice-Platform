@@ -110,6 +110,14 @@ export type StructureUnitPreview = {
   detection_method: string;
   confidence: number;
   depth_or_source?: string | null;
+  language_focus?: string | null;
+  grammar_cues?: string[] | null;
+  vocab_cues?: string[] | null;
+  content_summary?: string | null;
+  enrichment_status?: string | null;
+  enrichment_method?: string | null;
+  enrichment_source?: string | null;
+  enriched_at?: string | null;
 };
 
 export type StructurePreview = {
@@ -120,7 +128,15 @@ export type StructurePreview = {
   units: StructureUnitPreview[];
 };
 
+export type EnrichUnitsResult = {
+  book_id: number;
+  enriched: number;
+  method_counts: Record<string, number>;
+  source_counts: Record<string, number>;
+};
+
 type StructurePreviewResponse = { success: boolean; data: StructurePreview };
+type EnrichUnitsResponse = { data: EnrichUnitsResult };
 
 export async function detectBookStructure(bookId: number): Promise<StructurePreview> {
   const res = await authFetch(`/api/v1/admin/books/${bookId}/detect-structure`, {
@@ -177,5 +193,17 @@ export async function retryBookEmbeddings(bookId: number): Promise<Book> {
     throw new Error(extractErrorMessage(error, "Failed to retry embeddings"));
   }
   const body = (await res.json()) as BookResponse;
+  return body.data;
+}
+
+export async function enrichBookUnits(bookId: number): Promise<EnrichUnitsResult> {
+  const res = await authFetch(`/api/v1/admin/books/${bookId}/enrich-units`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to enrich units"));
+  }
+  const body = (await res.json()) as EnrichUnitsResponse;
   return body.data;
 }
