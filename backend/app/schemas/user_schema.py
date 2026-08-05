@@ -13,7 +13,7 @@ class UserCreate(User):
     password: str = Field(..., min_length=8, description="Password must be at least 8 characters long")
 
 class UpdateUser(BaseModel):
-    username: Optional[str]
+    username: Optional[str] = None
     full_name: Optional[str] = Field(None, max_length=100)
     avatar_url: Optional[str] = None
     is_active: Optional[bool] = None

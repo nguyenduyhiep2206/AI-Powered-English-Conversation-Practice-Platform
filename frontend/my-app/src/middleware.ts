@@ -9,6 +9,7 @@ import {
   isAllowedAiTutorPath,
   isAllowedDashboardPath,
   isAllowedOnboardingPath,
+  isAllowedProfilePath,
   NOT_FOUND_PATH,
 } from "@/lib/routes";
 
@@ -41,7 +42,13 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (pathname.startsWith("/admin")) {
-    if (!validToken || !(await isAdminToken(validToken))) {
+    // No cookie → hide admin behind 404. Expired access token with cookie still
+    // present is allowed through so AuthSessionRefresh can restore the session
+    // (same pattern as /dashboard); otherwise users briefly see 404 then recover.
+    if (!hasSession) {
+      return notFoundResponse(request);
+    }
+    if (validToken && !(await isAdminToken(validToken))) {
       return notFoundResponse(request);
     }
     if (!isAllowedAdminPath(pathname)) {
@@ -76,6 +83,22 @@ export async function middleware(request: NextRequest) {
   if (
     validToken &&
     pathname.startsWith("/ai-tutor") &&
+    !(await isOnboardingComplete(validToken))
+  ) {
+    return NextResponse.redirect(new URL("/start-onboarding", APP_ORIGIN));
+  }
+
+  if (!hasSession && pathname.startsWith("/profile")) {
+    return NextResponse.redirect(new URL("/login", APP_ORIGIN));
+  }
+
+  if (pathname.startsWith("/profile") && !isAllowedProfilePath(pathname)) {
+    return notFoundResponse(request);
+  }
+
+  if (
+    validToken &&
+    pathname.startsWith("/profile") &&
     !(await isOnboardingComplete(validToken))
   ) {
     return NextResponse.redirect(new URL("/start-onboarding", APP_ORIGIN));
@@ -123,5 +146,7 @@ export const config = {
     "/start-onboarding",
     "/onboarding",
     "/onboarding/:path*",
+    "/profile",
+    "/profile/:path*",
   ],
 };

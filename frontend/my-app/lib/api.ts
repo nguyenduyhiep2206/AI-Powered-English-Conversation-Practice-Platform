@@ -249,6 +249,23 @@ export async function getMe() {
   return res.json();
 }
 
+export async function updateMe(payload: {
+  full_name?: string | null;
+  avatar_url?: string | null;
+}) {
+  const res = await authFetch("/api/v1/users/me", {
+    method: "PUT",
+    body: JSON.stringify(payload),
+  });
+
+  if (!res.ok) {
+    const error = await res.json().catch(() => ({}));
+    throw new Error(extractErrorMessage(error, "Failed to update profile"));
+  }
+
+  return res.json();
+}
+
 /** Revoke current session on backend (refresh cookie sent via credentials), then clear local cookie. */
 export async function logout(): Promise<void> {
   try {

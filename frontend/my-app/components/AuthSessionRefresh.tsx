@@ -6,7 +6,7 @@ import { getTokenFromCookie, refreshAccessToken, clearTokenCookie } from "@/lib/
 import { isJwtExpired } from "@/lib/jwt";
 import { NOT_FOUND_PATH } from "@/lib/routes";
 
-const PROTECTED_PREFIXES = ["/admin", "/dashboard", "/start-onboarding"];
+const PROTECTED_PREFIXES = ["/admin", "/dashboard", "/start-onboarding", "/profile"];
 
 export function AuthSessionRefresh() {
   const pathname = usePathname();
