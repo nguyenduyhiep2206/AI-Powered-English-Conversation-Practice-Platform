@@ -3,7 +3,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import require_permission
 from app.core.database import get_db
-from app.services.lesson_generation_service import generate_lesson_draft, lesson_to_dict, publish_lesson
+from app.services.lesson_generation_service import (
+    generate_lesson_draft,
+    generate_lesson_pack,
+    lesson_to_dict,
+    publish_lesson,
+    publish_lesson_pack,
+)
 from app.services.lesson_service import get_admin_lesson, list_skills_with_lesson_status
 
 router = APIRouter()
@@ -47,6 +53,20 @@ async def admin_generate_lesson(skill_id: int, db: AsyncSession = Depends(get_db
 
 
 @router.post(
+    "/skills/{skill_id}/generate-pack",
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_generate_lesson_pack(skill_id: int, db: AsyncSession = Depends(get_db)):
+    try:
+        rows = await generate_lesson_pack(db, skill_id, count=3)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return {"data": [lesson_to_dict(r) for r in rows]}
+
+
+@router.post(
     "/skills/{skill_id}/publish",
     dependencies=[Depends(require_permission("book:manage"))],
 )
@@ -56,3 +76,15 @@ async def admin_publish_lesson(skill_id: int, db: AsyncSession = Depends(get_db)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"data": lesson_to_dict(lesson)}
+
+
+@router.post(
+    "/skills/{skill_id}/publish-pack",
+    dependencies=[Depends(require_permission("book:manage"))],
+)
+async def admin_publish_lesson_pack(skill_id: int, db: AsyncSession = Depends(get_db)):
+    try:
+        rows = await publish_lesson_pack(db, skill_id, required=3)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"data": [lesson_to_dict(r) for r in rows]}
