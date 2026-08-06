@@ -4,16 +4,24 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
-import { StepChips, type StepChip } from "@/components/practice/StepChips";
+import {
+  StepChips,
+  type StepChip,
+  type StepChipId,
+} from "@/components/practice/StepChips";
 import { cn } from "@/lib/utils";
 
 type Props = {
   title: string;
   subtitle?: string;
+  /** Mini-unit / pack lesson name shown above the Learn card. */
+  lessonTitle?: string | null;
   masteryPct: number | null;
   readyToComplete: boolean;
   steps: StepChip[];
   showSteps?: boolean;
+  onStepSelect?: (id: StepChipId) => void;
+  selectableStepIds?: StepChipId[];
   phase: "learn" | "practice";
   lesson: ReactNode;
   quiz: ReactNode;
@@ -25,11 +33,14 @@ type Props = {
 
 export function PracticeShell({
   title,
-  subtitle = "Learn the skill, then practice until mastery ≥ 70%.",
+  subtitle = "Learn the skill, then practice until Mastery reaches 70%.",
+  lessonTitle,
   masteryPct,
   readyToComplete,
   steps,
   showSteps = true,
+  onStepSelect,
+  selectableStepIds,
   phase,
   lesson,
   quiz,
@@ -63,10 +74,16 @@ export function PracticeShell({
               <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
                 {title}
               </h1>
-              <p className="mt-1 text-[0.875rem] leading-relaxed text-[#8A8396]">
+              <p className="mt-1 text-[0.875rem] leading-relaxed text-[#6B6478]">
                 {subtitle}
               </p>
-              {showSteps ? <StepChips steps={steps} /> : null}
+              {showSteps ? (
+                <StepChips
+                  steps={steps}
+                  onSelect={onStepSelect}
+                  selectableIds={selectableStepIds}
+                />
+              ) : null}
             </div>
             {masteryPct != null ? (
               <span
@@ -85,14 +102,21 @@ export function PracticeShell({
           {banner}
 
           {loading ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-[0.875rem] text-[#8A8396]">
+            <div className="flex items-center justify-center gap-2 py-20 text-[0.875rem] text-[#6B6478]">
               <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
               {loadingLabel ?? "Loading…"}
             </div>
           ) : phase === "learn" ? (
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)] lg:items-start">
-              <div className="min-w-0 rounded-[1.75rem] bg-white p-5 shadow-[0_12px_40px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06 sm:p-7">
-                {lesson}
+              <div className="min-w-0 space-y-3">
+                <div className="rounded-[1.75rem] bg-white p-5 shadow-[0_12px_40px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06 sm:p-7">
+                  {lessonTitle ? (
+                    <h2 className="text-[1.25rem] font-semibold tracking-tight text-[#2A2438]">
+                      {lessonTitle}
+                    </h2>
+                  ) : null}
+                  {lesson}
+                </div>
               </div>
               {qa ? <div className="min-w-0 lg:sticky lg:top-4">{qa}</div> : null}
             </div>
