@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     OPENAI_MODEL: str
     OPENAI_BASE_URL: str
 
+    # After structural validation, LLM-verify spot_error / fix_grammar keys
+    SKILL_DRILL_LLM_VERIFY: bool = True
+
     # Structure: heuristic candidates + optional AI merge before auto-index
     STRUCTURE_AI_MERGE_ENABLED: bool = True
     STRUCTURE_SKIM_LINES_PER_PAGE: int = 5
