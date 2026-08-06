@@ -3,7 +3,9 @@ import { authFetch, extractErrorMessage } from "@/lib/api";
 export type SkillQuizQuestion = {
   id: number;
   skill_id: number;
+  /** mcq | cloze | fix_grammar | sentence_build | matching | multi_select */
   question_type: string;
+  item_kind?: string | null;
   stem: string;
   passage?: string | null;
   toeic_part?: string | null;
