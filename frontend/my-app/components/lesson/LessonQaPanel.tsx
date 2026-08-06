@@ -27,6 +27,8 @@ type Props = {
   demo?: DemoProps;
   /** `floating` = FAB overlay (preview); `dock` = always-open column panel. */
   variant?: "floating" | "dock";
+  /** When false, hides suggested prompt chips until the lesson advances. */
+  showSuggestions?: boolean;
 };
 
 function sourcesFromMeta(
@@ -76,7 +78,7 @@ function MessageBubble({ message }: { message: LessonQaMessage }) {
           </p>
         ) : null}
         {emptyNote ? (
-          <p className="mt-1.5 text-[0.75rem] leading-snug text-[#8A8396]">
+          <p className="mt-1.5 text-[0.75rem] leading-snug text-[#6B6478]">
             {emptyNote}
           </p>
         ) : null}
@@ -90,6 +92,7 @@ export default function LessonQaPanel({
   lessonTitle,
   demo,
   variant = "floating",
+  showSuggestions = true,
 }: Props) {
   const isDemo = Boolean(demo);
   const isDock = variant === "dock";
@@ -113,7 +116,11 @@ export default function LessonQaPanel({
 
   const panelOpen = isDock || open;
   const userMessageCount = messages.filter((m) => m.role === "user").length;
-  const showChips = userMessageCount < 1 && prompts.length > 0 && !sending;
+  const showChips =
+    showSuggestions &&
+    userMessageCount < 1 &&
+    prompts.length > 0 &&
+    !sending;
 
   useEffect(() => {
     if (isDemo) return;
@@ -339,7 +346,7 @@ export default function LessonQaPanel({
               type="button"
               disabled={sending}
               onClick={() => void handleClear()}
-              className="rounded-[6px] px-2 py-1 text-[0.75rem] text-[#8A8396] transition-colors hover:bg-[#FFF0E8] hover:text-[#6B6478] disabled:opacity-50"
+              className="rounded-[6px] px-2 py-1 text-[0.75rem] text-[#6B6478] transition-colors hover:bg-[#FFF0E8] hover:text-[#6B6478] disabled:opacity-50"
             >
               Clear
             </button>
@@ -377,7 +384,7 @@ export default function LessonQaPanel({
             Loading…
           </div>
         ) : messages.length === 0 && !streamingText && !sending ? (
-          <p className="px-1 py-2 text-[0.75rem] leading-snug text-[#8A8396]">
+          <p className="px-1 py-2 text-[0.75rem] leading-snug text-[#6B6478]">
             Ask about vocabulary or grammar in this lesson — answers use the
             books linked to this skill.
           </p>
@@ -398,7 +405,7 @@ export default function LessonQaPanel({
                         </p>
                       ) : null}
                       {streamingEmptyNote ? (
-                        <p className="mt-1.5 text-[0.75rem] text-[#8A8396]">
+                        <p className="mt-1.5 text-[0.75rem] text-[#6B6478]">
                           {streamingEmptyNote}
                         </p>
                       ) : null}
@@ -416,7 +423,7 @@ export default function LessonQaPanel({
 
       {showChips ? (
         <div className="shrink-0 space-y-1.5 border-t border-[#EDE6E0] px-3.5 py-2.5">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.1em] text-[#8A8396]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.1em] text-[#6B6478]">
             Suggestions
           </p>
           <div className="flex flex-col gap-1">
@@ -447,7 +454,7 @@ export default function LessonQaPanel({
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Ask about this lesson…"
           disabled={sending || loading}
-          className="min-h-11 rounded-[8px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#8A8396] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
+          className="min-h-11 rounded-[8px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#6B6478] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
         />
         <Button
           type="submit"
