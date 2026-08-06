@@ -77,7 +77,7 @@ async def iter_qa_turn_sse(
     *,
     debug: bool = False,
 ) -> AsyncIterator[tuple[str, dict]]:
-    session = await _require_session(db, user_id, skill_id)
+    session = await get_or_create_session(db, user_id, skill_id)
     text = _validate_turn_content(content)
     user_msg = await _persist_user(db, session, text)
     await db.commit()
@@ -111,12 +111,6 @@ async def _require_skill(db: AsyncSession, skill_id: int) -> LearningSkillDB:
     if skill is None:
         raise ValueError("Skill not found")
     return skill
-
-
-async def _require_session(
-    db: AsyncSession, user_id: int, skill_id: int
-) -> LessonQaSessionDB:
-    return await get_or_create_session(db, user_id, skill_id)
 
 
 def _validate_turn_content(content: str) -> str:
@@ -161,38 +155,10 @@ async def _build_turn_context(
     content: str,
     skill_id: int,
 ) -> dict[str, Any]:
-    full_transcript = await _load_transcript(db, int(session.id))
-    transcript = window_transcript(
-        full_transcript,
-        max_turns=settings.LESSON_QA_MEMORY_MAX_TURNS,
-        keep_first_assistant=True,
+    transcript = await _windowed_transcript(db, int(session.id))
+    route, chunks, cache_hit, retrieved_block, force_off_topic = await _resolve_route(
+        db, content=content, skill_id=skill_id
     )
-
-    route: RouteName = "smalltalk"
-    chunks: list[dict[str, Any]] = []
-    cache_hit = False
-    retrieved_block: str | None = None
-    force_off_topic = False
-
-    if is_off_topic(content):
-        route = "off_topic"
-        force_off_topic = True
-    elif settings.LESSON_QA_RAG_ENABLED and should_retrieve(content):
-        chunks, cache_hit = await _retrieve_with_cache(
-            db, skill_ids=[int(skill_id)], query=content
-        )
-        if chunks:
-            route = "rag"
-            retrieved_block = format_retrieved_block(chunks)
-        else:
-            route = "retrieval_empty"
-
-    sources = sources_from_chunks(chunks)
-    memory_tokens = estimate_tokens(
-        "\n".join(f"{m.get('role')}: {m.get('content')}" for m in transcript)
-    )
-    retrieved_tokens = estimate_tokens(retrieved_block or "")
-
     return {
         "transcript": transcript,
         "route": route,
@@ -200,10 +166,38 @@ async def _build_turn_context(
         "cache_hit": cache_hit,
         "retrieved_block": retrieved_block,
         "force_off_topic": force_off_topic,
-        "sources": sources,
-        "memory_tokens": memory_tokens,
-        "retrieved_tokens": retrieved_tokens,
+        "sources": sources_from_chunks(chunks),
+        "memory_tokens": estimate_tokens(
+            "\n".join(f"{m.get('role')}: {m.get('content')}" for m in transcript)
+        ),
+        "retrieved_tokens": estimate_tokens(retrieved_block or ""),
     }
+
+
+async def _windowed_transcript(
+    db: AsyncSession, session_id: int
+) -> list[dict[str, Any]]:
+    full_transcript = await _load_transcript(db, session_id)
+    return window_transcript(
+        full_transcript,
+        max_turns=settings.LESSON_QA_MEMORY_MAX_TURNS,
+        keep_first_assistant=True,
+    )
+
+
+async def _resolve_route(
+    db: AsyncSession, *, content: str, skill_id: int
+) -> tuple[RouteName, list[dict[str, Any]], bool, str | None, bool]:
+    if is_off_topic(content):
+        return "off_topic", [], False, None, True
+    if settings.LESSON_QA_RAG_ENABLED and should_retrieve(content):
+        chunks, cache_hit = await _retrieve_with_cache(
+            db, skill_ids=[int(skill_id)], query=content
+        )
+        if chunks:
+            return "rag", chunks, cache_hit, format_retrieved_block(chunks), False
+        return "retrieval_empty", chunks, cache_hit, None, False
+    return "smalltalk", [], False, None, False
 
 
 async def _retrieve_with_cache(
@@ -265,18 +259,43 @@ async def _stream_llm_and_persist(
     debug: bool,
 ) -> AsyncIterator[tuple[str, dict]]:
     accumulated = ""
+    async for event in _stream_tokens(system=system, user_payload=user_payload):
+        if event[0] == "token":
+            yield event
+        else:
+            accumulated = event[1]["text"]
+
+    reply, meta = _finalize_reply_meta(accumulated, ctx)
+    yield ("meta", meta)
+
+    assistant = await _persist_assistant(db, session, reply=reply, meta=meta)
+    yield (
+        "assistant_message",
+        {"id": assistant.id, "content": assistant.content, "meta": meta},
+    )
+    if debug:
+        yield ("debug", _debug_payload(ctx))
+    yield ("done", {"ok": True})
+
+
+async def _stream_tokens(
+    *, system: str, user_payload: str
+) -> AsyncIterator[tuple[str, dict]]:
+    accumulated = ""
     emitted_len = 0
     async for chunk in chat_stream_text(system=system, user=user_payload):
         accumulated += chunk
         delta, emitted_len = _stream_safe_delta(accumulated, emitted_len)
         if delta:
             yield ("token", {"text": delta})
-
     if META_DELIMITER not in accumulated:
         remaining = accumulated[emitted_len:]
         if remaining:
             yield ("token", {"text": remaining})
+    yield ("_full", {"text": accumulated})
 
+
+def _finalize_reply_meta(accumulated: str, ctx: dict[str, Any]) -> tuple[str, dict]:
     reply, meta = split_reply_and_meta(accumulated)
     if not isinstance(meta, dict):
         meta = {}
@@ -285,8 +304,16 @@ async def _stream_llm_and_persist(
     meta["route"] = ctx["route"]
     if ctx["sources"]:
         meta["sources"] = ctx["sources"]
-    yield ("meta", meta)
+    return reply, meta
 
+
+async def _persist_assistant(
+    db: AsyncSession,
+    session: LessonQaSessionDB,
+    *,
+    reply: str,
+    meta: dict,
+) -> LessonQaMessageDB:
     assistant = LessonQaMessageDB(
         session_id=session.id,
         role=LessonQaMessageRoleEnum.assistant,
@@ -296,36 +323,28 @@ async def _stream_llm_and_persist(
     db.add(assistant)
     await db.flush()
     await db.commit()
+    return assistant
 
-    yield (
-        "assistant_message",
-        {"id": assistant.id, "content": assistant.content, "meta": meta},
-    )
 
-    if debug:
-        yield (
-            "debug",
+def _debug_payload(ctx: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "route": ctx["route"],
+        "cefr": ctx.get("cefr_level"),
+        "cache_hit": ctx["cache_hit"],
+        "memory_tokens": ctx["memory_tokens"],
+        "retrieved_tokens": ctx["retrieved_tokens"],
+        "chunk_count": len(ctx["chunks"]),
+        "chunks": [
             {
-                "route": ctx["route"],
-                "cefr": ctx.get("cefr_level"),
-                "cache_hit": ctx["cache_hit"],
-                "memory_tokens": ctx["memory_tokens"],
-                "retrieved_tokens": ctx["retrieved_tokens"],
-                "chunk_count": len(ctx["chunks"]),
-                "chunks": [
-                    {
-                        "score": c.get("score"),
-                        "unit_title": c.get("unit_title"),
-                        "book_id": c.get("book_id"),
-                        "unit_id": c.get("unit_id"),
-                        "preview": str(c.get("text") or "")[:160],
-                    }
-                    for c in ctx["chunks"]
-                ],
-            },
-        )
-
-    yield ("done", {"ok": True})
+                "score": c.get("score"),
+                "unit_title": c.get("unit_title"),
+                "book_id": c.get("book_id"),
+                "unit_id": c.get("unit_id"),
+                "preview": str(c.get("text") or "")[:160],
+            }
+            for c in ctx["chunks"]
+        ],
+    }
 
 
 async def _load_session(

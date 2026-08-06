@@ -2,6 +2,7 @@ from app.services.lesson_content_validate import (
     MAX_CHECKS,
     MIN_CHECKS,
     assert_publishable,
+    check_prompt_has_needed_time_context,
     normalize_content,
     target_bounds,
 )
@@ -283,3 +284,44 @@ def test_target_match_tolerates_curly_apostrophe():
         }
     )
     assert out["targets"][0]["surface"] == "Canada's oldest company"
+
+
+def test_past_continuous_check_needs_time_in_prompt():
+    assert not check_prompt_has_needed_time_context(
+        "What is she doing?", "was listening"
+    )
+    assert check_prompt_has_needed_time_context(
+        "What was she doing yesterday?", "was listening"
+    )
+
+
+def test_drops_check_without_time_context_for_past_continuous():
+    try:
+        normalize_content(
+            {
+                "passage": {
+                    "text": (
+                        "Yesterday she was listening to music. "
+                        "I am glad. He is kind. They are fine."
+                    )
+                },
+                "targets": [
+                    {"surface": "was listening"},
+                    {"surface": "am"},
+                    {"surface": "is"},
+                    {"surface": "are"},
+                ],
+                "checks": [
+                    {
+                        "type": "mcq",
+                        "prompt": "What is she doing?",
+                        "options": ["was listening", "is reading", "will go"],
+                        "answer": "was listening",
+                    }
+                ],
+                "writing": {"prompt": "Write about yesterday."},
+            }
+        )
+        assert False, "expected ValueError for empty checks"
+    except ValueError as exc:
+        assert "checks" in str(exc)

@@ -98,6 +98,22 @@ def verify_skill_drill_items(
     if not getattr(settings, "SKILL_DRILL_LLM_VERIFY", True):
         return list(items)
 
+    keep_as_is, to_verify = _partition_verify_items(items)
+    if not to_verify:
+        return list(items)
+
+    pass_map = _run_verify_pass_map(
+        [item for _, item in to_verify],
+        skill_title=skill_title,
+        cefr=cefr,
+    )
+    verified = _apply_pass_map(to_verify, pass_map)
+    return _merge_by_original_index(keep_as_is, verified)
+
+
+def _partition_verify_items(
+    items: list[dict[str, Any]],
+) -> tuple[list[tuple[int, dict[str, Any]]], list[tuple[int, dict[str, Any]]]]:
     keep_as_is: list[tuple[int, dict[str, Any]]] = []
     to_verify: list[tuple[int, dict[str, Any]]] = []
     for index, item in enumerate(items):
@@ -105,15 +121,18 @@ def verify_skill_drill_items(
             to_verify.append((index, item))
         else:
             keep_as_is.append((index, item))
+    return keep_as_is, to_verify
 
-    if not to_verify:
-        return list(items)
 
-    verify_payload = [item for _, item in to_verify]
+def _run_verify_pass_map(
+    verify_payload: list[dict[str, Any]],
+    *,
+    skill_title: str,
+    cefr: str,
+) -> dict[int, bool]:
     user_prompt = _build_verify_user_prompt(
         verify_payload, skill_title=skill_title, cefr=cefr
     )
-
     pass_map = {i: False for i in range(len(verify_payload))}
     try:
         raw = chat_json(VERIFY_SYSTEM_PROMPT, user_prompt)
@@ -130,7 +149,27 @@ def verify_skill_drill_items(
     except Exception:
         logger.exception("skill_drill verifier call failed; failing closed")
         pass_map = {i: False for i in range(len(verify_payload))}
+    return pass_map
 
+
+def _mark_verified(item: dict[str, Any]) -> dict[str, Any]:
+    brief = item.get("task_brief")
+    if isinstance(brief, dict):
+        return {**item, "task_brief": {**brief, "verified": True}}
+    return {
+        **item,
+        "task_brief": {
+            "mode": "skill_drill",
+            "item_kind": item.get("item_kind"),
+            "verified": True,
+        },
+    }
+
+
+def _apply_pass_map(
+    to_verify: list[tuple[int, dict[str, Any]]],
+    pass_map: dict[int, bool],
+) -> list[tuple[int, dict[str, Any]]]:
     verified: list[tuple[int, dict[str, Any]]] = []
     for verify_index, (orig_index, item) in enumerate(to_verify):
         if not pass_map.get(verify_index, False):
@@ -141,21 +180,14 @@ def verify_skill_drill_items(
                 (item.get("stem") or "")[:120],
             )
             continue
-        brief = item.get("task_brief")
-        if isinstance(brief, dict):
-            brief = {**brief, "verified": True}
-            item = {**item, "task_brief": brief}
-        else:
-            item = {
-                **item,
-                "task_brief": {
-                    "mode": "skill_drill",
-                    "item_kind": item.get("item_kind"),
-                    "verified": True,
-                },
-            }
-        verified.append((orig_index, item))
+        verified.append((orig_index, _mark_verified(item)))
+    return verified
 
+
+def _merge_by_original_index(
+    keep_as_is: list[tuple[int, dict[str, Any]]],
+    verified: list[tuple[int, dict[str, Any]]],
+) -> list[dict[str, Any]]:
     merged = keep_as_is + verified
     merged.sort(key=lambda row: row[0])
     return [item for _, item in merged]

@@ -166,7 +166,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   href="/profile"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex min-h-11 w-full items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
                 >
                   Profile
                 </Link>
@@ -174,7 +174,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   href="/profile/settings"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex min-h-11 w-full items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
                 >
                   Settings
                 </Link>
@@ -182,7 +182,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   type="button"
                   role="menuitem"
                   onClick={handleSignOut}
-                  className="flex min-h-11 w-full cursor-pointer items-center px-4 text-left text-[0.875rem] text-[#C24B3A] transition-colors hover:bg-[#FFF0EE] focus-visible:bg-[#FFF0EE] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#C24B3A] transition-colors hover:bg-[#FFF0EE] focus-visible:bg-[#FFF0EE] focus-visible:outline-none"
                 >
                   Sign out
                 </button>

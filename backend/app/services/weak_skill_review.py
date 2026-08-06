@@ -35,14 +35,33 @@ async def list_weak_skills(
     threshold: float = MASTERY_STRONG,
 ) -> list[dict[str, Any]]:
     """Skills at profile.current_level with published quiz and mastery below threshold."""
+    level = await _load_profile_level(db, user_id)
+    if level is None:
+        return []
+    published_ids = await _published_skill_ids(db)
+    if not published_ids:
+        return []
+    skills = await _skills_at_level_with_quiz(db, level=level, skill_ids=published_ids)
+    if not skills:
+        return []
+    mastery_by_id = await _mastery_by_skill(
+        db, user_id, [int(s.id) for s in skills]
+    )
+    candidates = _practiced_candidates(skills, mastery_by_id)
+    return pick_weak(candidates, threshold=threshold, limit=limit)
+
+
+async def _load_profile_level(db: AsyncSession, user_id: int) -> Any | None:
     profile = (
         await db.execute(select(UserProfileDB).where(UserProfileDB.user_id == user_id))
     ).scalar_one_or_none()
     if profile is None or profile.current_level is None:
-        return []
+        return None
+    return profile.current_level
 
-    level = profile.current_level
-    published_skill_ids = set(
+
+async def _published_skill_ids(db: AsyncSession) -> set[int]:
+    return set(
         (
             await db.execute(
                 select(QuizQuestionDB.skill_id)
@@ -53,27 +72,32 @@ async def list_weak_skills(
         .scalars()
         .all()
     )
-    if not published_skill_ids:
-        return []
 
-    skills = list(
+
+async def _skills_at_level_with_quiz(
+    db: AsyncSession, *, level: Any, skill_ids: set[int]
+) -> list[LearningSkillDB]:
+    return list(
         (
             await db.execute(
                 select(LearningSkillDB).where(
                     LearningSkillDB.is_active.is_(True),
                     LearningSkillDB.cefr_level == level,
-                    LearningSkillDB.id.in_(published_skill_ids),
+                    LearningSkillDB.id.in_(skill_ids),
                 )
             )
         )
         .scalars()
         .all()
     )
-    if not skills:
-        return []
 
-    skill_ids = [int(s.id) for s in skills]
-    mastery_rows = list(
+
+async def _mastery_by_skill(
+    db: AsyncSession, user_id: int, skill_ids: list[int]
+) -> dict[int, UserSkillMasteryDB]:
+    if not skill_ids:
+        return {}
+    rows = list(
         (
             await db.execute(
                 select(UserSkillMasteryDB).where(
@@ -85,8 +109,13 @@ async def list_weak_skills(
         .scalars()
         .all()
     )
-    mastery_by_id = {int(r.skill_id): r for r in mastery_rows}
+    return {int(r.skill_id): r for r in rows}
 
+
+def _practiced_candidates(
+    skills: list[LearningSkillDB],
+    mastery_by_id: dict[int, UserSkillMasteryDB],
+) -> list[dict[str, Any]]:
     candidates: list[dict[str, Any]] = []
     for skill in skills:
         sid = int(skill.id)
@@ -103,5 +132,4 @@ async def list_weak_skills(
                 "attempts": int(row.attempts or 0),
             }
         )
-
-    return pick_weak(candidates, threshold=threshold, limit=limit)
+    return candidates

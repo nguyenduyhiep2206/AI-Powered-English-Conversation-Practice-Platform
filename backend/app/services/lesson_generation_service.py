@@ -77,6 +77,12 @@ Rules:
 - Exactly {min_targets}-{max_targets} targets that APPEAR in the passage (prefer {prefer_targets}).
 - Exactly 1-2 checks testing those targets (meaning, form, or usage) in English.
 - For mcq meaning checks: options must be English paraphrases/definitions, never translations.
+- Tense / aspect checks MUST put the time/context IN the prompt (not only in the answer key).
+  If the answer is past / past continuous / future, include a clear marker such as yesterday,
+  last night, ago, at 8pm, when I arrived, tomorrow, next week, right now, at the moment.
+  Bad: "They ____ (listen) to music." → answer "were listening" (no past context).
+  Good: "Yesterday at 8pm, they ____ (listen) to music." → "were listening".
+  Do not force past answers on timeless stems; match stem context to the expected tense.
 - Passage English at {cefr}; 40-100 words; ground in book excerpt when provided.
 - Do not invent long plots; keep language-teaching focus.
 - writing.must_use must be 1-3 items from targets.
@@ -98,6 +104,8 @@ Focus: one clear grammar target.
 - form.rows MUST explain the pattern in simple English (2-8 rows: label / pattern / example).
 - Targets include form words + example phrases; gloss explains the form in simple English.
 - Checks test the grammar choice directly (English prompts/options).
+- Every check prompt must make the intended time clear when testing tense/aspect
+  (past / present / continuous / future). Never ask for "were listening" without a past cue.
 """,
     "vocabulary": """
 Focus: {min_targets}-{max_targets} concrete words or collocations.
@@ -139,6 +147,20 @@ async def _require_skill(db: AsyncSession, skill_id: int) -> LearningSkillDB:
     return skill
 
 
+def _skill_type_cefr(skill: LearningSkillDB) -> tuple[str, str]:
+    skill_type = (
+        skill.skill_type.value
+        if hasattr(skill.skill_type, "value")
+        else str(skill.skill_type)
+    )
+    cefr = (
+        skill.cefr_level.value
+        if hasattr(skill.cefr_level, "value")
+        else str(skill.cefr_level)
+    )
+    return skill_type, cefr
+
+
 async def _resolve_primary_source(
     db: AsyncSession, skill_id: int
 ) -> BookSkillSourceDB | None:
@@ -164,111 +186,151 @@ def _load_excerpt(skill: LearningSkillDB, book: BookDB, primary: BookSkillSource
     return str(ctx.get("text") or "")
 
 
+async def _load_excerpt_context(
+    db: AsyncSession, skill: LearningSkillDB
+) -> tuple[str, int | None]:
+    primary = await _resolve_primary_source(db, int(skill.id))
+    if primary is None:
+        return "", None
+    book = (
+        await db.execute(select(BookDB).where(BookDB.id == primary.book_id))
+    ).scalar_one_or_none()
+    if book is None:
+        return "", None
+    return _load_excerpt(skill, book, primary), int(primary.id)
+
+
+def _author_user_prompt(
+    *, skill: LearningSkillDB, skill_type: str, cefr: str, excerpt: str
+) -> str:
+    return (
+        f"Skill title: {skill.title}\n"
+        f"Skill type: {skill_type}\n"
+        f"CEFR: {cefr}\n"
+        f"Book excerpt (may be empty):\n{excerpt[:3500] or '(none)'}\n"
+    )
+
+
+def _ensure_writing_object(raw: dict[str, Any]) -> None:
+    if isinstance(raw.get("writing"), dict):
+        return
+    surfaces: list[str] = []
+    for t in raw.get("targets") or []:
+        if isinstance(t, dict):
+            s = str(t.get("surface") or "").strip()
+            if s:
+                surfaces.append(s)
+    raw["writing"] = {
+        "prompt": (
+            f"Write 2–3 short sentences using "
+            f"{', '.join(surfaces[:3]) or 'the targets'}."
+        ),
+        "min_words": 12,
+        "must_use": surfaces[:2] or [],
+    }
+
+
+def _unwrap_lesson_raw(payload: dict[str, Any]) -> dict[str, Any]:
+    if isinstance(payload.get("content"), dict) and "passage" in payload["content"]:
+        return dict(payload["content"])
+    if "passage" in payload:
+        return dict(payload)
+    raise RuntimeError("LLM lesson missing passage/content")
+
+
 def content_and_meta_from_llm_payload(
     payload: Any, *, skill_title: str
 ) -> tuple[dict[str, Any], str, str]:
     """Parse LLM JSON → validated content + title/objective. Raises ValueError/RuntimeError."""
     if not isinstance(payload, dict):
         raise RuntimeError("LLM did not return a lesson object")
-
-    raw = payload
-    if isinstance(payload.get("content"), dict) and "passage" in payload["content"]:
-        raw = dict(payload["content"])
-        # Prefer top-level title/objective when nested content is used.
-    elif "passage" in payload:
-        raw = dict(payload)
-    else:
-        raise RuntimeError("LLM lesson missing passage/content")
-
-    # Pack LLM sometimes omits writing; inject a minimal object so normalize can proceed.
-    if not isinstance(raw.get("writing"), dict):
-        surfaces: list[str] = []
-        for t in raw.get("targets") or []:
-            if isinstance(t, dict):
-                s = str(t.get("surface") or "").strip()
-                if s:
-                    surfaces.append(s)
-        raw["writing"] = {
-            "prompt": f"Write 2–3 short sentences using {', '.join(surfaces[:3]) or 'the targets'}.",
-            "min_words": 12,
-            "must_use": surfaces[:2] or [],
-        }
-
+    raw = _unwrap_lesson_raw(payload)
+    _ensure_writing_object(raw)
     content = normalize_content(raw)
     title = str(payload.get("title") or skill_title).strip() or skill_title
     objective = str(payload.get("objective") or f"Practice: {skill_title}").strip()
     return content, title, objective
 
 
-async def generate_lesson_draft(db: AsyncSession, skill_id: int) -> SkillLessonDB:
-    skill = await _require_skill(db, skill_id)
-    skill_type = (
-        skill.skill_type.value if hasattr(skill.skill_type, "value") else str(skill.skill_type)
-    )
-    cefr = skill.cefr_level.value if hasattr(skill.cefr_level, "value") else str(skill.cefr_level)
-
-    primary = await _resolve_primary_source(db, skill_id)
-    excerpt = ""
-    book_source_id = None
-    if primary is not None:
-        book = (
-            await db.execute(select(BookDB).where(BookDB.id == primary.book_id))
-        ).scalar_one_or_none()
-        if book is not None:
-            excerpt = _load_excerpt(skill, book, primary)
-            book_source_id = int(primary.id)
-
-    user = (
-        f"Skill title: {skill.title}\n"
-        f"Skill type: {skill_type}\n"
-        f"CEFR: {cefr}\n"
-        f"Book excerpt (may be empty):\n{excerpt[:3500] or '(none)'}\n"
-    )
-    payload = chat_json(_build_system_prompt(skill_type=skill_type, cefr=cefr), user)
+def _llm_validated_single(
+    *,
+    system: str,
+    user: str,
+    skill_title: str,
+    retry_hint: str,
+) -> tuple[dict[str, Any], str, str]:
+    payload = chat_json(system, user)
     try:
-        content, title, objective = content_and_meta_from_llm_payload(
-            payload, skill_title=skill.title
-        )
+        return content_and_meta_from_llm_payload(payload, skill_title=skill_title)
     except ValueError as first_err:
-        # One retry: LLM often mismatches curly vs straight quotes in targets.
-        retry_user = (
-            user
-            + "\nRETRY: previous draft failed validation: "
-            + str(first_err)
-            + "\nEvery target.surface must appear EXACTLY in passage.text "
-            "(same words; ASCII apostrophe ' is fine).\n"
-        )
-        payload = chat_json(
-            _build_system_prompt(skill_type=skill_type, cefr=cefr), retry_user
-        )
-        content, title, objective = content_and_meta_from_llm_payload(
-            payload, skill_title=skill.title
-        )
+        retry_user = user + "\nRETRY: previous draft failed validation: " + str(first_err) + retry_hint
+        payload = chat_json(system, retry_user)
+        return content_and_meta_from_llm_payload(payload, skill_title=skill_title)
 
+
+def _apply_draft_fields(
+    row: SkillLessonDB,
+    *,
+    title: str,
+    objective: str,
+    content: dict[str, Any],
+    book_source_id: int | None,
+) -> None:
+    row.title = title
+    row.objective = objective
+    row.content = content
+    row.source = "llm_reviewed"
+    row.status = "draft"
+    row.book_source_id = book_source_id
+
+
+async def _get_or_create_pack_row(
+    db: AsyncSession, skill_id: int, pack_index: int
+) -> SkillLessonDB:
     existing = (
         await db.execute(
             select(SkillLessonDB).where(
                 SkillLessonDB.skill_id == skill_id,
-                SkillLessonDB.pack_index == 0,
+                SkillLessonDB.pack_index == pack_index,
             )
         )
     ).scalar_one_or_none()
     if existing is None:
-        existing = SkillLessonDB(skill_id=skill_id, pack_index=0)
+        existing = SkillLessonDB(skill_id=skill_id, pack_index=pack_index)
         db.add(existing)
-
-    existing.title = title
-    existing.objective = objective
-    existing.content = content
-    existing.source = "llm_reviewed"
-    existing.status = "draft"
-    existing.book_source_id = book_source_id
-    await db.commit()
-    await db.refresh(existing)
     return existing
 
 
-async def publish_lesson(db: AsyncSession, skill_id: int) -> SkillLessonDB:
+async def generate_lesson_draft(db: AsyncSession, skill_id: int) -> SkillLessonDB:
+    skill = await _require_skill(db, skill_id)
+    skill_type, cefr = _skill_type_cefr(skill)
+    excerpt, book_source_id = await _load_excerpt_context(db, skill)
+    user = _author_user_prompt(
+        skill=skill, skill_type=skill_type, cefr=cefr, excerpt=excerpt
+    )
+    content, title, objective = _llm_validated_single(
+        system=_build_system_prompt(skill_type=skill_type, cefr=cefr),
+        user=user,
+        skill_title=skill.title,
+        retry_hint=(
+            "\nEvery target.surface must appear EXACTLY in passage.text "
+            "(same words; ASCII apostrophe ' is fine).\n"
+        ),
+    )
+    row = await _get_or_create_pack_row(db, skill_id, 0)
+    _apply_draft_fields(
+        row,
+        title=title,
+        objective=objective,
+        content=content,
+        book_source_id=book_source_id,
+    )
+    await db.commit()
+    await db.refresh(row)
+    return row
+
+
+async def _load_pack_index_zero(db: AsyncSession, skill_id: int) -> SkillLessonDB:
     lesson = (
         await db.execute(
             select(SkillLessonDB).where(
@@ -279,10 +341,13 @@ async def publish_lesson(db: AsyncSession, skill_id: int) -> SkillLessonDB:
     ).scalar_one_or_none()
     if lesson is None:
         raise ValueError("Lesson not found")
+    return lesson
+
+
+async def publish_lesson(db: AsyncSession, skill_id: int) -> SkillLessonDB:
+    lesson = await _load_pack_index_zero(db, skill_id)
     skill = await _require_skill(db, skill_id)
-    skill_type = (
-        skill.skill_type.value if hasattr(skill.skill_type, "value") else str(skill.skill_type)
-    )
+    skill_type, _ = _skill_type_cefr(skill)
     assert_publishable(
         lesson.content if isinstance(lesson.content, dict) else {},
         skill_type=skill_type,
@@ -347,72 +412,42 @@ Rules:
 """
 
 
-async def generate_lesson_pack(
-    db: AsyncSession, skill_id: int, *, count: int = 3
-) -> list[SkillLessonDB]:
-    if count < 1 or count > 5:
-        raise ValueError("LessonPack count must be 1..5")
-    skill = await _require_skill(db, skill_id)
-    skill_type = (
-        skill.skill_type.value if hasattr(skill.skill_type, "value") else str(skill.skill_type)
-    )
-    cefr = (
-        skill.cefr_level.value if hasattr(skill.cefr_level, "value") else str(skill.cefr_level)
-    )
-
-    primary = (
-        await db.execute(
-            select(BookSkillSourceDB).where(
-                BookSkillSourceDB.skill_id == skill_id,
-                BookSkillSourceDB.is_primary.is_(True),
-                BookSkillSourceDB.is_excluded.is_(False),
-            )
-        )
-    ).scalar_one_or_none()
-    if primary is None:
-        primary = (
-            await db.execute(
-                select(BookSkillSourceDB).where(
-                    BookSkillSourceDB.skill_id == skill_id,
-                    BookSkillSourceDB.is_excluded.is_(False),
-                )
-            )
-        ).scalars().first()
-
-    excerpt = ""
-    book_source_id = None
-    if primary is not None:
-        book = (
-            await db.execute(select(BookDB).where(BookDB.id == primary.book_id))
-        ).scalar_one_or_none()
-        if book is not None:
-            excerpt = _load_excerpt(skill, book, primary)
-            book_source_id = int(primary.id)
-
-    user = (
-        f"Skill title: {skill.title}\n"
-        f"Skill type: {skill_type}\n"
-        f"CEFR: {cefr}\n"
-        f"Book excerpt (may be empty):\n{excerpt[:3500] or '(none)'}\n"
-    )
-    payload = chat_json(
-        _pack_system_prompt(skill_type=skill_type, cefr=cefr, count=count), user
-    )
+def _extract_lessons_raw(payload: Any, *, count: int, err: str) -> list[Any]:
     lessons_raw = payload.get("lessons") if isinstance(payload, dict) else None
     if not isinstance(lessons_raw, list) or len(lessons_raw) < count:
-        raise ValueError("LLM did not return enough lessons for LessonPack")
+        raise ValueError(err)
+    return lessons_raw
 
+
+def _parse_pack_items(
+    lessons_raw: list[Any], *, skill_title: str, count: int
+) -> list[tuple[dict[str, Any], str, str]]:
     parsed: list[tuple[dict[str, Any], str, str]] = []
-    try:
-        for index in range(count):
-            item = lessons_raw[index]
-            if not isinstance(item, dict):
-                raise ValueError(f"LessonPack item {index} invalid")
-            parsed.append(
-                content_and_meta_from_llm_payload(
-                    item, skill_title=f"{skill.title} ({index + 1}/{count})"
-                )
+    for index in range(count):
+        item = lessons_raw[index]
+        if not isinstance(item, dict):
+            raise ValueError(f"LessonPack item {index} invalid")
+        parsed.append(
+            content_and_meta_from_llm_payload(
+                item, skill_title=f"{skill_title} ({index + 1}/{count})"
             )
+        )
+    return parsed
+
+
+def _llm_validated_pack(
+    *,
+    system: str,
+    user: str,
+    skill_title: str,
+    count: int,
+) -> list[tuple[dict[str, Any], str, str]]:
+    payload = chat_json(system, user)
+    try:
+        lessons_raw = _extract_lessons_raw(
+            payload, count=count, err="LLM did not return enough lessons for LessonPack"
+        )
+        return _parse_pack_items(lessons_raw, skill_title=skill_title, count=count)
     except (ValueError, RuntimeError) as first_err:
         retry_user = (
             user
@@ -420,55 +455,60 @@ async def generate_lesson_pack(
             + str(first_err)
             + "\nEach lesson needs passage, targets in passage, checks, and writing object.\n"
         )
-        payload = chat_json(
-            _pack_system_prompt(skill_type=skill_type, cefr=cefr, count=count),
-            retry_user,
+        payload = chat_json(system, retry_user)
+        lessons_raw = _extract_lessons_raw(
+            payload,
+            count=count,
+            err="LLM did not return enough lessons for LessonPack retry",
         )
-        lessons_raw = payload.get("lessons") if isinstance(payload, dict) else None
-        if not isinstance(lessons_raw, list) or len(lessons_raw) < count:
-            raise ValueError("LLM did not return enough lessons for LessonPack retry") from first_err
-        parsed = []
-        for index in range(count):
-            item = lessons_raw[index]
-            if not isinstance(item, dict):
-                raise ValueError(f"LessonPack item {index} invalid") from first_err
-            parsed.append(
-                content_and_meta_from_llm_payload(
-                    item, skill_title=f"{skill.title} ({index + 1}/{count})"
-                )
-            )
+        return _parse_pack_items(lessons_raw, skill_title=skill_title, count=count)
 
+
+async def _persist_pack_drafts(
+    db: AsyncSession,
+    skill_id: int,
+    parsed: list[tuple[dict[str, Any], str, str]],
+    book_source_id: int | None,
+) -> list[SkillLessonDB]:
     out: list[SkillLessonDB] = []
     for index, (content, title, objective) in enumerate(parsed):
-        existing = (
-            await db.execute(
-                select(SkillLessonDB).where(
-                    SkillLessonDB.skill_id == skill_id,
-                    SkillLessonDB.pack_index == index,
-                )
-            )
-        ).scalar_one_or_none()
-        if existing is None:
-            existing = SkillLessonDB(skill_id=skill_id, pack_index=index)
-            db.add(existing)
-        existing.title = title
-        existing.objective = objective
-        existing.content = content
-        existing.source = "llm_reviewed"
-        existing.status = "draft"
-        existing.book_source_id = book_source_id
-        out.append(existing)
-
+        row = await _get_or_create_pack_row(db, skill_id, index)
+        _apply_draft_fields(
+            row,
+            title=title,
+            objective=objective,
+            content=content,
+            book_source_id=book_source_id,
+        )
+        out.append(row)
     await db.commit()
     for row in out:
         await db.refresh(row)
     return out
 
 
-async def publish_lesson_pack(
-    db: AsyncSession, skill_id: int, *, required: int = 3
+async def generate_lesson_pack(
+    db: AsyncSession, skill_id: int, *, count: int = 3
 ) -> list[SkillLessonDB]:
-    rows = list(
+    if count < 1 or count > 5:
+        raise ValueError("LessonPack count must be 1..5")
+    skill = await _require_skill(db, skill_id)
+    skill_type, cefr = _skill_type_cefr(skill)
+    excerpt, book_source_id = await _load_excerpt_context(db, skill)
+    user = _author_user_prompt(
+        skill=skill, skill_type=skill_type, cefr=cefr, excerpt=excerpt
+    )
+    parsed = _llm_validated_pack(
+        system=_pack_system_prompt(skill_type=skill_type, cefr=cefr, count=count),
+        user=user,
+        skill_title=skill.title,
+        count=count,
+    )
+    return await _persist_pack_drafts(db, skill_id, parsed, book_source_id)
+
+
+async def _load_all_pack_rows(db: AsyncSession, skill_id: int) -> list[SkillLessonDB]:
+    return list(
         (
             await db.execute(
                 select(SkillLessonDB)
@@ -479,15 +519,17 @@ async def publish_lesson_pack(
         .scalars()
         .all()
     )
-    by_index = {int(r.pack_index or 0): r for r in rows}
-    assert_pack_publishable(indices_ready=set(by_index.keys()), required=required)
-    skill = await _require_skill(db, skill_id)
-    skill_type = (
-        skill.skill_type.value if hasattr(skill.skill_type, "value") else str(skill.skill_type)
-    )
+
+
+def _publish_pack_rows(
+    rows_by_index: dict[int, SkillLessonDB],
+    *,
+    skill_type: str,
+    required: int,
+) -> list[SkillLessonDB]:
     published: list[SkillLessonDB] = []
     for index in range(required):
-        lesson = by_index[index]
+        lesson = rows_by_index[index]
         # Grammar form is required on L2 only (pack_index=1); L1/L3 may omit.
         require_form = skill_type == "grammar" and (index == 1 or required == 1)
         assert_publishable(
@@ -497,6 +539,18 @@ async def publish_lesson_pack(
         )
         lesson.status = "published"
         published.append(lesson)
+    return published
+
+
+async def publish_lesson_pack(
+    db: AsyncSession, skill_id: int, *, required: int = 3
+) -> list[SkillLessonDB]:
+    rows = await _load_all_pack_rows(db, skill_id)
+    by_index = {int(r.pack_index or 0): r for r in rows}
+    assert_pack_publishable(indices_ready=set(by_index.keys()), required=required)
+    skill = await _require_skill(db, skill_id)
+    skill_type, _ = _skill_type_cefr(skill)
+    published = _publish_pack_rows(by_index, skill_type=skill_type, required=required)
     await db.commit()
     for row in published:
         await db.refresh(row)

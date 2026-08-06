@@ -45,6 +45,8 @@ export type SkillLesson = {
 };
 
 export type SkillLessonResponse = {
+  skill_id?: number;
+  skill_title?: string;
   learn_available: boolean;
   can_skip: boolean;
   lesson_completed: boolean;
@@ -59,6 +61,7 @@ export type WritingFeedback = {
   original: string;
   corrected: string;
   notes: string[];
+  usable?: boolean;
 };
 
 export async function fetchSkillLesson(skillId: number): Promise<SkillLessonResponse> {

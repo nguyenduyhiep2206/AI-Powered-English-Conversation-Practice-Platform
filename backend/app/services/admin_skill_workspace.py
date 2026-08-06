@@ -43,12 +43,38 @@ def compute_quiz_gate(
 
 
 async def get_skill_workspace(db: AsyncSession, skill_id: int) -> dict[str, Any]:
+    skill = await _require_skill(db, skill_id)
+    skill_type, cefr = _skill_type_cefr(skill)
+    lesson, has_surfaces = await _load_lesson_slice(db, skill_id)
+    book_source = await _load_primary_book_source(db, skill_id)
+    quiz_counts = await _load_quiz_counts(db, skill_id)
+    gate = compute_quiz_gate(
+        skill_type=skill_type,
+        lesson_status=lesson["status"],
+        has_book_source=book_source is not None,
+        has_lesson_surfaces=has_surfaces if skill_type == "grammar" else True,
+    )
+    return _assemble_workspace(
+        skill=skill,
+        skill_type=skill_type,
+        cefr=cefr,
+        lesson=lesson,
+        book_source=book_source,
+        quiz_counts=quiz_counts,
+        gate=gate,
+    )
+
+
+async def _require_skill(db: AsyncSession, skill_id: int) -> LearningSkillDB:
     skill = (
         await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
     ).scalar_one_or_none()
     if skill is None:
         raise ValueError("Skill not found")
+    return skill
 
+
+def _skill_type_cefr(skill: LearningSkillDB) -> tuple[str, str]:
     skill_type = (
         skill.skill_type.value
         if hasattr(skill.skill_type, "value")
@@ -59,7 +85,39 @@ async def get_skill_workspace(db: AsyncSession, skill_id: int) -> dict[str, Any]
         if hasattr(skill.cefr_level, "value")
         else str(skill.cefr_level)
     )
+    return skill_type, cefr
 
+
+def build_lesson_slice(
+    lessons: list[SkillLessonDB],
+) -> tuple[dict[str, Any], bool]:
+    """Pure: summary payload + whether published pack has extractable surfaces."""
+    published = [x for x in lessons if x.status == "published"]
+    primary = next(
+        (x for x in published if int(x.pack_index or 0) == 0),
+        published[0] if published else (lessons[0] if lessons else None),
+    )
+    status = (
+        "published"
+        if published
+        else (primary.status if primary is not None else None)
+    )
+    payload = {
+        "status": status,
+        "id": int(primary.id) if primary is not None else None,
+        "title": primary.title if primary is not None else None,
+        "pack_published_count": len(published),
+        "pack_total": len(lessons),
+    }
+    has_surfaces = (
+        bool(surfaces_from_lessons(published)) if status == "published" else False
+    )
+    return payload, has_surfaces
+
+
+async def _load_lesson_slice(
+    db: AsyncSession, skill_id: int
+) -> tuple[dict[str, Any], bool]:
     lessons = list(
         (
             await db.execute(
@@ -71,29 +129,12 @@ async def get_skill_workspace(db: AsyncSession, skill_id: int) -> dict[str, Any]
         .scalars()
         .all()
     )
-    published = [x for x in lessons if x.status == "published"]
-    primary_lesson = next(
-        (x for x in published if int(x.pack_index or 0) == 0),
-        published[0] if published else (lessons[0] if lessons else None),
-    )
-    lesson_status = (
-        "published"
-        if published
-        else (primary_lesson.status if primary_lesson is not None else None)
-    )
-    lesson_payload = {
-        "status": lesson_status,
-        "id": int(primary_lesson.id) if primary_lesson is not None else None,
-        "title": primary_lesson.title if primary_lesson is not None else None,
-        "pack_published_count": len(published),
-        "pack_total": len(lessons),
-    }
-    surfaces = surfaces_from_lessons(published)
-    has_surfaces = bool(surfaces) if lesson_status == "published" else False
-    # Published grammar without surfaces still blocks (same as generate path).
-    if lesson_status == "published" and skill_type == "grammar":
-        has_surfaces = bool(surfaces)
+    return build_lesson_slice(lessons)
 
+
+async def _load_primary_book_source(
+    db: AsyncSession, skill_id: int
+) -> dict[str, Any] | None:
     sources = list(
         (
             await db.execute(
@@ -107,66 +148,63 @@ async def get_skill_workspace(db: AsyncSession, skill_id: int) -> dict[str, Any]
         .all()
     )
     primary = next((s for s in sources if s.is_primary), sources[0] if sources else None)
-    book_source = None
-    if primary is not None:
-        book_source = {
-            "book_id": int(primary.book_id),
-            "unit_id": int(primary.unit_id),
-            "unit_title": primary.unit_title,
-            "is_primary": bool(primary.is_primary),
-        }
+    if primary is None:
+        return None
+    return {
+        "book_id": int(primary.book_id),
+        "unit_id": int(primary.unit_id),
+        "unit_title": primary.unit_title,
+        "is_primary": bool(primary.is_primary),
+    }
 
-    draft_count = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(QuizQuestionDB)
-                .where(
-                    QuizQuestionDB.skill_id == skill_id,
-                    QuizQuestionDB.status == QuizQuestionStatusEnum.draft,
-                )
-            )
-        ).scalar_one()
-    )
-    published_count = int(
-        (
-            await db.execute(
-                select(func.count())
-                .select_from(QuizQuestionDB)
-                .where(
-                    QuizQuestionDB.skill_id == skill_id,
-                    QuizQuestionDB.status == QuizQuestionStatusEnum.published,
-                )
-            )
-        ).scalar_one()
-    )
 
-    # Count drafts whose task_brief.mode == skill_drill (best-effort in Python)
-    draft_rows = list(
-        (
-            await db.execute(
-                select(QuizQuestionDB).where(
-                    QuizQuestionDB.skill_id == skill_id,
-                    QuizQuestionDB.status == QuizQuestionStatusEnum.draft,
-                )
-            )
+async def _count_quiz(
+    db: AsyncSession,
+    skill_id: int,
+    *,
+    status: QuizQuestionStatusEnum,
+    skill_drill_only: bool = False,
+) -> int:
+    q = (
+        select(func.count())
+        .select_from(QuizQuestionDB)
+        .where(
+            QuizQuestionDB.skill_id == skill_id,
+            QuizQuestionDB.status == status,
         )
-        .scalars()
-        .all()
     )
-    draft_skill_drill_count = 0
-    for row in draft_rows:
-        brief = row.task_brief if isinstance(row.task_brief, dict) else {}
-        if brief.get("mode") == "skill_drill":
-            draft_skill_drill_count += 1
+    if skill_drill_only:
+        q = q.where(QuizQuestionDB.task_brief["mode"].as_string() == "skill_drill")
+    return int((await db.execute(q)).scalar_one())
 
-    gate = compute_quiz_gate(
-        skill_type=skill_type,
-        lesson_status=lesson_status,
-        has_book_source=primary is not None,
-        has_lesson_surfaces=has_surfaces if skill_type == "grammar" else True,
-    )
 
+async def _load_quiz_counts(db: AsyncSession, skill_id: int) -> dict[str, int]:
+    return {
+        "draft_count": await _count_quiz(
+            db, skill_id, status=QuizQuestionStatusEnum.draft
+        ),
+        "published_count": await _count_quiz(
+            db, skill_id, status=QuizQuestionStatusEnum.published
+        ),
+        "draft_skill_drill_count": await _count_quiz(
+            db,
+            skill_id,
+            status=QuizQuestionStatusEnum.draft,
+            skill_drill_only=True,
+        ),
+    }
+
+
+def _assemble_workspace(
+    *,
+    skill: LearningSkillDB,
+    skill_type: str,
+    cefr: str,
+    lesson: dict[str, Any],
+    book_source: dict[str, Any] | None,
+    quiz_counts: dict[str, int],
+    gate: QuizGate,
+) -> dict[str, Any]:
     return {
         "skill": {
             "id": int(skill.id),
@@ -174,12 +212,10 @@ async def get_skill_workspace(db: AsyncSession, skill_id: int) -> dict[str, Any]
             "skill_type": skill_type,
             "cefr_level": cefr,
         },
-        "lesson": lesson_payload,
+        "lesson": lesson,
         "book_source": book_source,
         "quiz": {
-            "draft_count": draft_count,
-            "published_count": published_count,
-            "draft_skill_drill_count": draft_skill_drill_count,
+            **quiz_counts,
             "can_generate_skill_drill": gate.can_generate,
             "block_reason": gate.block_reason,
         },

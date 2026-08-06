@@ -20,6 +20,10 @@ from app.models.skill_lesson import (
 )
 from app.models.user_skill_mastery import UserSkillMasteryDB
 from app.services.lesson_generation_service import lesson_to_dict
+from app.services.lesson_writing_feedback import (
+    feedback_on_writing,
+    writing_context_from_lesson_content,
+)
 from app.services.mastery_service import MASTERY_STRONG
 
 
@@ -71,6 +75,23 @@ def _pick_lesson_status(lessons: list[SkillLessonDB]) -> tuple[str | None, int |
         return "draft", int(first.id)
     first = sorted(lessons, key=lambda x: int(x.pack_index or 0))[0]
     return first.status, int(first.id)
+
+
+async def _require_skill(db: AsyncSession, skill_id: int) -> LearningSkillDB:
+    skill = (
+        await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
+    ).scalar_one_or_none()
+    if skill is None:
+        raise ValueError("Skill not found")
+    return skill
+
+
+def _skill_cefr(skill: LearningSkillDB | None, *, default: str = "A1") -> str:
+    if skill is None:
+        return default
+    if hasattr(skill.cefr_level, "value"):
+        return skill.cefr_level.value
+    return str(skill.cefr_level or default)
 
 
 async def _get_mastery(db: AsyncSession, user_id: int, skill_id: int) -> float:
@@ -156,6 +177,38 @@ async def get_published_lesson(
     return published[0]
 
 
+async def writing_feedback_for_skill(
+    db: AsyncSession,
+    skill_id: int,
+    *,
+    text: str,
+    pack_index: int | None = None,
+) -> dict[str, Any]:
+    """Build AI writing feedback for a published lesson pack.
+
+    Raises:
+        LookupError: no published lesson for the skill/pack.
+        ValueError: empty learner text (from feedback_on_writing).
+        RuntimeError: LLM feedback unavailable.
+    """
+    lesson = await get_published_lesson(db, skill_id, pack_index=pack_index)
+    if lesson is None:
+        raise LookupError("Published lesson not found")
+    skill = (
+        await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
+    ).scalar_one_or_none()
+    content = lesson.content if isinstance(lesson.content, dict) else {}
+    prompt, must_use, targets, form_tips = writing_context_from_lesson_content(content)
+    return feedback_on_writing(
+        learner_text=text,
+        writing_prompt=prompt,
+        must_use=must_use,
+        targets=targets,
+        cefr=_skill_cefr(skill),
+        form_tips=form_tips,
+    )
+
+
 async def get_current_published_lesson_for_user(
     db: AsyncSession, user_id: int, skill_id: int
 ) -> SkillLessonDB | None:
@@ -170,44 +223,87 @@ async def get_current_published_lesson_for_user(
     return published[-1]
 
 
-async def get_lesson_for_user(
-    db: AsyncSession, user_id: int, skill_id: int
+def _assemble_lesson_payload(
+    *,
+    skill: LearningSkillDB,
+    published: list[SkillLessonDB],
+    completed: set[int],
+    mastery: float,
+    current: SkillLessonDB | None,
 ) -> dict[str, Any]:
-    skill = (
-        await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
-    ).scalar_one_or_none()
-    if skill is None:
-        raise ValueError("Skill not found")
-
-    published = await list_published_pack(db, skill_id)
-    completed = await _completed_pack_indices(db, user_id, skill_id)
     published_indices = [int(x.pack_index or 0) for x in published]
     pack_done = compute_pack_completed(
         published_indices=published_indices, completed_indices=completed
     )
-    mastery = await _get_mastery(db, user_id, skill_id)
-    learn_available = compute_learn_available(
-        flag=bool(getattr(settings, "LEARN_UNIT_ENABLED", False)),
-        has_published=bool(published),
-    )
-    can_skip = compute_can_skip(lesson_completed=pack_done, mastery=mastery)
-
-    current = await get_current_published_lesson_for_user(db, user_id, skill_id)
-
-    lesson_payload = None
-    if current is not None:
-        lesson_payload = lesson_to_dict(current)
-
     return {
-        "learn_available": learn_available,
-        "can_skip": can_skip,
+        "skill_id": int(skill.id),
+        "skill_title": str(skill.title or "").strip() or "This skill",
+        "learn_available": compute_learn_available(
+            flag=bool(getattr(settings, "LEARN_UNIT_ENABLED", False)),
+            has_published=bool(published),
+        ),
+        "can_skip": compute_can_skip(lesson_completed=pack_done, mastery=mastery),
         "lesson_completed": pack_done,
         "pack_total": len(published),
         "pack_completed_count": len(set(published_indices) & completed),
         "pack": [lesson_to_dict(x) for x in published],
         "mastery": mastery,
-        "lesson": lesson_payload,
+        "lesson": lesson_to_dict(current) if current is not None else None,
     }
+
+
+async def get_lesson_for_user(
+    db: AsyncSession, user_id: int, skill_id: int
+) -> dict[str, Any]:
+    skill = await _require_skill(db, skill_id)
+    published = await list_published_pack(db, skill_id)
+    completed = await _completed_pack_indices(db, user_id, skill_id)
+    mastery = await _get_mastery(db, user_id, skill_id)
+    current = await get_current_published_lesson_for_user(db, user_id, skill_id)
+    return _assemble_lesson_payload(
+        skill=skill,
+        published=published,
+        completed=completed,
+        mastery=mastery,
+        current=current,
+    )
+
+
+async def _ensure_pack_progress_row(
+    db: AsyncSession, user_id: int, skill_id: int, pack_index: int
+) -> None:
+    existing = (
+        await db.execute(
+            select(UserLessonPackProgressDB).where(
+                UserLessonPackProgressDB.user_id == user_id,
+                UserLessonPackProgressDB.skill_id == skill_id,
+                UserLessonPackProgressDB.pack_index == pack_index,
+            )
+        )
+    ).scalar_one_or_none()
+    if existing is None:
+        db.add(
+            UserLessonPackProgressDB(
+                user_id=user_id,
+                skill_id=skill_id,
+                pack_index=pack_index,
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+
+
+async def _ensure_legacy_progress_row(
+    db: AsyncSession, user_id: int, skill_id: int
+) -> None:
+    legacy = await _get_legacy_progress(db, user_id, skill_id)
+    if legacy is None:
+        db.add(
+            UserLessonProgressDB(
+                user_id=user_id,
+                skill_id=skill_id,
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
 
 
 async def complete_lesson(
@@ -217,123 +313,104 @@ async def complete_lesson(
     *,
     pack_index: int = 0,
 ) -> dict[str, Any]:
-    skill = (
-        await db.execute(select(LearningSkillDB).where(LearningSkillDB.id == skill_id))
-    ).scalar_one_or_none()
-    if skill is None:
-        raise ValueError("Skill not found")
-
+    await _require_skill(db, skill_id)
     published = await list_published_pack(db, skill_id)
     published_indices = {int(x.pack_index or 0) for x in published}
     idx = int(pack_index)
     if published and idx not in published_indices:
         raise ValueError(f"pack_index {idx} is not published for this skill")
 
-    existing_pack = (
-        await db.execute(
-            select(UserLessonPackProgressDB).where(
-                UserLessonPackProgressDB.user_id == user_id,
-                UserLessonPackProgressDB.skill_id == skill_id,
-                UserLessonPackProgressDB.pack_index == idx,
-            )
-        )
-    ).scalar_one_or_none()
-    if existing_pack is None:
-        db.add(
-            UserLessonPackProgressDB(
-                user_id=user_id,
-                skill_id=skill_id,
-                pack_index=idx,
-                completed_at=datetime.now(timezone.utc),
-            )
-        )
-
+    await _ensure_pack_progress_row(db, user_id, skill_id, idx)
     # Keep legacy skill-level row when pack_index 0 completes (compat).
     if idx == 0:
-        legacy = await _get_legacy_progress(db, user_id, skill_id)
-        if legacy is None:
-            db.add(
-                UserLessonProgressDB(
-                    user_id=user_id,
-                    skill_id=skill_id,
-                    completed_at=datetime.now(timezone.utc),
-                )
-            )
+        await _ensure_legacy_progress_row(db, user_id, skill_id)
 
     await db.flush()
     completed = await _completed_pack_indices(db, user_id, skill_id)
     if compute_pack_completed(
         published_indices=sorted(published_indices), completed_indices=completed
     ):
-        legacy = await _get_legacy_progress(db, user_id, skill_id)
-        if legacy is None:
-            db.add(
-                UserLessonProgressDB(
-                    user_id=user_id,
-                    skill_id=skill_id,
-                    completed_at=datetime.now(timezone.utc),
-                )
-            )
+        await _ensure_legacy_progress_row(db, user_id, skill_id)
 
     await db.commit()
     return await get_lesson_for_user(db, user_id, skill_id)
 
 
-async def list_skills_with_lesson_status(
-    db: AsyncSession, *, cefr_level: str | None = None
-) -> list[dict[str, Any]]:
+async def _load_active_skills(
+    db: AsyncSession, *, cefr_level: str | None
+) -> list[LearningSkillDB]:
     q = select(LearningSkillDB).where(LearningSkillDB.is_active.is_(True))
     if cefr_level:
         q = q.where(LearningSkillDB.cefr_level == cefr_level)
-    skills = list((await db.execute(q.order_by(LearningSkillDB.id))).scalars().all())
-    skill_ids = [int(s.id) for s in skills]
-    lessons_by_skill: dict[int, list[SkillLessonDB]] = {sid: [] for sid in skill_ids}
-    if skill_ids:
-        for row in (
-            await db.execute(
-                select(SkillLessonDB).where(SkillLessonDB.skill_id.in_(skill_ids))
-            )
-        ).scalars().all():
-            lessons_by_skill.setdefault(int(row.skill_id), []).append(row)
+    return list((await db.execute(q.order_by(LearningSkillDB.id))).scalars().all())
 
+
+async def _load_lessons_by_skill(
+    db: AsyncSession, skill_ids: list[int]
+) -> dict[int, list[SkillLessonDB]]:
+    lessons_by_skill: dict[int, list[SkillLessonDB]] = {sid: [] for sid in skill_ids}
+    if not skill_ids:
+        return lessons_by_skill
+    for row in (
+        await db.execute(
+            select(SkillLessonDB).where(SkillLessonDB.skill_id.in_(skill_ids))
+        )
+    ).scalars().all():
+        lessons_by_skill.setdefault(int(row.skill_id), []).append(row)
+    return lessons_by_skill
+
+
+async def _load_quiz_count_maps(
+    db: AsyncSession, skill_ids: list[int]
+) -> tuple[dict[int, int], dict[int, int]]:
     draft_by_skill: dict[int, int] = {}
     published_by_skill: dict[int, int] = {}
-    skills_with_book: set[int] = set()
-    if skill_ids:
-        count_rows = (
-            await db.execute(
-                select(
-                    QuizQuestionDB.skill_id,
-                    QuizQuestionDB.status,
-                    func.count().label("n"),
-                )
-                .where(QuizQuestionDB.skill_id.in_(skill_ids))
-                .group_by(QuizQuestionDB.skill_id, QuizQuestionDB.status)
+    if not skill_ids:
+        return draft_by_skill, published_by_skill
+    count_rows = (
+        await db.execute(
+            select(
+                QuizQuestionDB.skill_id,
+                QuizQuestionDB.status,
+                func.count().label("n"),
             )
-        ).all()
-        for skill_id, status, n in count_rows:
-            sid = int(skill_id)
-            status_val = status.value if hasattr(status, "value") else str(status)
-            if status_val == QuizQuestionStatusEnum.draft.value or status_val == "draft":
-                draft_by_skill[sid] = int(n)
-            elif (
-                status_val == QuizQuestionStatusEnum.published.value
-                or status_val == "published"
-            ):
-                published_by_skill[sid] = int(n)
+            .where(QuizQuestionDB.skill_id.in_(skill_ids))
+            .group_by(QuizQuestionDB.skill_id, QuizQuestionDB.status)
+        )
+    ).all()
+    for skill_id, status, n in count_rows:
+        sid = int(skill_id)
+        status_val = status.value if hasattr(status, "value") else str(status)
+        if status_val == QuizQuestionStatusEnum.draft.value or status_val == "draft":
+            draft_by_skill[sid] = int(n)
+        elif (
+            status_val == QuizQuestionStatusEnum.published.value
+            or status_val == "published"
+        ):
+            published_by_skill[sid] = int(n)
+    return draft_by_skill, published_by_skill
 
-        book_ids = (
-            await db.execute(
-                select(BookSkillSourceDB.skill_id)
-                .where(
-                    BookSkillSourceDB.skill_id.in_(skill_ids),
-                    BookSkillSourceDB.is_excluded.is_(False),
-                )
-                .distinct()
+
+async def _load_skills_with_book(db: AsyncSession, skill_ids: list[int]) -> set[int]:
+    if not skill_ids:
+        return set()
+    book_ids = (
+        await db.execute(
+            select(BookSkillSourceDB.skill_id)
+            .where(
+                BookSkillSourceDB.skill_id.in_(skill_ids),
+                BookSkillSourceDB.is_excluded.is_(False),
             )
-        ).scalars().all()
-        skills_with_book = {int(sid) for sid in book_ids}
+            .distinct()
+        )
+    ).scalars().all()
+    return {int(sid) for sid in book_ids}
 
+
+def _base_skill_rows(
+    skills: list[LearningSkillDB],
+    lessons_by_skill: dict[int, list[SkillLessonDB]],
+) -> list[dict[str, Any]]:
     base: list[dict[str, Any]] = []
     for skill in skills:
         lessons = lessons_by_skill.get(int(skill.id), [])
@@ -354,6 +431,18 @@ async def list_skills_with_lesson_status(
                 "pack_published_count": published_n,
             }
         )
+    return base
+
+
+async def list_skills_with_lesson_status(
+    db: AsyncSession, *, cefr_level: str | None = None
+) -> list[dict[str, Any]]:
+    skills = await _load_active_skills(db, cefr_level=cefr_level)
+    skill_ids = [int(s.id) for s in skills]
+    lessons_by_skill = await _load_lessons_by_skill(db, skill_ids)
+    draft_by_skill, published_by_skill = await _load_quiz_count_maps(db, skill_ids)
+    skills_with_book = await _load_skills_with_book(db, skill_ids)
+    base = _base_skill_rows(skills, lessons_by_skill)
     return attach_quiz_book_badges(
         base,
         draft_by_skill=draft_by_skill,
