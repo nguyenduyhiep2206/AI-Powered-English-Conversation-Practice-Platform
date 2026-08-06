@@ -39,6 +39,7 @@ from app.services.skill_drill_align import (
     expand_surfaces,
 )
 from app.services.skill_drill_blueprint import blueprint_for_skill_drill
+from app.services.skill_drill_verifier import verify_skill_drill_items
 
 SYSTEM_PROMPT = """You are an expert TOEIC Reading (RC) item writer.
 Write items ONLY from the provided textbook EXCERPT (business/workplace English tone like official TOEIC RC).
@@ -910,6 +911,11 @@ def _request_skill_drill_items(
                     f"Skill-drill alignment too low ({last_ratio:.2f} < "
                     f"{_SKILL_DRILL_ALIGN_MIN}). Regenerate or fix lesson targets."
                 )
+        validated = verify_skill_drill_items(
+            validated,
+            skill_title=str(skill.title or ""),
+            cefr=cefr_s,
+        )
         if len(validated) > len(best):
             best = validated
         if len(best) >= count:
