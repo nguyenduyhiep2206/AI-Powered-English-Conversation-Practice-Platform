@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import type {
@@ -9,6 +9,7 @@ import type {
   WritingFeedback,
 } from "@/lib/lesson";
 import { requestWritingFeedback } from "@/lib/lesson";
+import { cn } from "@/lib/utils";
 
 type Step =
   | "hook"
@@ -29,17 +30,37 @@ type Props = {
   /** Compact title/objective header for PracticeShell (no modal title bar). */
   embedded?: boolean;
   packIndex?: number;
+  /** Display-ready label, e.g. "Part 2/3" or "Review". */
   packLabel?: string | null;
+  /** When true, show step jumper for review navigation (no auto-finish). */
+  reviewMode?: boolean;
+  onStepChange?: (info: { step: Step; index: number; total: number }) => void;
+  /** Called when learner presses Back on the first mini-unit step (e.g. previous pack). */
+  onBackFromStart?: () => void;
 };
 
 const PRIMARY_BTN =
   "h-11 w-full rounded-2xl bg-[#FF8A6B] font-semibold text-white hover:bg-[#F47A5A]";
 
+const SECONDARY_BTN =
+  "h-11 w-full rounded-2xl border border-[#EDE6E0] bg-white font-semibold text-[#2A2438] hover:bg-[#FFF0E8]";
+
 const PANEL =
   "space-y-5 rounded-[1.75rem] border border-[#EDE6E0] bg-white p-6 shadow-[0_12px_40px_rgba(42,36,56,0.04)]";
 
 const EYEBROW =
-  "text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#8A8396]";
+  "text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]";
+
+const STEP_LABEL: Record<Step, string> = {
+  hook: "Hook",
+  notice: "Notice",
+  form: "Form",
+  meaning: "Meaning",
+  check: "Check",
+  write: "Write",
+  feedback: "Feedback",
+  exit: "Exit check",
+};
 
 function buildStepOrder(content: LessonContent): Step[] {
   const steps: Step[] = [];
@@ -54,6 +75,76 @@ function buildStepOrder(content: LessonContent): Step[] {
   return steps;
 }
 
+function StepActions({
+  onBack,
+  children,
+}: {
+  onBack?: () => void;
+  children: ReactNode;
+}) {
+  if (!onBack) return <>{children}</>;
+  return (
+    <div className="grid gap-2 sm:grid-cols-2">
+      <Button
+        type="button"
+        size="lg"
+        variant="outline"
+        className={SECONDARY_BTN}
+        onClick={onBack}
+      >
+        Back
+      </Button>
+      {children}
+    </div>
+  );
+}
+
+/** Keeps passage + targets visible during Check / Write (Memory Bridge). */
+function LessonContextStrip({ content }: { content: LessonContent }) {
+  const [open, setOpen] = useState(true);
+  const passage = content.passage?.text?.trim() ?? "";
+  const targets = content.targets ?? [];
+  if (!passage && targets.length === 0) return null;
+
+  return (
+    <div className="rounded-2xl border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3 ring-1 ring-[#2A2438]/04">
+      <button
+        type="button"
+        className="flex w-full items-center justify-between gap-3 text-left text-[0.8125rem] font-medium text-[#5C5468] cursor-pointer"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span>Lesson reference</span>
+        <span className="text-[#7B6EF6]">{open ? "Hide" : "Show"}</span>
+      </button>
+      {open ? (
+        <div className="mt-3 space-y-3">
+          {passage ? (
+            <p className="max-h-36 overflow-y-auto whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#2A2438]">
+              {passage}
+            </p>
+          ) : null}
+          {targets.length > 0 ? (
+            <ul className="flex flex-wrap gap-1.5">
+              {targets.map((t) => (
+                <li
+                  key={t.surface}
+                  className="rounded-[10px] border border-[#EDE6E0] bg-white px-2.5 py-1 text-[0.75rem] text-[#2A2438]"
+                >
+                  <span className="font-medium">{t.surface}</span>
+                  {t.gloss ? (
+                    <span className="text-[#6B6478]"> — {t.gloss}</span>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function CheckPanel({
   label,
   check,
@@ -62,6 +153,7 @@ function CheckPanel({
   onAnswer,
   onReveal,
   onContinue,
+  onBack,
 }: {
   label: string;
   check: LessonCheck;
@@ -70,6 +162,7 @@ function CheckPanel({
   onAnswer: (v: string) => void;
   onReveal: () => void;
   onContinue: () => void;
+  onBack?: () => void;
 }) {
   const correct =
     answer.trim().toLowerCase() === check.answer.trim().toLowerCase();
@@ -111,7 +204,7 @@ function CheckPanel({
           disabled={revealed}
           onChange={(e) => onAnswer(e.target.value)}
           placeholder="Your answer"
-          className="h-11 rounded-[12px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#8A8396] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
+          className="h-11 rounded-[12px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#6B6478] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
         />
       )}
 
@@ -124,20 +217,29 @@ function CheckPanel({
           >
             {correct ? "Correct" : `Answer: ${check.answer}`}
           </p>
-          <Button type="button" size="lg" className={PRIMARY_BTN} onClick={onContinue}>
-            Continue
-          </Button>
+          <StepActions onBack={onBack}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={onContinue}
+            >
+              Continue
+            </Button>
+          </StepActions>
         </div>
       ) : (
-        <Button
-          type="button"
-          size="lg"
-          className={PRIMARY_BTN}
-          disabled={!answer.trim()}
-          onClick={onReveal}
-        >
-          Check
-        </Button>
+        <StepActions onBack={onBack}>
+          <Button
+            type="button"
+            size="lg"
+            className={PRIMARY_BTN}
+            disabled={!answer.trim()}
+            onClick={onReveal}
+          >
+            Check
+          </Button>
+        </StepActions>
       )}
     </div>
   );
@@ -152,9 +254,26 @@ export default function LessonMiniUnit({
   embedded = false,
   packIndex,
   packLabel,
+  reviewMode = false,
+  onStepChange,
+  onBackFromStart,
 }: Props) {
   const order = buildStepOrder(content);
   const [step, setStep] = useState<Step>(order[0] ?? "notice");
+
+  function reportStep(next: Step) {
+    onStepChange?.({
+      step: next,
+      index: order.indexOf(next),
+      total: order.length,
+    });
+  }
+
+  useEffect(() => {
+    reportStep(order[0] ?? "notice");
+    // Report initial step once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [checkIndex, setCheckIndex] = useState(0);
   const [checkAnswer, setCheckAnswer] = useState("");
   const [checkRevealed, setCheckRevealed] = useState(false);
@@ -167,9 +286,25 @@ export default function LessonMiniUnit({
 
   const checks = content.checks ?? [];
   const currentCheck: LessonCheck | undefined = checks[checkIndex];
+  const stepPos = Math.max(0, order.indexOf(step));
+  const canGoBack =
+    stepPos > 0 ||
+    (step === "check" && checkIndex > 0) ||
+    Boolean(onBackFromStart);
+  const showContextStrip =
+    step === "check" ||
+    step === "write" ||
+    step === "feedback" ||
+    step === "exit";
 
   function goTo(next: Step) {
     setStep(next);
+    reportStep(next);
+  }
+
+  function resetCheckDraft() {
+    setCheckAnswer("");
+    setCheckRevealed(false);
   }
 
   function advanceFrom(current: Step) {
@@ -187,9 +322,30 @@ export default function LessonMiniUnit({
     goTo(next);
   }
 
+  function goBack() {
+    if (step === "check" && checkIndex > 0) {
+      setCheckIndex((i) => i - 1);
+      resetCheckDraft();
+      return;
+    }
+
+    const i = order.indexOf(step);
+    if (i <= 0) {
+      onBackFromStart?.();
+      return;
+    }
+    const prev = order[i - 1];
+
+    if (prev === "check" && checks.length > 0) {
+      setCheckIndex(checks.length - 1);
+      resetCheckDraft();
+    }
+
+    goTo(prev);
+  }
+
   function goNextAfterCheck() {
-    setCheckAnswer("");
-    setCheckRevealed(false);
+    resetCheckDraft();
     if (checkIndex + 1 >= checks.length) {
       goTo("write");
       return;
@@ -201,7 +357,11 @@ export default function LessonMiniUnit({
     setWritingBusy(true);
     setWritingError(null);
     try {
-      const result = await requestWritingFeedback(skillId, writingText, packIndex);
+      const result = await requestWritingFeedback(
+        skillId,
+        writingText,
+        packIndex,
+      );
       setFeedback(result);
       goTo("feedback");
     } catch (err) {
@@ -219,26 +379,29 @@ export default function LessonMiniUnit({
     onFinished();
   }
 
+  const backHandler = canGoBack ? goBack : undefined;
+  const progressLabel = `${STEP_LABEL[step]} · ${stepPos + 1} of ${order.length}`;
+
   return (
     <section className="space-y-6 text-[#2A2438]">
       {embedded ? (
         <div className="mb-5 border-b border-[#EDE6E0] pb-4">
           {packLabel ? (
-            <p className="text-[0.75rem] font-medium text-[#FF8A6B]">
-              Part {packLabel}
+            <p className="text-[0.75rem] font-medium text-[#C45D42]">
+              {packLabel}
             </p>
           ) : null}
-          <h2 className="text-[1.25rem] font-semibold tracking-tight text-[#2A2438]">
-            {title}
-          </h2>
           {objective ? (
-            <p className="mt-1 text-[0.875rem] text-[#8A8396]">{objective}</p>
+            <p className="mt-1 text-[0.875rem] text-[#6B6478]">{objective}</p>
           ) : null}
+          <p className="mt-2 text-[0.75rem] font-medium text-[#6B6478]">
+            {progressLabel}
+          </p>
         </div>
       ) : (
         <div>
           <p className={EYEBROW}>
-            Learn{packLabel ? ` · ${packLabel}` : ""} · {step}
+            Learn{packLabel ? ` · ${packLabel}` : ""} · {progressLabel}
           </p>
           <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
             {title}
@@ -251,20 +414,60 @@ export default function LessonMiniUnit({
         </div>
       )}
 
+      {reviewMode ? (
+        <div
+          className="flex flex-wrap gap-1.5"
+          role="navigation"
+          aria-label="Lesson steps"
+        >
+          {order.map((s) => {
+            const disabled = s === "feedback" && !feedback;
+            const active = s === step;
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={disabled}
+                onClick={() => {
+                  if (s === "check") {
+                    setCheckIndex(0);
+                    resetCheckDraft();
+                  }
+                  goTo(s);
+                }}
+                className={cn(
+                  "rounded-2xl px-2.5 py-1.5 text-[0.75rem] font-medium ring-1",
+                  active
+                    ? "bg-[#FFF0E8] text-[#C45D42] ring-[#FF8A6B]/35"
+                    : "bg-white text-[#6B6478] ring-[#EDE6E0]",
+                  disabled && "opacity-40",
+                )}
+              >
+                {STEP_LABEL[s]}
+              </button>
+            );
+          })}
+        </div>
+      ) : null}
+
+      {showContextStrip ? <LessonContextStrip content={content} /> : null}
+
       {step === "hook" && content.hook ? (
         <div className={PANEL}>
           <p className={EYEBROW}>Hook</p>
           <p className="text-[0.9375rem] leading-relaxed text-[#2A2438]">
             {content.hook}
           </p>
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            onClick={() => advanceFrom("hook")}
-          >
-            Continue
-          </Button>
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={() => advanceFrom("hook")}
+            >
+              Continue
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
@@ -277,14 +480,16 @@ export default function LessonMiniUnit({
           <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed text-[#2A2438]">
             {content.passage.text}
           </p>
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            onClick={() => advanceFrom("notice")}
-          >
-            Continue
-          </Button>
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={() => advanceFrom("notice")}
+            >
+              Continue
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
@@ -305,25 +510,34 @@ export default function LessonMiniUnit({
               </thead>
               <tbody>
                 {content.form.rows.map((row, i) => (
-                  <tr key={`${row.pattern}-${i}`} className="border-b border-[#EDE6E0]/70">
-                    <td className="py-2.5 pr-3 text-[#6B6478]">{row.label || "—"}</td>
+                  <tr
+                    key={`${row.pattern}-${i}`}
+                    className="border-b border-[#EDE6E0]/70"
+                  >
+                    <td className="py-2.5 pr-3 text-[#6B6478]">
+                      {row.label || "—"}
+                    </td>
                     <td className="py-2.5 pr-3 font-medium text-[#2A2438]">
                       {row.pattern}
                     </td>
-                    <td className="py-2.5 text-[#2A2438]">{row.example || "—"}</td>
+                    <td className="py-2.5 text-[#2A2438]">
+                      {row.example || "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            onClick={() => advanceFrom("form")}
-          >
-            Continue
-          </Button>
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={() => advanceFrom("form")}
+            >
+              Continue
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
@@ -346,14 +560,16 @@ export default function LessonMiniUnit({
               );
             })}
           </ul>
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            onClick={() => advanceFrom("meaning")}
-          >
-            Continue
-          </Button>
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={() => advanceFrom("meaning")}
+            >
+              Continue
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
@@ -366,6 +582,7 @@ export default function LessonMiniUnit({
           onAnswer={setCheckAnswer}
           onReveal={() => setCheckRevealed(true)}
           onContinue={goNextAfterCheck}
+          onBack={backHandler}
         />
       ) : null}
 
@@ -380,7 +597,7 @@ export default function LessonMiniUnit({
             </p>
           ) : null}
           <textarea
-            className="min-h-[140px] w-full rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem] text-[#2A2438] outline-none placeholder:text-[#8A8396] focus:border-[#FF8A6B]"
+            className="min-h-[140px] w-full rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem] text-[#2A2438] outline-none placeholder:text-[#6B6478] focus:border-[#FF8A6B]"
             value={writingText}
             onChange={(e) => setWritingText(e.target.value)}
             placeholder="Write in English…"
@@ -390,47 +607,93 @@ export default function LessonMiniUnit({
               {writingError}
             </p>
           ) : null}
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            disabled={writingBusy || !writingText.trim()}
-            onClick={() => void submitWriting()}
-          >
-            {writingBusy ? "Getting feedback…" : "Get feedback"}
-          </Button>
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              disabled={writingBusy || !writingText.trim()}
+              onClick={() => void submitWriting()}
+            >
+              {writingBusy ? "Getting feedback…" : "Get feedback"}
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
       {step === "feedback" && feedback ? (
         <div className={PANEL}>
           <div>
+            <p className={EYEBROW}>Your task</p>
+            <p className="mt-2 text-[0.9375rem] font-medium leading-relaxed text-[#2A2438]">
+              {content.writing.prompt}
+            </p>
+            {content.writing.must_use?.length ? (
+              <p className="mt-2 text-[0.875rem] text-[#6B6478]">
+                Try to use: {content.writing.must_use.join(", ")}
+              </p>
+            ) : null}
+          </div>
+
+          <div>
             <p className={EYEBROW}>Your writing</p>
             <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#6B6478]">
               {feedback.original}
             </p>
           </div>
+
           <div>
-            <p className={EYEBROW}>Suggested</p>
+            <p className={EYEBROW}>
+              {feedback.usable === false ? "Example answer" : "Suggested rewrite"}
+            </p>
             <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#2A2438]">
               {feedback.corrected}
             </p>
           </div>
+
           {feedback.notes.length ? (
-            <ul className="list-disc space-y-1 pl-5 text-[0.875rem] text-[#6B6478]">
-              {feedback.notes.map((note) => (
-                <li key={note}>{note}</li>
-              ))}
-            </ul>
+            <div>
+              <p className={EYEBROW}>Coach notes</p>
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-[0.875rem] text-[#6B6478]">
+                {feedback.notes.map((note) => (
+                  <li key={note}>{note}</li>
+                ))}
+              </ul>
+            </div>
           ) : null}
-          <Button
-            type="button"
-            size="lg"
-            className={PRIMARY_BTN}
-            onClick={finishAfterFeedback}
-          >
-            {content.exit_check ? "One more check" : "Continue to practice"}
-          </Button>
+
+          {content.form?.rows?.length ? (
+            <div className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3">
+              <p className={EYEBROW}>Remember</p>
+              <ul className="mt-2 space-y-1.5 text-[0.8125rem] leading-relaxed text-[#5C5468]">
+                {content.form.rows.slice(0, 4).map((row, i) => (
+                  <li key={`${row.pattern}-${i}`}>
+                    {row.label ? (
+                      <span className="font-medium text-[#2A2438]">
+                        {row.label}
+                        {": "}
+                      </span>
+                    ) : null}
+                    <span>{row.pattern}</span>
+                    {row.example ? (
+                      <span className="text-[#6B6478]"> — {row.example}</span>
+                    ) : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+
+          <StepActions onBack={backHandler}>
+            <Button
+              type="button"
+              size="lg"
+              className={PRIMARY_BTN}
+              onClick={finishAfterFeedback}
+            >
+              {content.exit_check ? "One more check" : "Continue to practice"}
+            </Button>
+          </StepActions>
         </div>
       ) : null}
 
@@ -443,6 +706,7 @@ export default function LessonMiniUnit({
           onAnswer={setExitAnswer}
           onReveal={() => setExitRevealed(true)}
           onContinue={onFinished}
+          onBack={backHandler}
         />
       ) : null}
     </section>

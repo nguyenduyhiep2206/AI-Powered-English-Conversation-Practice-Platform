@@ -1,16 +1,17 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { Loader2 } from "lucide-react";
 import LessonMiniUnit from "@/components/lesson/LessonMiniUnit";
 import { PracticeShell } from "@/components/practice/PracticeShell";
 import { QaDock } from "@/components/practice/QaDock";
 import { QuizCard } from "@/components/practice/QuizCard";
-import type { StepChip } from "@/components/practice/StepChips";
+import type { StepChip, StepChipId } from "@/components/practice/StepChips";
 import {
   completeSkillLesson,
   fetchSkillLesson,
+  type SkillLesson,
   type SkillLessonResponse,
 } from "@/lib/lesson";
 import {
@@ -18,6 +19,7 @@ import {
   submitQuizAnswer,
   type SkillQuizQuestion,
 } from "@/lib/quiz";
+import { cn } from "@/lib/utils";
 
 const MASTERY_PASS = 0.7;
 
@@ -30,6 +32,7 @@ export default function PracticeSkillPage() {
 
   const [phase, setPhase] = useState<Phase>("practice");
   const [lessonMeta, setLessonMeta] = useState<SkillLessonResponse | null>(null);
+  const [viewPackIndex, setViewPackIndex] = useState(0);
   const [questions, setQuestions] = useState<SkillQuizQuestion[]>([]);
   const [index, setIndex] = useState(0);
   const [answer, setAnswer] = useState("");
@@ -43,6 +46,7 @@ export default function PracticeSkillPage() {
     explanation: string | null;
   } | null>(null);
   const [mastery, setMastery] = useState<number | null>(null);
+  const [learnStepIndex, setLearnStepIndex] = useState(0);
 
   const loadPractice = useCallback(async () => {
     const qs = await fetchSkillQuestions(skillId, 5);
@@ -69,6 +73,15 @@ export default function PracticeSkillPage() {
     }
   }, [loadPractice, questions.length]);
 
+  const syncViewPack = useCallback((meta: SkillLessonResponse) => {
+    const fromLesson = meta.lesson?.pack_index;
+    if (typeof fromLesson === "number") {
+      setViewPackIndex(fromLesson);
+      return;
+    }
+    setViewPackIndex(0);
+  }, []);
+
   const load = useCallback(async () => {
     if (!Number.isFinite(skillId) || skillId <= 0) {
       setError("Invalid skill");
@@ -84,6 +97,7 @@ export default function PracticeSkillPage() {
       const lesson = await fetchSkillLesson(skillId);
       setLessonMeta(lesson);
       setMastery(lesson.mastery);
+      syncViewPack(lesson);
       const startLearn = lesson.learn_available && !lesson.can_skip;
       setPhase(startLearn ? "learn" : "practice");
       if (!startLearn) {
@@ -94,31 +108,83 @@ export default function PracticeSkillPage() {
     } finally {
       setLoading(false);
     }
-  }, [skillId, loadPractice]);
+  }, [skillId, loadPractice, syncViewPack]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const packList: SkillLesson[] = useMemo(() => {
+    if (lessonMeta?.pack?.length) {
+      return [...lessonMeta.pack].sort(
+        (a, b) => (a.pack_index ?? 0) - (b.pack_index ?? 0),
+      );
+    }
+    return lessonMeta?.lesson ? [lessonMeta.lesson] : [];
+  }, [lessonMeta]);
+
+  const packTotal = lessonMeta?.pack_total ?? packList.length;
+  const currentProgressIndex = lessonMeta?.lesson?.pack_index ?? 0;
+  const learnDone = Boolean(lessonMeta?.lesson_completed || lessonMeta?.can_skip);
+  const reviewingLearn = phase === "learn" && learnDone;
+
+  const canViewPack = useCallback(
+    (packIdx: number) => {
+      if (!packList.some((p) => (p.pack_index ?? 0) === packIdx)) return false;
+      if (learnDone) return true;
+      return packIdx <= currentProgressIndex;
+    },
+    [packList, learnDone, currentProgressIndex],
+  );
+
+  const displayedLesson =
+    packList.find((p) => (p.pack_index ?? 0) === viewPackIndex) ??
+    lessonMeta?.lesson ??
+    null;
+
+  const viewingPastPack =
+    phase === "learn" &&
+    displayedLesson != null &&
+    (displayedLesson.pack_index ?? 0) < currentProgressIndex &&
+    !learnDone;
+
   const current = questions[index];
   const masteryPct = mastery != null ? Math.round(mastery * 100) : null;
   const readyToComplete = mastery != null && mastery >= MASTERY_PASS;
-  const learnDone = Boolean(lessonMeta?.lesson_completed || lessonMeta?.can_skip);
-  const hasLearn = Boolean(lessonMeta?.learn_available && lessonMeta.lesson);
+  const hasLearn = Boolean(lessonMeta?.learn_available && packList.length > 0);
 
   async function handleLessonFinished() {
+    if (reviewingLearn || viewingPastPack) {
+      const nextIdx = viewPackIndex + 1;
+      if (canViewPack(nextIdx)) {
+        setViewPackIndex(nextIdx);
+        setLearnStepIndex(0);
+        return;
+      }
+      setPhase("practice");
+      if (questions.length === 0) {
+        setLoading(true);
+        try {
+          await loadPractice();
+        } finally {
+          setLoading(false);
+        }
+      }
+      return;
+    }
+
     setCompletingLesson(true);
     setError(null);
     try {
-      const packIndex = lessonMeta?.lesson?.pack_index ?? 0;
+      const packIndex = displayedLesson?.pack_index ?? viewPackIndex;
       const updated = await completeSkillLesson(skillId, packIndex);
       setLessonMeta(updated);
+      syncViewPack(updated);
       if (updated.lesson_completed || updated.can_skip) {
         setPhase("practice");
         setLoading(true);
         await loadPractice();
       } else {
-        // More micro-lessons remain in the pack — stay on Learn.
         setPhase("learn");
       }
     } catch (err) {
@@ -158,20 +224,78 @@ export default function PracticeSkillPage() {
     setIndex((i) => i + 1);
   }
 
+  function openLearnAtPack(packIdx: number) {
+    if (!canViewPack(packIdx)) return;
+    setViewPackIndex(packIdx);
+    setLearnStepIndex(0);
+    setPhase("learn");
+  }
+
+  function goPrevPack() {
+    const prev = viewPackIndex - 1;
+    if (canViewPack(prev)) {
+      setViewPackIndex(prev);
+      setLearnStepIndex(0);
+    }
+  }
+
   const showReviewLearn =
     phase === "practice" &&
     lessonMeta?.learn_available &&
-    lessonMeta.lesson != null;
+    packList.length > 0;
+
+  const packCompleted = lessonMeta?.pack_completed_count ?? 0;
+  const currentPackPart = Math.min(viewPackIndex + 1, Math.max(packTotal, 1));
+  const learnPackDetail =
+    packTotal > 1
+      ? reviewingLearn
+        ? "Review"
+        : `${packCompleted}/${packTotal}`
+      : undefined;
+  const lessonPackLabel =
+    packTotal > 1
+      ? reviewingLearn
+        ? `Review · Part ${currentPackPart}/${packTotal}`
+        : `Part ${currentPackPart}/${packTotal}`
+      : null;
+
+  const shellTitle =
+    lessonMeta?.skill_title?.trim() ||
+    displayedLesson?.title ||
+    "This week";
+
+  function handleStepSelect(id: StepChipId) {
+    if (id === "learn") {
+      if (hasLearn) {
+        openLearnAtPack(learnDone ? 0 : currentProgressIndex);
+      }
+      return;
+    }
+    if (id === "practice") {
+      if (phase === "practice") return;
+      if (lessonMeta?.can_skip || learnDone) {
+        void openPractice();
+      }
+      return;
+    }
+    if (id === "path") {
+      router.push("/dashboard");
+    }
+  }
+
+  const selectableStepIds: StepChipId[] = [];
+  if (hasLearn && phase !== "learn") selectableStepIds.push("learn");
+  if (phase !== "practice" && (lessonMeta?.can_skip || learnDone)) {
+    selectableStepIds.push("practice");
+  }
+  selectableStepIds.push("path");
 
   const steps: StepChip[] = hasLearn
     ? [
         {
           id: "learn",
           label: "Learn",
-          detail:
-            lessonMeta?.pack_total && lessonMeta.pack_total > 1
-              ? `${lessonMeta.pack_completed_count ?? 0}/${lessonMeta.pack_total}`
-              : undefined,
+          detail: learnPackDetail,
           state:
             phase === "learn" ? "active" : learnDone ? "done" : "upcoming",
         },
@@ -199,13 +323,18 @@ export default function PracticeSkillPage() {
         },
       ];
 
+  const showPackNav = phase === "learn" && packTotal > 1;
+
   return (
     <PracticeShell
-      title={lessonMeta?.lesson?.title ?? "This week"}
+      title={shellTitle}
+      lessonTitle={displayedLesson?.title ?? null}
       masteryPct={masteryPct}
       readyToComplete={readyToComplete}
       steps={steps}
       showSteps={hasLearn || questions.length > 0 || phase === "practice"}
+      onStepSelect={handleStepSelect}
+      selectableStepIds={selectableStepIds}
       phase={phase === "learn" ? "learn" : "practice"}
       loading={loading}
       loadingLabel={
@@ -224,8 +353,8 @@ export default function PracticeSkillPage() {
           {showReviewLearn ? (
             <button
               type="button"
-              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8]"
-              onClick={() => setPhase("learn")}
+              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8] cursor-pointer"
+              onClick={() => openLearnAtPack(0)}
             >
               Review lesson
             </button>
@@ -233,33 +362,68 @@ export default function PracticeSkillPage() {
           {phase === "learn" && lessonMeta?.can_skip ? (
             <button
               type="button"
-              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8]"
+              className="mb-4 mr-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8] cursor-pointer"
               onClick={() => void openPractice()}
             >
               Skip to practice
             </button>
           ) : null}
+          {showPackNav ? (
+            <nav
+              aria-label="Lesson pack"
+              className="mb-4 flex flex-wrap items-center gap-2"
+            >
+              {packList.map((p) => {
+                const idx = p.pack_index ?? 0;
+                const active = idx === viewPackIndex;
+                const enabled = canViewPack(idx);
+                return (
+                  <button
+                    key={`${p.id}-${idx}`}
+                    type="button"
+                    disabled={!enabled}
+                    onClick={() => openLearnAtPack(idx)}
+                    className={cn(
+                      "inline-flex min-h-9 items-center rounded-2xl px-3 text-[0.75rem] font-medium ring-1 transition-colors",
+                      active &&
+                        "bg-[#FFF0E8] text-[#C45D42] ring-[#FF8A6B]/35",
+                      !active &&
+                        enabled &&
+                        "bg-white text-[#6B6478] ring-[#EDE6E0] hover:ring-[#FF8A6B]/40 cursor-pointer",
+                      !enabled &&
+                        "bg-white/60 text-[#B0A9B8] ring-[#EDE6E0] opacity-70",
+                    )}
+                  >
+                    Lesson {idx + 1}
+                  </button>
+                );
+              })}
+            </nav>
+          ) : null}
         </>
       }
       lesson={
-        phase === "learn" && lessonMeta?.lesson ? (
+        phase === "learn" && displayedLesson ? (
           completingLesson ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-[#8A8396]">
+            <div className="flex items-center justify-center gap-2 py-16 text-[#6B6478]">
               <Loader2 className="h-5 w-5 animate-spin" />
               Saving progress…
             </div>
           ) : (
             <LessonMiniUnit
-              key={`${lessonMeta.lesson.id}-${lessonMeta.lesson.pack_index ?? 0}`}
+              key={`${displayedLesson.id}-${displayedLesson.pack_index ?? 0}`}
               skillId={skillId}
-              title={lessonMeta.lesson.title}
-              objective={lessonMeta.lesson.objective}
-              content={lessonMeta.lesson.content}
-              packIndex={lessonMeta.lesson.pack_index ?? 0}
-              packLabel={
-                lessonMeta.pack_total && lessonMeta.pack_total > 1
-                  ? `${(lessonMeta.pack_completed_count ?? 0) + 1}/${lessonMeta.pack_total}`
-                  : null
+              title={displayedLesson.title}
+              objective={displayedLesson.objective}
+              content={displayedLesson.content}
+              packIndex={displayedLesson.pack_index ?? viewPackIndex}
+              packLabel={lessonPackLabel}
+              reviewMode={reviewingLearn || viewingPastPack}
+              onStepChange={({ index: stepIndex }) =>
+                setLearnStepIndex(stepIndex)
+              }
+              onBackFromStart={
+                canViewPack(viewPackIndex - 1) ? goPrevPack : undefined
               }
               onFinished={() => void handleLessonFinished()}
               embedded
@@ -296,10 +460,11 @@ export default function PracticeSkillPage() {
         ) : null
       }
       qa={
-        phase === "learn" && lessonMeta?.lesson && !completingLesson ? (
+        phase === "learn" && displayedLesson && !completingLesson ? (
           <QaDock
             skillId={skillId}
-            lessonTitle={lessonMeta.lesson.title}
+            lessonTitle={displayedLesson.title}
+            showSuggestions={learnStepIndex > 0}
           />
         ) : null
       }
