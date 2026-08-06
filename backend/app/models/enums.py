@@ -107,6 +107,9 @@ class QuizQuestionTypeEnum(str, enum.Enum):
     cloze = "cloze"
     fix_grammar = "fix_grammar"
     writing = "writing"
+    sentence_build = "sentence_build"
+    matching = "matching"
+    multi_select = "multi_select"
 
 
 class QuizQuestionStatusEnum(str, enum.Enum):
