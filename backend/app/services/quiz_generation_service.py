@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import uuid
+from collections import Counter
 from difflib import SequenceMatcher
 from typing import Any
 
@@ -33,6 +34,7 @@ from app.services.cefr_descriptors import (
     passage_length_range,
 )
 from app.services.llm_client import chat_json
+from app.services.quiz_grade import canonicalize_matching_answer
 from app.services.skill_drill_align import (
     align_score,
     batch_align_ratio,
@@ -83,7 +85,27 @@ an unrelated corporate story with zero words from the EXCERPT.
 _ALLOWED_READING_TYPES = {"mcq"}
 _ALLOWED_TOEIC_PARTS = {"r5", "r6", "r7"}
 _LEGACY_REJECTED_TYPES = {"cloze", "fix_grammar"}
-_ALLOWED_SKILL_DRILL_TYPES = {"mcq", "cloze", "fix_grammar"}
+_ALLOWED_SKILL_DRILL_TYPES = {
+    "mcq",
+    "cloze",
+    "fix_grammar",
+    "sentence_build",
+    "matching",
+    "multi_select",
+}
+_SKILL_DRILL_KIND_TYPE: dict[str, str] = {
+    "form_choose": "mcq",
+    "contrast": "mcq",
+    "paraphrase": "mcq",
+    "reading_target": "mcq",
+    "dialogue_complete": "mcq",
+    "spot_error": "mcq",
+    "cloze_form": "cloze",
+    "fix_grammar": "fix_grammar",
+    "sentence_build": "sentence_build",
+    "matching": "matching",
+    "multi_select": "multi_select",
+}
 _SKILL_DRILL_ALIGN_MIN = 0.8
 
 SKILL_DRILL_SYSTEM_PROMPT = """You are an ESL skill-drill item writer (English→English).
@@ -91,25 +113,96 @@ Write practice items that train ONE skill's target forms/words — NOT TOEIC Par
 unless item_kind is reading_target.
 
 Return JSON: {{"questions":[...]}} with fields per item:
-type (mcq|cloze|fix_grammar), item_kind (from blueprint),
-stem, options (mcq: exactly 4 strings; cloze: 0–4 optional hints; fix_grammar: []),
-answer (exact correct string), explanation (short English),
+type (mcq|cloze|fix_grammar|sentence_build|matching|multi_select),
+item_kind (from blueprint),
+stem, options, answer (exact correct string), explanation (short English),
 difficulty (easy|medium|hard), passage (optional short context; usually null),
 toeic_part (omit / null).
 
-Item kinds:
-- form_choose (mcq): choose the correct form for a blank or short prompt.
-- cloze_form (cloze): stem has a blank; answer is the missing word/phrase.
-- fix_grammar (fix_grammar): stem is a wrong sentence; answer is the corrected sentence.
-- contrast (mcq): choose which form fits (am/is/are, a/an, etc.).
-- paraphrase (mcq): meaning/paraphrase of a target.
-- reading_target (mcq): short mini-passage OK; still must use a target surface.
+Item kinds (legacy + new):
+- form_choose (mcq): ONE incomplete sentence with a blank _______ (TOEIC Part 5 style).
+  options: exactly 4 short strings (word / word-form); answer must match one option.
+  Stem = the sentence only — do NOT add "Choose the correct answer" (the app shows Directions).
+  Good: "Tom _______ a book in the garden right now."
+  Bad: picture/photo cues. Bad: multi-sentence stems.
+- cloze_form (cloze): stem has ONE blank AND a parenthetical BASE-FORM cue
+  immediately after the blank (dictionary / infinitive form, no "to").
+  Learner TYPES the correct inflected form — options MUST be [].
+  Example: {{"type":"cloze","item_kind":"cloze_form",
+  "stem":"Tom __________(read) a book in the garden right now.",
+  "options":[],"answer":"is reading",
+  "explanation":"Present continuous: be + -ing for now."}}
+  Bad: blank with no (lemma). Bad: options with multiple choices (that is form_choose/mcq).
+  Bad: "Look at the picture" — no images; naming a person in the sentence is fine.
+- fix_grammar (fix_grammar): stem is ONLY the wrong sentence (no "Fix this:" prefix);
+  answer is the corrected sentence. options: [].
+  Prefer a normal period at the end. Do NOT require semicolon (;) as the only fix —
+  focus on the grammar error (tense/form), not punctuation style.
+- contrast (mcq): blank sentence; choose which form fits (am/is/are, a/an, etc.).
+- paraphrase (mcq): clear QUESTION stem like Part 7, e.g.
+  "Which option means nearly the same as: 'She is reading now.'?"
+- reading_target (mcq): optional short passage; stem is a clear comprehension question
+  (purpose / detail / inference), e.g. "What is the purpose of the notice?"
+- spot_error (mcq): stem is ONE sentence that contains EXACTLY ONE real English error.
+  options: exactly 4 strings — the four underlined candidates (each MUST appear in the stem).
+  answer: the option that is WRONG (the error). The other three options must be correct in context.
+  explanation: required; format "Error: … / Correct: … / Why: …"
+
+  Good: {{"type":"mcq","item_kind":"spot_error",
+  "stem":"My father work in an office, but today he is staying at home.",
+  "options":["work","in an office","is staying","at home"],
+  "answer":"work",
+  "explanation":"Error: work / Correct: works / Why: 3rd person singular Present Simple needs -s."}}
+
+  Bad (REJECT): marking a correct habit+now contrast as an error —
+  "My father works in an office, but today he is staying at home." with answer "works"
+  (works = habit; is staying = temporary today — BOTH correct; do not use as spot_error).
+  Bad (REJECT): reverse order also correct —
+  "My sister is drinking coffee, but she usually works in the morning."
+  (is drinking = now; usually works = habit — BOTH correct).
+  Bad (REJECT): explanation that says the sentence is grammatically correct, or
+  "Error: X / Correct: X" with the same string.
+- dialogue_complete (mcq): short dialogue with a blank; options complete the line.
+  options: ≥2 strings; answer must match one option.
+- sentence_build (sentence_build): learner taps tokens to build a sentence.
+  options: ≥3 token strings (shuffled bag); answer: tokens joined by single spaces.
+  Stem may be a short cue ("Make a sentence about being a student.") — not step-by-step UI tips.
+  Example: {{"type":"sentence_build","item_kind":"sentence_build",
+  "stem":"Make a correct sentence.","options":["student","a","am","I"],
+  "answer":"I am a student","explanation":"…"}}
+- matching (matching): match left column to right column.
+  options: ≥2 strings each "left|right" (pipe-separated pair).
+  answer: canonical "left=>right;…" sorted by left.
+  Example: {{"type":"matching","item_kind":"matching",
+  "stem":"Match each word to its meaning.",
+  "options":["because|reason","so|result","but|contrast"],
+  "answer":"because=>reason;but=>contrast;so=>result"}}
+- multi_select (multi_select): choose ALL correct options (≥2).
+  Stem is a CLEAR question — no cloze blank + (lemma), no "Choose all that apply" prefix
+  (the app already shows Directions).
+  Good: "Which sentences use Present Continuous correctly?"
+  Bad: "Choose all that apply. Present Continuous: You __________(watch) … Correct forms?"
+  options: ≥3 tap-able strings; answer: ≥2 correct options joined by " | " (sorted).
+  Example: {{"type":"multi_select","item_kind":"multi_select",
+  "stem":"Which words are connectors?",
+  "options":["because","happy","so","apple"],"answer":"because | so"}}
+  Example: {{"type":"multi_select","item_kind":"multi_select",
+  "stem":"Which sentences use Present Continuous correctly?",
+  "options":["She is reading a book now.","She reads a book now.",
+  "They are watching a movie right now.","They watch a movie right now."],
+  "answer":"She is reading a book now. | They are watching a movie right now."}}
 
 Rules:
 - Follow the blueprint order: matching type + item_kind for each index.
 - Every item MUST use at least one TARGET surface (word-boundary) in stem, answer, or options.
 - CEFR {cefr}; skill type {skill_type}; keep language simple.
 - No Vietnamese. No unrelated corporate reading trivia.
+- TEXT ONLY — no images in the product. Never write stems that refer to a picture,
+  photo, image, drawing, or chart (e.g. forbid "Look at the picture", "Look at the photo",
+  "According to the picture", "What is shown…"). Write self-contained sentences/dialogues
+  only; do not invent missing media.
+- Clarity: stem is what the learner reads for THIS item. Interaction instructions
+  (tap / type / check) belong in the app UI, not in stem or explanation.
 """
 
 _NON_ALNUM = re.compile(r"[^a-z0-9]+")
@@ -758,6 +851,228 @@ async def _load_published_lesson(
     return rows[0] if rows else None
 
 
+def _parse_matching_option_pairs(options: list[str]) -> list[tuple[str, str]] | None:
+    pairs: list[tuple[str, str]] = []
+    for opt in options:
+        if "|" not in opt:
+            return None
+        left, right = opt.split("|", 1)
+        left, right = left.strip(), right.strip()
+        if not left or not right:
+            return None
+        pairs.append((left, right))
+    return pairs
+
+
+def _canonical_multi_select_answer(parts: list[str]) -> str:
+    cleaned = sorted(p.strip() for p in parts if p.strip())
+    return " | ".join(cleaned)
+
+
+def _phrase_in_stem(stem: str, phrase: str) -> bool:
+    needle = phrase.strip()
+    if not needle:
+        return False
+    escaped = re.escape(needle)
+    return bool(
+        re.search(rf"(?<![A-Za-z0-9]){escaped}(?![A-Za-z0-9])", stem, re.I)
+    )
+
+
+# Valid Present Simple habit + Present Continuous temporary — NOT an error item.
+# Order A: habit … but today/now … continuous
+_HABIT_THEN_NOW = re.compile(
+    r"\b\w+s\b.{0,120}\bbut\b.{0,80}\b"
+    r"(today|now|at the moment|this (morning|afternoon|evening|week))\b"
+    r".{0,80}\b(am|is|are)\s+[a-z]+ing\b",
+    re.IGNORECASE | re.DOTALL,
+)
+# Order B: continuous … but usually/often … simple (user's failing item)
+_NOW_THEN_HABIT = re.compile(
+    r"\b(am|is|are)\s+[a-z]+ing\b.{0,120}\bbut\b.{0,80}\b"
+    r"(usually|often|always|normally|generally|every day|every morning)\b"
+    r".{0,80}\b\w+s\b",
+    re.IGNORECASE | re.DOTALL,
+)
+# Soft: continuous + habit adverb + finite present elsewhere in one sentence
+_CONTINUOUS_AND_HABIT_ADV = re.compile(
+    r"\b(am|is|are)\s+[a-z]+ing\b.+\b(usually|often|always|normally|generally)\b.+\b\w+s\b",
+    re.IGNORECASE | re.DOTALL,
+)
+
+_EXPL_SAYS_CORRECT = re.compile(
+    r"grammatically correct|no error|nothing is wrong|sentence is correct|"
+    r"as written.*(correct|fine)|correct as written",
+    re.IGNORECASE,
+)
+_EXPL_ERROR_CORRECT = re.compile(
+    r"error\s*:\s*(?P<err>[^\n/]+?)\s*/\s*correct\s*:\s*(?P<cor>[^\n/]+)",
+    re.IGNORECASE,
+)
+
+
+def _looks_like_valid_habit_vs_now_contrast(stem: str) -> bool:
+    text = stem or ""
+    if _HABIT_THEN_NOW.search(text):
+        return True
+    if _NOW_THEN_HABIT.search(text):
+        return True
+    if _CONTINUOUS_AND_HABIT_ADV.search(text):
+        return True
+    return False
+
+
+def _spot_error_explanation_incoherent(explanation: str, answer: str) -> bool:
+    """True when the model admits there is no real error (must reject)."""
+    expl = (explanation or "").strip()
+    if not expl:
+        return True
+    if _EXPL_SAYS_CORRECT.search(expl):
+        return True
+    m = _EXPL_ERROR_CORRECT.search(expl)
+    if m:
+        err = m.group("err").strip().lower().strip(" .")
+        cor = m.group("cor").strip().lower().strip(" .")
+        if err and cor and err == cor:
+            return True
+        ans = (answer or "").strip().lower()
+        if ans and cor == ans and err == ans:
+            return True
+    return False
+
+
+def _answer_tokens_in_options(answer: str, options: list[str]) -> bool:
+    tokens = [t for t in answer.split() if t]
+    if not tokens:
+        return False
+    opt_counts = Counter(options)
+    for tok in tokens:
+        if opt_counts[tok] <= 0:
+            return False
+        opt_counts[tok] -= 1
+    return True
+
+
+def _validate_skill_drill_item(
+    item: dict[str, Any],
+    *,
+    expected_kind: str | None,
+    expected_type: str | None,
+) -> dict[str, Any] | None:
+    qtype = str(item.get("type") or "").strip().lower()
+    if qtype not in _ALLOWED_SKILL_DRILL_TYPES:
+        return None
+
+    stem = str(item.get("stem") or "").strip()
+    answer = str(item.get("answer") or "").strip()
+    if not stem or not answer:
+        return None
+
+    item_kind = str(item.get("item_kind") or expected_kind or "form_choose").strip()
+    if expected_kind and item_kind != expected_kind:
+        return None
+    if expected_type and qtype != expected_type:
+        return None
+    required_type = _SKILL_DRILL_KIND_TYPE.get(item_kind)
+    if required_type and qtype != required_type:
+        return None
+
+    options_raw = item.get("options")
+    options: list[str] = []
+    if isinstance(options_raw, list):
+        options = [str(o).strip() for o in options_raw if str(o).strip()]
+
+    task_brief_extra: dict[str, Any] = {}
+
+    if qtype == "mcq":
+        if len(options) < 2:
+            return None
+        if answer not in options:
+            return None
+        if len(options) > 4:
+            options = options[:4]
+        if item_kind == "spot_error":
+            if len(options) != 4:
+                return None
+            if any(not _phrase_in_stem(stem, opt) for opt in options):
+                return None
+            expl = str(item.get("explanation") or "").strip()
+            if len(expl) < 12:
+                return None
+            # Do not accept a fully correct habit↔now contrast as "find the error".
+            if _looks_like_valid_habit_vs_now_contrast(stem):
+                return None
+            if _spot_error_explanation_incoherent(expl, answer):
+                return None
+    elif qtype == "cloze":
+        # Typed answer only; strip any LLM-provided choices.
+        options = []
+        # Require blank + base-form cue: __________(read)
+        if not re.search(r"_+\([^)\n]{1,40}\)", stem):
+            return None
+    elif qtype == "fix_grammar":
+        options = []
+    elif qtype == "sentence_build":
+        if len(options) < 3:
+            return None
+        if not _answer_tokens_in_options(answer, options):
+            return None
+    elif qtype == "matching":
+        if len(options) < 2:
+            return None
+        pairs = _parse_matching_option_pairs(options)
+        if pairs is None:
+            return None
+        expected_answer = canonicalize_matching_answer(
+            ";".join(f"{left}=>{right}" for left, right in pairs)
+        )
+        if canonicalize_matching_answer(answer) != expected_answer:
+            return None
+        answer = expected_answer
+        task_brief_extra["pairs"] = [
+            {"left": left, "right": right} for left, right in pairs
+        ]
+    elif qtype == "multi_select":
+        if len(options) < 3:
+            return None
+        correct = [p.strip() for p in re.split(r"[|;]", answer) if p.strip()]
+        if len(correct) < 2:
+            return None
+        if any(c not in options for c in correct):
+            return None
+        answer = _canonical_multi_select_answer(correct)
+    else:
+        return None
+
+    difficulty = str(item.get("difficulty") or "medium").strip() or "medium"
+    passage_raw = item.get("passage")
+    passage = (
+        (passage_raw or "").strip() if isinstance(passage_raw, str) else None
+    ) or None
+
+    task_brief: dict[str, Any] = {
+        "mode": "skill_drill",
+        "item_kind": item_kind,
+        **task_brief_extra,
+    }
+
+    return {
+        "type": qtype,
+        "toeic_part": None,
+        "stem": stem,
+        "passage": passage,
+        "passage_group": None,
+        "options": options,
+        "answer": answer,
+        "explanation": item.get("explanation"),
+        "skill": item.get("skill") or "grammar",
+        "difficulty": difficulty,
+        "cefr_focus": item.get("cefr_focus"),
+        "item_kind": item_kind,
+        "task_brief": task_brief,
+    }
+
+
 def validate_skill_drill_questions(
     items: list[dict[str, Any]],
     *,
@@ -765,74 +1080,25 @@ def validate_skill_drill_questions(
     surfaces: set[str],
     alignment: str,
 ) -> list[dict[str, Any]]:
-    """Validate LLM skill-drill items (mcq/cloze/fix_grammar)."""
+    """Validate LLM skill-drill items against blueprint kind/type rules."""
     valid: list[dict[str, Any]] = []
     for index, item in enumerate(items):
         if not isinstance(item, dict):
             continue
-        qtype = str(item.get("type") or "").strip().lower()
-        if qtype not in _ALLOWED_SKILL_DRILL_TYPES:
-            continue
-        stem = str(item.get("stem") or "").strip()
-        answer = str(item.get("answer") or "").strip()
-        if not stem or not answer:
-            continue
-
         expected_type = None
         expected_kind = None
         if index < len(blueprint):
             expected_type = blueprint[index].get("question_type")
             expected_kind = blueprint[index].get("item_kind")
-            if expected_type and qtype != expected_type:
-                # Allow LLM type if still in allowed set and kind matches loosely
-                if qtype not in _ALLOWED_SKILL_DRILL_TYPES:
-                    continue
-
-        item_kind = str(item.get("item_kind") or expected_kind or "form_choose").strip()
-
-        options_raw = item.get("options")
-        options: list[str] = []
-        if isinstance(options_raw, list):
-            options = [str(o).strip() for o in options_raw if str(o).strip()]
-
-        if qtype == "mcq":
-            if len(options) < 2:
-                continue
-            if answer not in options:
-                continue
-            if len(options) > 4:
-                options = options[:4]
-            # Pad to 4 if needed is not required for skill_drill; keep as-is if >=2
-        elif qtype in {"cloze", "fix_grammar"}:
-            # options optional
-            pass
-
-        difficulty = str(item.get("difficulty") or "medium").strip() or "medium"
-        passage_raw = item.get("passage")
-        passage = (
-            (passage_raw or "").strip() if isinstance(passage_raw, str) else None
-        ) or None
-
-        normalized = {
-            "type": qtype,
-            "toeic_part": None,
-            "stem": stem,
-            "passage": passage,
-            "passage_group": None,
-            "options": options,
-            "answer": answer,
-            "explanation": item.get("explanation"),
-            "skill": item.get("skill") or "grammar",
-            "difficulty": difficulty,
-            "cefr_focus": item.get("cefr_focus"),
-            "item_kind": item_kind,
-            "task_brief": {
-                "mode": "skill_drill",
-                "item_kind": item_kind,
-                "alignment": alignment,
-                "surfaces": sorted(surfaces),
-            },
-        }
+        normalized = _validate_skill_drill_item(
+            item,
+            expected_kind=expected_kind,
+            expected_type=expected_type,
+        )
+        if normalized is None:
+            continue
+        normalized["task_brief"]["alignment"] = alignment
+        normalized["task_brief"]["surfaces"] = sorted(surfaces)
         valid.append(normalized)
     return valid
 

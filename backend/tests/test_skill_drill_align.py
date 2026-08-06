@@ -47,6 +47,27 @@ def test_expand_surfaces_adds_article_from_np():
     assert expand_surfaces({"a student", "an apple"}) >= {"a", "an", "a student", "an apple"}
 
 
+def test_expand_surfaces_slash_be_forms():
+    out = expand_surfaces({"Subject + am/is/are + Verb-ing", "am taking"})
+    assert {"am", "is", "are", "am taking"} <= out
+
+
+def test_align_cloze_am_working_via_pattern_label():
+    assert align_score(
+        {
+            "stem": "I __________(work) in the office today, but I usually work from home.",
+            "answer": "am working",
+            "options": [],
+        },
+        {
+            "Subject + am/is/are + Verb-ing",
+            "am taking",
+            "are wearing",
+            "He is playing now.",
+        },
+    )
+
+
 def test_align_article_cloze_via_bare_determiner():
     # Pack targets are NPs; cloze blanks the article so the full phrase is gone.
     assert align_score(
@@ -71,4 +92,38 @@ def test_align_bare_a_requires_answer_not_stem():
     assert align_score(
         {"stem": "Choose the article.", "answer": "a", "options": ["a", "an"]},
         {"a"},
+    )
+
+
+def test_align_example_sentence_surface_ignores_trailing_period():
+    assert align_score(
+        {
+            "stem": "Make a sentence about what he is doing.",
+            "answer": "He is playing now",
+            "options": ["He", "is", "playing", "now"],
+        },
+        {"He is playing now.", "walk", "works"},
+    )
+
+
+def test_align_be_verb_ing_allows_person_variation():
+    # Lesson example "are wearing" should align with cloze answer "is wearing".
+    assert align_score(
+        {
+            "stem": "She __________(wear) a dress tonight.",
+            "answer": "is wearing",
+            "options": [],
+        },
+        {"are wearing", "walk", "works"},
+    )
+
+
+def test_align_window_from_example_matches_partial_answer():
+    assert align_score(
+        {
+            "stem": "Listen! He __________(play) the guitar.",
+            "answer": "is playing",
+            "options": [],
+        },
+        {"He is playing now.", "loves"},
     )

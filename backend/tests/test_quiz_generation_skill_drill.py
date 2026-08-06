@@ -19,7 +19,7 @@ def test_validate_skill_drill_accepts_cloze():
         {
             "type": "cloze",
             "item_kind": "cloze_form",
-            "stem": "I ___ a student.",
+            "stem": "I ___(be) a student.",
             "options": [],
             "answer": "am",
             "difficulty": "easy",
@@ -38,8 +38,26 @@ def test_validate_skill_drill_accepts_cloze():
     )
     assert len(out) == 2
     assert out[0]["type"] == "cloze"
+    assert out[0]["options"] == []
     assert out[0]["task_brief"]["mode"] == "skill_drill"
     assert batch_align_ratio(out, {"am", "is"}) >= 0.8
+
+
+def test_validate_skill_drill_rejects_cloze_without_lemma_cue():
+    bp = [{"item_kind": "cloze_form", "question_type": "cloze"}]
+    items = [
+        {
+            "type": "cloze",
+            "item_kind": "cloze_form",
+            "stem": "I ___ a student.",
+            "options": ["am", "is"],
+            "answer": "am",
+        }
+    ]
+    out = validate_skill_drill_questions(
+        items, blueprint=bp, surfaces={"am", "is"}, alignment="lesson"
+    )
+    assert out == []
 
 
 def test_align_fail_ratio():
