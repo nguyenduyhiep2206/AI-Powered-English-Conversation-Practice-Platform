@@ -169,7 +169,7 @@ function SpotErrorStem(props: {
 
   if (marks.length === 0) {
     return (
-      <p className="text-base font-medium leading-relaxed text-[#2A2438] [overflow-wrap:anywhere]">
+      <p className="text-base font-medium leading-relaxed text-[#1F1B15] [overflow-wrap:anywhere]">
         {stem}
       </p>
     );
@@ -185,10 +185,10 @@ function SpotErrorStem(props: {
     }
     parts.push(
       <span key={`m-${index}`} className="whitespace-nowrap">
-        <span className="align-super text-[0.7em] font-semibold text-[#C45D42]">
+        <span className="align-super text-[0.7em] font-semibold text-[#9A3412]">
           ({mark.letter})
         </span>
-        <span className="mx-0.5 border-b-2 border-[#2A2438] font-semibold text-[#2A2438]">
+        <span className="mx-0.5 border-b-2 border-[#1F1B15] font-semibold text-[#1F1B15]">
           {mark.text}
         </span>
       </span>,
@@ -200,7 +200,7 @@ function SpotErrorStem(props: {
   }
 
   return (
-    <p className="text-base font-medium leading-relaxed text-[#2A2438] [overflow-wrap:anywhere]">
+    <p className="text-base font-medium leading-relaxed text-[#1F1B15] [overflow-wrap:anywhere]">
       {parts}
     </p>
   );
@@ -212,7 +212,7 @@ function OptionLabel(props: {
 }): JSX.Element {
   return (
     <span className="flex items-start gap-2">
-      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#FFF0E8] text-[0.75rem] font-semibold text-[#C45D42] ring-1 ring-[#FF8A6B]/25">
+      <span className="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#FFE8D6] text-[0.75rem] font-semibold text-[#9A3412] ring-1 ring-[#E85D04]/25">
         {optionLetter(props.index)}
       </span>
       <span>{props.children}</span>
@@ -267,16 +267,16 @@ function serializeMultiSelectAnswer(selected: string[]): string {
 }
 
 const PRIMARY_BTN =
-  "h-11 rounded-2xl bg-[#FF8A6B] font-semibold text-white hover:bg-[#F47A5A]";
+  "h-11 rounded-2xl bg-[#E85D04] font-semibold text-white hover:bg-[#D04F00]";
 
 const SELECTED_OPTION =
-  "border-[#FF8A6B] bg-[#FFF0E8] text-[#2A2438]";
+  "border-[#E85D04] bg-[#FFE8D6] text-[#1F1B15]";
 
 const UNSELECTED_OPTION =
-  "border-[#EDE6E0] bg-[#FFFCF9] text-[#6B6478] hover:border-[#FF8A6B]/40 hover:text-[#2A2438]";
+  "border-[#E9D7C9] bg-[#FFFAF5] text-[#6B6258] hover:border-[#E85D04]/40 hover:text-[#1F1B15]";
 
 const INPUT_CLASS =
-  "h-11 rounded-[12px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#6B6478] focus-visible:border-[#FF8A6B] focus-visible:ring-0";
+  "h-11 rounded-[12px] border-[#E9D7C9] bg-[#FFFAF5] text-[0.875rem] text-[#1F1B15] placeholder:text-[#6B6258] focus-visible:border-[#E85D04] focus-visible:ring-0";
 
 const TOKEN_CHIP =
   "inline-flex items-center rounded-xl border px-3 py-1.5 text-[0.875rem] font-medium";
@@ -337,7 +337,7 @@ function MatchingEditor(props: {
     <div className="mt-5 space-y-4">
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="space-y-2">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
             Words
           </p>
           {shuffledLeft.map((left) => {
@@ -360,7 +360,7 @@ function MatchingEditor(props: {
         </div>
 
         <div className="space-y-2">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
             Meanings
           </p>
           {shuffledRight.map((right) => {
@@ -374,10 +374,10 @@ function MatchingEditor(props: {
                 onClick={() => handleRightClick(right)}
                 className={`w-full rounded-[12px] border px-4 py-3 text-left text-[0.875rem] transition-colors ${
                   isUsed
-                    ? "border-[#EDE6E0] bg-[#FFFCF9] text-[#6B6478] opacity-60"
+                    ? "border-[#E9D7C9] bg-[#FFFAF5] text-[#6B6258] opacity-60"
                     : isTarget
                       ? UNSELECTED_OPTION
-                      : "border-[#EDE6E0] bg-[#FFFCF9] text-[#6B6478] opacity-80"
+                      : "border-[#E9D7C9] bg-[#FFFAF5] text-[#6B6258] opacity-80"
                 } ${locked ? "cursor-default" : ""}`}
               >
                 {right}
@@ -387,20 +387,20 @@ function MatchingEditor(props: {
         </div>
       </div>
 
-      <div className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3">
-        <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+      <div className="rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-4 py-3">
+        <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
           Your matches
         </p>
         <div className="mt-2 min-h-[2rem] space-y-1">
           {matchedEntries.length === 0 ? (
-            <p className="text-sm text-[#6B6478]">
+            <p className="text-sm text-[#6B6258]">
               Tap a word, then tap its meaning
             </p>
           ) : (
             matchedEntries.map(([left, right]) => (
-              <p key={left} className="text-sm text-[#2A2438]">
+              <p key={left} className="text-sm text-[#1F1B15]">
                 <span className="font-medium">{left}</span>
-                <span className="mx-2 text-[#6B6478]">→</span>
+                <span className="mx-2 text-[#6B6258]">→</span>
                 <span>{right}</span>
               </p>
             ))
@@ -485,16 +485,16 @@ function SentenceBuildEditor(props: {
 
   return (
     <div className="mt-5 space-y-4">
-      <div className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3">
+      <div className="rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-4 py-3">
         <div className="flex items-center justify-between gap-3">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
             Your sentence
           </p>
           {!locked && builtIndices.length > 0 ? (
             <button
               type="button"
               onClick={() => setBuiltIndices((prev) => prev.slice(0, -1))}
-              className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-[#6B6478] transition-colors hover:text-[#2A2438]"
+              className="inline-flex items-center gap-1 text-[0.8125rem] font-medium text-[#6B6258] transition-colors hover:text-[#1F1B15]"
             >
               <Undo2 className="h-3.5 w-3.5" aria-hidden />
               Undo
@@ -503,7 +503,7 @@ function SentenceBuildEditor(props: {
         </div>
         <div className="mt-2 flex min-h-[2.25rem] flex-wrap items-center gap-2">
           {builtTokens.length === 0 ? (
-            <span className="text-sm text-[#6B6478]">
+            <span className="text-sm text-[#6B6258]">
               Tap words below to build the sentence
             </span>
           ) : (
@@ -662,55 +662,55 @@ export function QuizCard(props: {
   }
 
   return (
-    <section className="rounded-[1.75rem] border border-[#EDE6E0] bg-white p-6 shadow-[0_12px_40px_rgba(42,36,56,0.04)]">
+    <section className="rounded-[2.5rem] border border-[#E9D7C9] bg-white/85 p-6 shadow-[0_24px_60px_-40px_rgba(31,27,21,0.45)] sm:p-7">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFF0E8] px-3 text-[0.75rem] font-medium text-[#C45D42] ring-1 ring-[#FF8A6B]/25">
+        <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFE8D6] px-3 text-[0.75rem] font-medium text-[#9A3412] ring-1 ring-[#E85D04]/25">
           Question {index + 1} / {total}
         </span>
-        <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFFCF9] px-3 text-[0.75rem] font-medium text-[#6B6478] ring-1 ring-[#EDE6E0]">
+        <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFFAF5] px-3 text-[0.75rem] font-medium text-[#6B6258] ring-1 ring-[#E9D7C9]">
           {quizTypeLabel(question.question_type)}
         </span>
         {kindEyebrow ? (
-          <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#E8F4FB] px-3 text-[0.75rem] font-medium text-[#3D7FA0] ring-1 ring-[#8CC6E8]/35">
+          <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#D8F3DC] px-3 text-[0.75rem] font-medium text-[#2F9E44] ring-1 ring-[#0D9488]/35">
             {kindEyebrow}
           </span>
         ) : null}
         {question.toeic_part ? (
-          <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFFCF9] px-3 text-[0.75rem] font-medium text-[#6B6478] ring-1 ring-[#EDE6E0]">
+          <span className="inline-flex min-h-8 items-center rounded-2xl bg-[#FFFAF5] px-3 text-[0.75rem] font-medium text-[#6B6258] ring-1 ring-[#E9D7C9]">
             {`TOEIC Part ${question.toeic_part.replace(/^r/i, "").toUpperCase()}`}
           </span>
         ) : null}
       </div>
 
       {question.passage ? (
-        <div className="mb-5 rounded-2xl bg-[#FFFCF9] px-4 py-3 ring-1 ring-[#EDE6E0]">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+        <div className="mb-5 rounded-2xl bg-[#FFFAF5] px-4 py-3 ring-1 ring-[#E9D7C9]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
             Passage
           </p>
-          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#2A2438]">
+          <p className="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-[#1F1B15]">
             {question.passage}
           </p>
         </div>
       ) : null}
 
-      <div className="mb-4 rounded-2xl bg-[#FFFCF9] px-4 py-3 ring-1 ring-[#EDE6E0]">
-        <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]">
+      <div className="mb-4 rounded-2xl bg-[#FFFAF5] px-4 py-3 ring-1 ring-[#E9D7C9]">
+        <p className="text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]">
           Directions
         </p>
-        <p className="mt-1.5 text-sm leading-relaxed text-[#2A2438]">
+        <p className="mt-1.5 text-sm leading-relaxed text-[#1F1B15]">
           {guide.directions}
         </p>
-        <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6B6478]">
+        <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6B6258]">
           {guide.howTo}
         </p>
       </div>
 
       {question.question_type === "fix_grammar" ? (
         <>
-          <p className="text-base font-medium leading-relaxed text-[#2A2438]">
+          <p className="text-base font-medium leading-relaxed text-[#1F1B15]">
             Incorrect sentence
           </p>
-          <p className="mt-3 rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3 text-sm leading-relaxed text-[#2A2438] [overflow-wrap:anywhere]">
+          <p className="mt-3 rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-4 py-3 text-sm leading-relaxed text-[#1F1B15] [overflow-wrap:anywhere]">
             {question.stem}
           </p>
         </>
@@ -722,7 +722,7 @@ export function QuizCard(props: {
           options={question.options}
         />
       ) : (
-        <p className="text-base font-medium leading-relaxed text-[#2A2438] [overflow-wrap:anywhere]">
+        <p className="text-base font-medium leading-relaxed text-[#1F1B15] [overflow-wrap:anywhere]">
           {displayStem(question.question_type, question.stem)}
         </p>
       )}
@@ -734,8 +734,8 @@ export function QuizCard(props: {
           <div
             className={`flex items-start gap-2 rounded-lg border px-4 py-3 text-sm ${
               feedback.correct
-                ? "border-[#8CC6E8]/45 bg-[#E8F4FB] text-[#3D7FA0]"
-                : "border-[#FF8A6B]/30 bg-[#FFF0EE] text-[#C24B3A]"
+                ? "border-[#2F9E44]/40 bg-[#D8F3DC] text-[#2F9E44]"
+                : "border-[#BE123C]/25 bg-[#FFE4E6] text-[#BE123C]"
             }`}
           >
             {feedback.correct ? (
@@ -746,7 +746,7 @@ export function QuizCard(props: {
             <div>
               <p>{feedback.correct ? "Correct" : "Not quite"}</p>
               {feedback.explanation ? (
-                <p className="mt-1 text-[0.8125rem] text-[#5C5468]">
+                <p className="mt-1 text-[0.8125rem] text-[#6B6258]">
                   {feedback.explanation}
                 </p>
               ) : null}
@@ -760,7 +760,7 @@ export function QuizCard(props: {
               className={`w-full ${PRIMARY_BTN}`}
               onClick={onBackToPath}
             >
-              Mastery reached — back to path
+              Mastery reached · back to path
               <ArrowRight className="ml-2 h-4 w-4" />
             </Button>
           ) : (
@@ -778,7 +778,7 @@ export function QuizCard(props: {
       ) : (
         <>
           {error ? (
-            <p className="mt-4 text-sm text-[#C24B3A]" role="alert">
+            <p className="mt-4 text-sm text-[#BE123C]" role="alert">
               {error}
             </p>
           ) : null}

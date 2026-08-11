@@ -2,7 +2,7 @@
 
 import type { CSSProperties } from "react";
 import Link from "next/link";
-import { Check, Lock, Sparkles } from "lucide-react";
+import { Check, Flag, Lock, Play } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { RoadmapWeek } from "@/lib/roadmap";
@@ -11,8 +11,9 @@ const MASTERY_PASS = 0.7;
 
 type WeekNodeProps = {
   week: RoadmapWeek;
-  offset: "left" | "right" | "center";
   index?: number;
+  isLast?: boolean;
+  isPathEnd?: boolean;
   completing: boolean;
   actionError: string | null;
   onComplete: (week: RoadmapWeek) => void;
@@ -21,8 +22,9 @@ type WeekNodeProps = {
 
 export function WeekNode({
   week,
-  offset,
   index = 0,
+  isLast = false,
+  isPathEnd = false,
   completing,
   actionError,
   onComplete,
@@ -35,150 +37,168 @@ export function WeekNode({
   const isActive = week.status === "in_progress";
   const isDone = week.status === "completed";
   const isLocked = week.status === "locked";
+  const showReadyChip = isActive && canComplete;
 
   return (
-    <div
-      className={cn(
-        "relative flex w-full flex-col items-center",
-        isActive ? "max-w-md" : "max-w-[20rem]",
-        offset === "left" && "self-start sm:ml-1",
-        offset === "right" && "self-end sm:mr-1",
-        offset === "center" && "self-center",
-      )}
-      style={{ "--ef-index": Math.min(index, 4) } as CSSProperties}
+    <li
+      className="relative grid grid-cols-[2.75rem_minmax(0,1fr)] gap-x-4 motion-safe:animate-[ef-path-in_420ms_cubic-bezier(0.22,1,0.36,1)_both]"
+      style={
+        {
+          animationDelay: `${Math.min(index, 6) * 40}ms`,
+        } as CSSProperties
+      }
     >
-      <button
-        type="button"
-        onClick={() => {
-          if (isLocked) onLockedTap();
-        }}
-        className={cn(
-          "relative z-[1] flex items-center justify-center transition-[transform,box-shadow,background-color] duration-200",
-          "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF8F4]",
-          "active:scale-[0.96]",
-          isActive &&
-            "h-[4.5rem] w-[4.5rem] rounded-[1.35rem] bg-[#FF8A6B] text-white shadow-[0_10px_28px_rgba(255,138,107,0.4)] ring-4 ring-[#FF8A6B]/20",
-          isDone &&
-            "h-14 w-14 rounded-[1.25rem] bg-[#8CC6E8] text-white shadow-[0_6px_16px_rgba(140,198,232,0.35)]",
-          isLocked &&
-            "h-14 w-14 cursor-pointer rounded-[1.25rem] bg-white text-[#B0A9B8] shadow-[0_4px_14px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06",
-        )}
-        aria-label={`${title}. Step ${week.week_number}, ${week.status.replace("_", " ")}`}
-      >
-        {isDone ? (
-          <Check className="h-6 w-6" strokeWidth={2.5} aria-hidden />
-        ) : isLocked ? (
-          <Lock className="h-5 w-5" aria-hidden />
-        ) : (
-          <Sparkles className="h-6 w-6" aria-hidden />
-        )}
-      </button>
+      {/* Lumingo left rail: circle + stem */}
+      <div className="relative flex justify-center">
+        {!isLast ? (
+          <div
+            className={cn(
+              "absolute top-11 bottom-[-1.25rem] w-[3px] rounded-full",
+              isDone ? "bg-[#2F9E44]" : "bg-[#E9D7C9]",
+            )}
+            aria-hidden
+          />
+        ) : null}
 
-      {isDone ? (
-        <div className="mt-3 w-full rounded-[1.35rem] bg-white/90 px-4 py-3 text-center ring-1 ring-[#2A2438]/06">
-          <p className="text-[0.8125rem] font-semibold leading-snug text-[#2A2438]">
-            {title}
-          </p>
-          <p className="mt-0.5 text-[0.75rem] font-medium text-[#8CC6E8]">
-            Done · {masteryPct}%
-          </p>
-        </div>
-      ) : null}
+        {isActive ? (
+          <div
+            className="pointer-events-none absolute top-1 size-14 rounded-full bg-[#E85D04]/25 blur-md"
+            aria-hidden
+          />
+        ) : null}
 
-      {isLocked ? (
         <button
           type="button"
-          onClick={onLockedTap}
-          className="mt-3 w-full rounded-[1.35rem] bg-white/70 px-4 py-3 text-center ring-1 ring-[#2A2438]/05 transition-colors hover:bg-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]/50"
+          onClick={() => {
+            if (isLocked) onLockedTap();
+          }}
+          className={cn(
+            "relative z-[1] mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-full transition-[transform,box-shadow] duration-200",
+            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] focus-visible:ring-offset-2 focus-visible:ring-offset-[#FFF5EB]",
+            "active:scale-[0.96]",
+            isActive &&
+              "bg-[#E85D04] text-white shadow-[0_10px_22px_-6px_rgba(232,93,4,0.55)]",
+            isDone &&
+              "bg-[#2F9E44] text-white shadow-[0_8px_18px_-8px_rgba(47,158,68,0.55)]",
+            isLocked &&
+              "cursor-pointer border border-[#E9D7C9] bg-[#FFFAF5] text-[#A89F94] shadow-[0_6px_14px_-10px_rgba(31,27,21,0.35)]",
+            isPathEnd &&
+              isLocked &&
+              "border-2 border-[#E85D04] bg-white text-[#E85D04]",
+          )}
+          aria-label={`${title}. Step ${week.week_number}, ${week.status.replace("_", " ")}`}
         >
-          <p className="text-[0.8125rem] font-medium leading-snug text-[#8A8396]">
-            {title}
-          </p>
-          <p className="mt-0.5 text-[0.75rem] text-[#B0A9B8]">
-            Step {week.week_number} · Locked
-          </p>
+          {isDone ? (
+            <Check className="h-5 w-5" strokeWidth={2.75} aria-hidden />
+          ) : isPathEnd && isLocked ? (
+            <Flag className="h-4 w-4" aria-hidden />
+          ) : isLocked ? (
+            <Lock className="h-4 w-4" aria-hidden />
+          ) : (
+            <Play className="h-5 w-5 fill-current" aria-hidden />
+          )}
         </button>
-      ) : null}
+      </div>
 
-      {isActive ? (
-        <div className="mt-4 w-full rounded-[1.75rem] bg-white px-5 py-5 text-left shadow-[0_18px_50px_rgba(42,36,56,0.08)] ring-1 ring-[#FF8A6B]/30">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-xl bg-[#FF8A6B]/12 px-2.5 py-1 text-[0.75rem] font-semibold text-[#C45D42]">
-              Current step
+      {/* Right label + optional active sheet */}
+      <div className={cn("min-w-0", isLast ? "pb-0" : "pb-8")}>
+        <div className="flex flex-wrap items-center gap-2 pt-2">
+          {showReadyChip ? (
+            <span className="rounded-full bg-[#CCFBF1] px-2.5 py-0.5 text-[0.75rem] font-semibold text-[#115E59]">
+              Ready
             </span>
-            <span className="text-[0.75rem] font-medium tabular-nums text-[#8A8396]">
-              Step {week.week_number}
-              {week.level ? ` · ${week.level}` : ""}
-            </span>
-          </div>
-          <h3 className="mt-2.5 text-lg font-semibold leading-snug tracking-tight text-[#2A2438]">
-            {title}
-          </h3>
-          {week.title && week.title !== title ? (
-            <p className="mt-1 text-sm leading-relaxed text-[#6B6478]">
-              {week.title}
-            </p>
           ) : null}
-
-          <div className="mt-4">
-            <div className="mb-1.5 flex items-center justify-between text-[0.8125rem] font-medium">
-              <span className="text-[#6B6478]">Mastery</span>
-              <span className="tabular-nums text-[#2A2438]">{masteryPct}%</span>
-            </div>
-            <div
-              className="h-2 overflow-hidden rounded-full bg-[#FFF0E8]"
-              role="progressbar"
-              aria-valuenow={masteryPct}
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-label="Mastery progress"
-            >
-              <div
-                className={cn(
-                  "h-full rounded-full transition-[width] duration-300 ease-out",
-                  masteryPct >= 70 ? "bg-[#8CC6E8]" : "bg-[#FF8A6B]",
-                )}
-                style={{ width: `${Math.min(100, masteryPct)}%` }}
-              />
-            </div>
-            <p className="mt-2 text-[0.8125rem] leading-relaxed text-[#6B6478]">
-              Reach 70% mastery in Learn → Practice, then complete this week.
-            </p>
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Button
-              asChild
-              type="button"
-              className="h-11 flex-1 rounded-2xl bg-[#FF8A6B] text-[0.875rem] font-semibold text-white shadow-[0_10px_24px_rgba(255,138,107,0.28)] hover:bg-[#F47A5A] active:scale-[0.98]"
-            >
-              <Link href={`/dashboard/practice/${week.skill_id}`}>
-                Continue practice
-              </Link>
-            </Button>
-            <Button
-              type="button"
-              className="h-11 flex-1 rounded-2xl bg-[#FFF0E8] text-[0.875rem] font-semibold text-[#C45D42] hover:bg-[#FFE4D6] disabled:opacity-45"
-              disabled={!canComplete || completing}
-              onClick={() => onComplete(week)}
-            >
-              {completing
-                ? "Completing…"
-                : canComplete
-                  ? "Complete week"
-                  : "Need 70% mastery"}
-            </Button>
-          </div>
-          {actionError ? (
-            <p
-              className="mt-3 rounded-2xl bg-[#FFF0EE] px-3 py-2 text-[0.8125rem] text-[#C24B3A]"
-              role="alert"
-            >
-              {actionError}
-            </p>
-          ) : null}
+          <p className="text-base font-medium leading-snug text-[#1F1B15]">
+            Step {week.week_number} · {title}
+          </p>
         </div>
-      ) : null}
-    </div>
+        <p
+          className={cn(
+            "mt-0.5 text-[0.8125rem] font-medium tabular-nums",
+            isDone && "text-[#2F9E44]",
+            isActive && "text-[#9A3412]",
+            isLocked && "text-[#8A8178]",
+          )}
+        >
+          {isDone
+            ? `Done · ${masteryPct}%`
+            : isActive
+              ? `Mastery ${masteryPct}%`
+              : "Locked"}
+        </p>
+
+        {isActive ? (
+          <div className="mt-4 rounded-[1.75rem] border border-[#E9D7C9] bg-[#FFFAF5] px-5 py-5 shadow-[0_16px_40px_-28px_rgba(31,27,21,0.45)]">
+            {week.title && week.title !== title ? (
+              <p className="text-[0.9375rem] leading-relaxed text-[#6B6258]">
+                {week.title}
+              </p>
+            ) : (
+              <p className="text-[0.9375rem] leading-relaxed text-[#6B6258]">
+                Hit 70% in Learn → Practice, then complete this week.
+              </p>
+            )}
+
+            <div className="mt-4">
+              <div className="mb-1.5 flex items-center justify-between text-[0.8125rem] font-medium">
+                <span className="text-[#6B6258]">Mastery</span>
+                <span className="tabular-nums font-semibold text-[#1F1B15]">
+                  {masteryPct}%
+                </span>
+              </div>
+              <div
+                className="h-2 overflow-hidden rounded-full bg-[#FFE8D6]"
+                role="progressbar"
+                aria-valuenow={masteryPct}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label="Mastery progress"
+              >
+                <div
+                  className={cn(
+                    "h-full rounded-full transition-[width] duration-300 ease-out",
+                    masteryPct >= 70 ? "bg-[#2F9E44]" : "bg-[#E85D04]",
+                  )}
+                  style={{ width: `${Math.min(100, masteryPct)}%` }}
+                />
+              </div>
+            </div>
+
+            <div className="mt-5 flex flex-col gap-2 sm:flex-row">
+              <Button
+                asChild
+                type="button"
+                className="h-11 flex-1 rounded-2xl bg-[#E85D04] text-[0.875rem] font-semibold text-white shadow-[0_10px_22px_-8px_rgba(232,93,4,0.55)] hover:bg-[#D04F00] active:scale-[0.98]"
+              >
+                <Link href={`/dashboard/practice/${week.skill_id}`}>
+                  Continue practice
+                </Link>
+              </Button>
+              <Button
+                type="button"
+                className="h-11 flex-1 rounded-2xl border border-[#E9D7C9] bg-white text-[0.875rem] font-semibold text-[#9A3412] hover:bg-[#FFF5EB] disabled:opacity-40"
+                disabled={!canComplete || completing}
+                onClick={() => onComplete(week)}
+              >
+                {completing
+                  ? "Completing…"
+                  : canComplete
+                    ? "Complete week"
+                    : "Need 70% mastery"}
+              </Button>
+            </div>
+
+            {actionError ? (
+              <p
+                className="mt-3 rounded-2xl bg-[#FFE4E6] px-3 py-2 text-[0.8125rem] text-[#BE123C]"
+                role="alert"
+              >
+                {actionError}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    </li>
   );
 }

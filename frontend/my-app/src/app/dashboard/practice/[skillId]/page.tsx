@@ -345,7 +345,7 @@ export default function PracticeSkillPage() {
           {error && !current && phase === "practice" ? (
             <div
               role="alert"
-              className="mb-5 rounded-2xl bg-[#FFF0EE] px-4 py-3 text-[0.875rem] text-[#C24B3A] ring-1 ring-[#FF8A6B]/25"
+              className="mb-5 rounded-2xl bg-[#FFE4E6] px-4 py-3 text-[0.875rem] text-[#BE123C] ring-1 ring-[#E85D04]/25"
             >
               {error}
             </div>
@@ -353,7 +353,7 @@ export default function PracticeSkillPage() {
           {showReviewLearn ? (
             <button
               type="button"
-              className="mb-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8] cursor-pointer"
+              className="mb-4 text-[0.875rem] font-medium text-[#9A3412] hover:text-[#E85D04] cursor-pointer"
               onClick={() => openLearnAtPack(0)}
             >
               Review lesson
@@ -362,7 +362,7 @@ export default function PracticeSkillPage() {
           {phase === "learn" && lessonMeta?.can_skip ? (
             <button
               type="button"
-              className="mb-4 mr-4 text-[0.875rem] font-medium text-[#7B6EF6] hover:text-[#6758E8] cursor-pointer"
+              className="mb-4 mr-4 text-[0.875rem] font-medium text-[#9A3412] hover:text-[#E85D04] cursor-pointer"
               onClick={() => void openPractice()}
             >
               Skip to practice
@@ -386,12 +386,12 @@ export default function PracticeSkillPage() {
                     className={cn(
                       "inline-flex min-h-9 items-center rounded-2xl px-3 text-[0.75rem] font-medium ring-1 transition-colors",
                       active &&
-                        "bg-[#FFF0E8] text-[#C45D42] ring-[#FF8A6B]/35",
+                        "bg-[#FFE8D6] text-[#9A3412] ring-[#E85D04]/35",
                       !active &&
                         enabled &&
-                        "bg-white text-[#6B6478] ring-[#EDE6E0] hover:ring-[#FF8A6B]/40 cursor-pointer",
+                        "bg-white text-[#6B6258] ring-[#E9D7C9] hover:ring-[#E85D04]/40 cursor-pointer",
                       !enabled &&
-                        "bg-white/60 text-[#B0A9B8] ring-[#EDE6E0] opacity-70",
+                        "bg-white/60 text-[#A89F94] ring-[#E9D7C9] opacity-70",
                     )}
                   >
                     Lesson {idx + 1}
@@ -405,7 +405,7 @@ export default function PracticeSkillPage() {
       lesson={
         phase === "learn" && displayedLesson ? (
           completingLesson ? (
-            <div className="flex items-center justify-center gap-2 py-16 text-[#6B6478]">
+            <div className="flex items-center justify-center gap-2 py-16 text-[#6B6258]">
               <Loader2 className="h-5 w-5 animate-spin" />
               Saving progress…
             </div>

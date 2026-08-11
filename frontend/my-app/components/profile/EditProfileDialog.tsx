@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useId, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { updateMe } from "@/lib/api";
 import { AVATAR_PRESETS, isPresetAvatar } from "@/lib/avatar-presets";
 import { cn } from "@/lib/utils";
@@ -45,7 +46,9 @@ function EditProfileDialogPanel({
 }: Omit<EditProfileDialogProps, "open">) {
   const titleId = useId();
   const [name, setName] = useState(initialName);
-  const [avatarUrl, setAvatarUrl] = useState(resolveInitialAvatar(initialAvatarUrl));
+  const [avatarUrl, setAvatarUrl] = useState(
+    resolveInitialAvatar(initialAvatarUrl),
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -93,7 +96,7 @@ function EditProfileDialogPanel({
       <button
         type="button"
         aria-label="Close dialog"
-        className="absolute inset-0 bg-[#111111]/30"
+        className="absolute inset-0 bg-[#1F1B15]/40 backdrop-blur-[2px]"
         disabled={saving}
         onClick={onClose}
       />
@@ -101,20 +104,30 @@ function EditProfileDialogPanel({
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="relative z-10 w-full max-w-md rounded-[12px] border border-[#EAEAEA] bg-white p-6 shadow-[0_2px_8px_rgba(0,0,0,0.04)]"
+        className="relative z-10 w-full max-w-md rounded-[1.75rem] bg-white p-6 shadow-[0_24px_60px_rgba(31,27,21,0.18)] ring-1 ring-[#1F1B15]/06 sm:p-7"
       >
-        <h2 id={titleId} className="font-display text-2xl tracking-[-0.03em] text-[#111111]">
+        <h2
+          id={titleId}
+          className="text-[1.75rem] font-semibold tracking-tight text-[#1F1B15]"
+        >
           Edit profile
         </h2>
+        <p className="mt-1.5 text-[0.875rem] text-[#8A8178]">
+          Pick an avatar and how your name shows on the path.
+        </p>
 
         <div className="mt-6 flex justify-center">
-          <div className="h-20 w-20 overflow-hidden rounded-[12px] border border-[#EAEAEA] bg-[#F9F9F8]">
+          <div className="h-20 w-20 overflow-hidden rounded-2xl bg-[#FFFAF5] shadow-[0_8px_20px_rgba(31,27,21,0.08)] ring-1 ring-[#E9D7C9]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={avatarUrl} alt="" className="h-full w-full object-cover" />
+            <img
+              src={avatarUrl}
+              alt=""
+              className="h-full w-full object-cover"
+            />
           </div>
         </div>
 
-        <p className="mt-5 text-[11px] font-medium uppercase tracking-[0.12em] text-[#787774]">
+        <p className="mt-5 text-[0.875rem] font-medium text-[#6B6258]">
           Avatar
         </p>
         <div className="mt-2 grid grid-cols-4 gap-2">
@@ -129,21 +142,25 @@ function EditProfileDialogPanel({
                 disabled={saving}
                 onClick={() => setAvatarUrl(preset.url)}
                 className={cn(
-                  "overflow-hidden rounded-[8px] border transition-colors",
+                  "overflow-hidden rounded-xl ring-2 transition-[box-shadow,ring-color] focus-visible:outline-none focus-visible:ring-[#E85D04]",
                   selected
-                    ? "border-[#111111]"
-                    : "border-[#EAEAEA] hover:border-[#111111]/40",
+                    ? "shadow-[0_4px_12px_rgba(232,93,4,0.25)] ring-[#E85D04]"
+                    : "ring-transparent hover:ring-[#E9D7C9]",
                 )}
               >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={preset.url} alt="" className="aspect-square w-full object-cover" />
+                <img
+                  src={preset.url}
+                  alt=""
+                  className="aspect-square w-full object-cover"
+                />
               </button>
             );
           })}
         </div>
 
         <label className="mt-5 block">
-          <span className="text-[11px] font-medium uppercase tracking-[0.12em] text-[#787774]">
+          <span className="text-[0.875rem] font-medium text-[#6B6258]">
             Display name
           </span>
           <input
@@ -151,13 +168,17 @@ function EditProfileDialogPanel({
             onChange={(e) => setName(e.target.value)}
             disabled={saving}
             maxLength={100}
-            className="mt-2 h-10 w-full rounded-[6px] border border-[#EAEAEA] bg-white px-3 text-sm text-[#111111] outline-none focus-visible:border-[#111111]"
+            className="mt-2 h-11 w-full rounded-2xl border border-[#E9D7C9] bg-[#FFFAF5] px-3.5 text-[0.9375rem] text-[#1F1B15] outline-none transition-[border-color,box-shadow] placeholder:text-[#A89F94] focus-visible:border-[#E85D04] focus-visible:ring-2 focus-visible:ring-[#E85D04]/25 disabled:opacity-60"
             aria-label="Display name"
+            aria-invalid={Boolean(error && !name.trim())}
           />
         </label>
 
         {error ? (
-          <p className="mt-3 text-sm text-[#9F2F2D]" role="alert">
+          <p
+            className="mt-3 rounded-2xl bg-[#FFE4E6] px-3.5 py-2 text-[0.875rem] text-[#BE123C] ring-1 ring-[#BE123C]/25"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
@@ -167,17 +188,25 @@ function EditProfileDialogPanel({
             type="button"
             disabled={saving}
             onClick={onClose}
-            className="h-9 rounded-[6px] px-3 text-sm text-[#787774] transition-colors hover:bg-[#F9F9F8] hover:text-[#111111]"
+            className="inline-flex h-11 items-center rounded-2xl px-4 text-[0.875rem] font-medium text-[#6B6258] transition-colors hover:bg-[#FFF5EB] hover:text-[#1F1B15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] disabled:opacity-60"
           >
             Cancel
           </button>
           <button
             type="button"
             disabled={saving}
+            aria-busy={saving}
             onClick={handleSave}
-            className="h-9 rounded-[6px] bg-[#111111] px-4 text-sm font-medium text-white transition-colors hover:bg-[#333333] disabled:opacity-60"
+            className="inline-flex h-11 items-center gap-1.5 rounded-2xl bg-[#E85D04] px-5 text-[0.875rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color] hover:bg-[#D04F00] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] active:scale-[0.98] disabled:opacity-60"
           >
-            {saving ? "Saving…" : "Save"}
+            {saving ? (
+              <>
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                Saving…
+              </>
+            ) : (
+              "Save"
+            )}
           </button>
         </div>
       </div>

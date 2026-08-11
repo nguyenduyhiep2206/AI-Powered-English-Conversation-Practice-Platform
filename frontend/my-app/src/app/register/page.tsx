@@ -21,18 +21,18 @@ function strength(pw: string) {
 }
 
 const fieldClass =
-  "h-11 rounded-2xl border-[#EDE6E0] bg-[#FFFCF9] px-3.5 text-[0.9375rem] text-[#2A2438] placeholder:text-[#B0A9B8] focus-visible:border-[#FF8A6B] focus-visible:ring-[#FF8A6B]/25";
+  "h-11 rounded-2xl border-[#E9D7C9] bg-[#FFFAF5] px-3.5 text-[0.9375rem] text-[#1F1B15] placeholder:text-[#A89F94] focus-visible:border-[#E85D04] focus-visible:ring-[#E85D04]/25";
 
 const fieldErrorClass =
   "border-[#E07060] focus-visible:border-[#E07060] focus-visible:ring-[#E07060]/20";
 
 /** Soft coral → sky, not Duolingo green */
 const strengthTones = [
-  "bg-[#EDE6E0]",
+  "bg-[#E9D7C9]",
   "bg-[#E07060]",
   "bg-[#FFB38A]",
-  "bg-[#8CC6E8]",
-  "bg-[#7B6EF6]",
+  "bg-[#0D9488]",
+  "bg-[#9A3412]",
 ];
 
 export default function RegisterPage() {
@@ -65,10 +65,14 @@ export default function RegisterPage() {
     setError(null);
     setFieldErrors({});
 
+    const trimmedEmail = email.trim();
     const errors: typeof fieldErrors = {};
     if (!name) errors.name = "Full name is required";
     if (!username) errors.username = "Username is required";
-    if (!email) errors.email = "Email is required";
+    if (!trimmedEmail) errors.email = "Email is required";
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      errors.email = "Enter a valid email address";
+    }
     if (!pw) errors.pw = "Password is required";
     else if (pw.length < 8)
       errors.pw = "Password must be at least 8 characters long";
@@ -84,7 +88,12 @@ export default function RegisterPage() {
 
     setLoading(true);
     try {
-      await register({ full_name: name, username, email, password: pw });
+      await register({
+        full_name: name,
+        username,
+        email: trimmedEmail,
+        password: pw,
+      });
       router.replace("/start-onboarding");
       router.refresh();
     } catch (err) {
@@ -97,13 +106,13 @@ export default function RegisterPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#FFF8F4] text-[#2A2438]">
+    <div className="relative min-h-screen overflow-hidden bg-[#FFF5EB] text-[#1F1B15]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 70% 55% at 88% 18%, rgba(255, 164, 140, 0.35), transparent 60%), radial-gradient(ellipse 55% 50% at 12% 82%, rgba(140, 198, 232, 0.32), transparent 55%), radial-gradient(ellipse 40% 35% at 30% 12%, rgba(196, 176, 232, 0.18), transparent 50%)",
+            "radial-gradient(ellipse 70% 55% at 88% 18%, rgba(232, 93, 4, 0.16), transparent 60%), radial-gradient(ellipse 55% 50% at 12% 82%, rgba(13, 148, 136, 0.14), transparent 55%), radial-gradient(ellipse 40% 35% at 30% 12%, rgba(47, 158, 68, 0.1), transparent 50%)",
         }}
       />
 
@@ -113,12 +122,12 @@ export default function RegisterPage() {
             className="ef-fade-up flex items-center gap-3"
             style={{ ["--ef-index" as string]: 0 }}
           >
-            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#FF8A6B] text-white shadow-[0_8px_24px_rgba(255,138,107,0.28)]">
+            <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#E85D04] text-white shadow-[0_8px_24px_rgba(232,93,4,0.28)]">
               <span className="text-[1.25rem] font-bold leading-none tracking-tight">
                 E
               </span>
             </div>
-            <span className="text-[1.25rem] font-semibold tracking-tight text-[#2A2438]">
+            <span className="text-[1.25rem] font-semibold tracking-tight text-[#1F1B15]">
               EnglishFlow
             </span>
           </div>
@@ -126,28 +135,28 @@ export default function RegisterPage() {
           <div className="relative max-w-md">
             <div aria-hidden className="mb-8 flex items-center gap-3">
               {[
-                "bg-[#FF8A6B]",
-                "bg-[#FFD3A8]",
-                "bg-[#8CC6E8]",
-                "bg-[#C4B0E8]",
+                "bg-[#E85D04]",
+                "bg-[#9A3412]",
+                "bg-[#0D9488]",
+                "bg-[#2F9E44]",
               ].map((tone, i) => (
                 <div key={tone} className="flex items-center gap-3">
                   <span
                     className={cn(
-                      "login-bob block size-3.5 rounded-full shadow-[0_2px_8px_rgba(42,36,56,0.08)]",
+                      "login-bob block size-3.5 rounded-full shadow-[0_2px_8px_rgba(31,27,21,0.08)] ring-1 ring-[#1F1B15]/10",
                       tone,
                     )}
                     style={{ ["--login-bob-delay" as string]: i * 180 }}
                   />
                   {i < 3 ? (
-                    <span className="h-0.5 w-6 rounded-full bg-[#2A2438]/10" />
+                    <span className="h-0.5 w-6 rounded-full bg-[#1F1B15]/10" />
                   ) : null}
                 </div>
               ))}
             </div>
 
             <h2
-              className="ef-fade-up text-[2rem] font-semibold leading-[1.15] tracking-tight text-[#2A2438] lg:text-[2.75rem]"
+              className="ef-fade-up text-[2rem] font-semibold leading-[1.15] tracking-tight text-[#1F1B15] lg:text-[2.75rem]"
               style={{ ["--ef-index" as string]: 1 }}
             >
               A goal, a path, and your first conversation — ready when you are.
@@ -163,9 +172,9 @@ export default function RegisterPage() {
               ].map((t) => (
                 <li
                   key={t}
-                  className="flex items-start gap-2.5 text-[0.9375rem] leading-snug text-[#6B6478]"
+                  className="flex items-start gap-2.5 text-[0.9375rem] leading-snug text-[#6B6258]"
                 >
-                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[#FF8A6B]/15 text-[#FF8A6B]">
+                  <span className="mt-0.5 grid size-5 shrink-0 place-items-center rounded-full bg-[#E85D04]/15 text-[#E85D04]">
                     <Check className="h-3 w-3" strokeWidth={2.5} aria-hidden />
                   </span>
                   {t}
@@ -175,7 +184,7 @@ export default function RegisterPage() {
           </div>
 
           <p
-            className="ef-fade-up text-[0.875rem] text-[#8A8396]"
+            className="ef-fade-up text-[0.875rem] text-[#8A8178]"
             style={{ ["--ef-index" as string]: 3 }}
           >
             Free to start — build a habit that sticks.
@@ -184,11 +193,11 @@ export default function RegisterPage() {
 
         <div className="relative flex items-center justify-center px-5 py-8 sm:px-8 md:p-10 lg:py-12">
           <div
-            className="ef-fade-up w-full max-w-[440px] rounded-[1.75rem] bg-white p-6 shadow-[0_18px_50px_rgba(42,36,56,0.08)] ring-1 ring-[#2A2438]/06 sm:p-8"
+            className="ef-fade-up w-full max-w-[440px] rounded-[1.75rem] bg-white p-6 shadow-[0_18px_50px_rgba(31,27,21,0.08)] ring-1 ring-[#1F1B15]/06 sm:p-8"
             style={{ ["--ef-index" as string]: 1 }}
           >
             <div className="mb-6 flex items-center gap-2.5 md:hidden">
-              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#FF8A6B] text-white">
+              <div className="grid h-11 w-11 place-items-center rounded-2xl bg-[#E85D04] text-white">
                 <span className="text-[0.875rem] font-bold leading-none">E</span>
               </div>
               <span className="text-[0.875rem] font-semibold tracking-tight">
@@ -197,14 +206,14 @@ export default function RegisterPage() {
             </div>
 
             <div className="mb-6">
-              <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
+              <h1 className="text-[1.75rem] font-semibold tracking-tight text-[#1F1B15]">
                 Start your path
               </h1>
-              <p className="mt-2 text-[0.875rem] leading-relaxed text-[#8A8396]">
+              <p className="mt-2 text-[0.875rem] leading-relaxed text-[#8A8178]">
                 Already have an account?{" "}
                 <Link
                   href="/login"
-                  className="inline-flex min-h-11 items-center font-semibold text-[#7B6EF6] transition-colors hover:text-[#6758E8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]"
+                  className="inline-flex min-h-11 items-center font-semibold text-[#9A3412] transition-colors hover:text-[#E85D04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
                 >
                   Sign in
                 </Link>
@@ -214,7 +223,7 @@ export default function RegisterPage() {
             <form className="space-y-3.5" onSubmit={handleSubmit} noValidate>
               {error ? (
                 <div
-                  className="rounded-2xl bg-[#FFF0EE] px-3.5 py-2.5 text-[0.875rem] text-[#C24B3A] ring-1 ring-[#FF8A6B]/25"
+                  className="rounded-2xl bg-[#FFE4E6] px-3.5 py-2.5 text-[0.875rem] text-[#BE123C] ring-1 ring-[#BE123C]/25"
                   role="alert"
                 >
                   {error}
@@ -223,7 +232,7 @@ export default function RegisterPage() {
 
               <div className="grid grid-cols-1 gap-3.5 sm:grid-cols-2">
                 <div className="space-y-1.5">
-                  <Label htmlFor="name" className="text-[#6B6478]">
+                  <Label htmlFor="name" className="text-[#6B6258]">
                     Full name
                   </Label>
                   <Input
@@ -232,6 +241,9 @@ export default function RegisterPage() {
                     placeholder="Your name"
                     value={name}
                     aria-invalid={Boolean(fieldErrors.name)}
+                    aria-describedby={
+                      fieldErrors.name ? "name-error" : undefined
+                    }
                     onChange={(e) => setName(e.target.value)}
                     className={cn(
                       fieldClass,
@@ -239,13 +251,13 @@ export default function RegisterPage() {
                     )}
                   />
                   {fieldErrors.name ? (
-                    <p className="text-[0.75rem] text-[#C24B3A]">
+                    <p id="name-error" className="text-[0.75rem] text-[#BE123C]">
                       {fieldErrors.name}
                     </p>
                   ) : null}
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="username" className="text-[#6B6478]">
+                  <Label htmlFor="username" className="text-[#6B6258]">
                     Username
                   </Label>
                   <Input
@@ -254,14 +266,25 @@ export default function RegisterPage() {
                     placeholder="Username"
                     value={username}
                     aria-invalid={Boolean(fieldErrors.username)}
+                    aria-describedby={
+                      fieldErrors.username
+                        ? "username-hint username-error"
+                        : "username-hint"
+                    }
                     onChange={(e) => setUsername(e.target.value)}
                     className={cn(
                       fieldClass,
                       fieldErrors.username && fieldErrorClass,
                     )}
                   />
+                  <p id="username-hint" className="text-[0.75rem] text-[#8A8178]">
+                    Public name on your path.
+                  </p>
                   {fieldErrors.username ? (
-                    <p className="text-[0.75rem] text-[#C24B3A]">
+                    <p
+                      id="username-error"
+                      className="text-[0.75rem] text-[#BE123C]"
+                    >
                       {fieldErrors.username}
                     </p>
                   ) : null}
@@ -269,7 +292,7 @@ export default function RegisterPage() {
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="email" className="text-[#6B6478]">
+                <Label htmlFor="email" className="text-[#6B6258]">
                   Email
                 </Label>
                 <Input
@@ -279,6 +302,9 @@ export default function RegisterPage() {
                   placeholder="you@example.com"
                   value={email}
                   aria-invalid={Boolean(fieldErrors.email)}
+                  aria-describedby={
+                    fieldErrors.email ? "email-error" : undefined
+                  }
                   onChange={(e) => setEmail(e.target.value)}
                   className={cn(
                     fieldClass,
@@ -286,14 +312,14 @@ export default function RegisterPage() {
                   )}
                 />
                 {fieldErrors.email ? (
-                  <p className="text-[0.75rem] text-[#C24B3A]">
+                  <p id="email-error" className="text-[0.75rem] text-[#BE123C]">
                     {fieldErrors.email}
                   </p>
                 ) : null}
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="password" className="text-[#6B6478]">
+                <Label htmlFor="password" className="text-[#6B6258]">
                   Password
                 </Label>
                 <div className="relative">
@@ -304,6 +330,9 @@ export default function RegisterPage() {
                     placeholder="At least 8 characters"
                     value={pw}
                     aria-invalid={Boolean(fieldErrors.pw)}
+                    aria-describedby={
+                      fieldErrors.pw ? "password-error" : undefined
+                    }
                     onChange={(e) => setPw(e.target.value)}
                     className={cn(
                       fieldClass,
@@ -314,7 +343,7 @@ export default function RegisterPage() {
                   <button
                     type="button"
                     onClick={() => setShow((v) => !v)}
-                    className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-[#8A8396] transition-colors hover:bg-[#FFF8F4] hover:text-[#2A2438] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]"
+                    className="absolute right-1 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-xl text-[#8A8178] transition-colors hover:bg-[#FFF5EB] hover:text-[#1F1B15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
                     aria-label={show ? "Hide password" : "Show password"}
                   >
                     {show ? (
@@ -325,28 +354,47 @@ export default function RegisterPage() {
                   </button>
                 </div>
                 {fieldErrors.pw ? (
-                  <p className="text-[0.75rem] text-[#C24B3A]">{fieldErrors.pw}</p>
+                  <p id="password-error" className="text-[0.75rem] text-[#BE123C]">
+                    {fieldErrors.pw}
+                  </p>
                 ) : null}
                 <div className="mt-2 flex items-center gap-2">
-                  <div className="flex flex-1 gap-1" aria-hidden>
+                  <div
+                    className="flex flex-1 gap-1"
+                    role="meter"
+                    aria-label="Password strength"
+                    aria-valuemin={0}
+                    aria-valuemax={4}
+                    aria-valuenow={s}
+                    aria-valuetext={
+                      pw
+                        ? labels[s] || "Very weak"
+                        : "Enter a password to see strength"
+                    }
+                  >
                     {[0, 1, 2, 3].map((i) => (
                       <div
                         key={i}
                         className={cn(
-                          "h-1.5 flex-1 rounded-full bg-[#EDE6E0]",
+                          "h-1.5 flex-1 rounded-full bg-[#E9D7C9]",
                           i < s && strengthTones[s],
                         )}
+                        aria-hidden
                       />
                     ))}
                   </div>
-                  <span className="w-[4.5rem] text-right text-[0.75rem] font-medium text-[#8A8396]">
-                    {pw ? labels[s] : ""}
+                  <span className="w-[4.5rem] text-right text-[0.75rem] font-medium text-[#8A8178]">
+                    {pw ? labels[s] : "Strength"}
                   </span>
                 </div>
+                <p className="text-[0.75rem] leading-relaxed text-[#8A8178]">
+                  Use 8+ characters with a mix of upper case, numbers, and a
+                  symbol.
+                </p>
               </div>
 
               <div className="space-y-1.5">
-                <Label htmlFor="confirm" className="text-[#6B6478]">
+                <Label htmlFor="confirm" className="text-[#6B6258]">
                   Confirm password
                 </Label>
                 <Input
@@ -356,6 +404,9 @@ export default function RegisterPage() {
                   placeholder="Repeat password"
                   value={confirm}
                   aria-invalid={Boolean(fieldErrors.confirm)}
+                  aria-describedby={
+                    fieldErrors.confirm ? "confirm-error" : undefined
+                  }
                   onChange={(e) => setConfirm(e.target.value)}
                   className={cn(
                     fieldClass,
@@ -363,32 +414,42 @@ export default function RegisterPage() {
                   )}
                 />
                 {fieldErrors.confirm ? (
-                  <p className="text-[0.75rem] text-[#C24B3A]">
+                  <p
+                    id="confirm-error"
+                    className="text-[0.75rem] text-[#BE123C]"
+                  >
                     {fieldErrors.confirm}
                   </p>
                 ) : null}
               </div>
 
               <div className="pt-0.5">
-                <label className="inline-flex min-h-11 cursor-pointer items-start gap-2.5 text-[0.8125rem] leading-relaxed text-[#6B6478]">
+                <label className="inline-flex min-h-11 cursor-pointer items-start gap-2.5 text-[0.8125rem] leading-relaxed text-[#6B6258]">
                   <Checkbox
                     checked={agreed}
                     onCheckedChange={(v) => setAgreed(v === true)}
-                    className="mt-0.5 size-5 rounded-md border-[#D9D0C8] data-[state=checked]:border-[#FF8A6B] data-[state=checked]:bg-[#FF8A6B] data-[state=checked]:text-white"
+                    className="mt-0.5 size-5 rounded-md border-[#D4C0AE] data-[state=checked]:border-[#E85D04] data-[state=checked]:bg-[#E85D04] data-[state=checked]:text-white"
                   />
                   <span>
                     I agree to the{" "}
                     <Link
                       href="/terms"
-                      className="inline-flex min-h-11 min-w-11 items-center justify-center font-medium text-[#7B6EF6] transition-colors hover:text-[#6758E8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]"
+                      className="font-medium text-[#9A3412] underline-offset-2 hover:text-[#E85D04] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
                     >
                       Terms
                     </Link>{" "}
-                    and Privacy Policy.
+                    and{" "}
+                    <Link
+                      href="/privacy"
+                      className="font-medium text-[#9A3412] underline-offset-2 hover:text-[#E85D04] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
+                    >
+                      Privacy Policy
+                    </Link>
+                    .
                   </span>
                 </label>
                 {fieldErrors.agreed ? (
-                  <p className="mt-1.5 text-[0.75rem] text-[#C24B3A]">
+                  <p className="mt-1.5 text-[0.75rem] text-[#BE123C]">
                     {fieldErrors.agreed}
                   </p>
                 ) : null}
@@ -397,10 +458,14 @@ export default function RegisterPage() {
               <Button
                 type="submit"
                 disabled={loading}
-                className="mt-1 h-11 w-full rounded-2xl bg-[#FF8A6B] text-[0.9375rem] font-semibold text-white shadow-[0_10px_24px_rgba(255,138,107,0.28)] transition-[transform,background-color,box-shadow] duration-200 hover:bg-[#F47A5A] hover:shadow-[0_12px_28px_rgba(255,138,107,0.34)] active:scale-[0.98] disabled:opacity-60"
+                aria-busy={loading}
+                className="mt-1 h-11 w-full rounded-2xl bg-[#E85D04] text-[0.9375rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color,box-shadow] duration-200 hover:bg-[#D04F00] hover:shadow-[0_12px_28px_rgba(232,93,4,0.34)] active:scale-[0.98] disabled:opacity-60"
               >
                 {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                  <>
+                    <Loader2 className="mr-1.5 h-4 w-4 animate-spin" aria-hidden />
+                    Creating account…
+                  </>
                 ) : (
                   <>
                     Create account

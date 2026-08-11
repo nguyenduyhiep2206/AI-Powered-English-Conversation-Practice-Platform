@@ -67,18 +67,18 @@ function MessageBubble({ message }: { message: LessonQaMessage }) {
         className={cn(
           "max-w-[88%] px-3.5 py-2.5 text-[0.875rem] leading-[1.55]",
           isUser
-            ? "rounded-[12px_12px_4px_12px] bg-[#2A2438] text-white"
-            : "rounded-[12px_12px_12px_4px] bg-[#FFF0E8] text-[#2A2438]",
+            ? "rounded-[12px_12px_4px_12px] bg-[#1F1B15] text-white"
+            : "rounded-[12px_12px_12px_4px] bg-[#FFE8D6] text-[#1F1B15]",
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
         {cite ? (
-          <p className="mt-2 text-[0.75rem] leading-snug text-[#6B6478]">
+          <p className="mt-2 text-[0.75rem] leading-snug text-[#6B6258]">
             {cite}
           </p>
         ) : null}
         {emptyNote ? (
-          <p className="mt-1.5 text-[0.75rem] leading-snug text-[#6B6478]">
+          <p className="mt-1.5 text-[0.75rem] leading-snug text-[#6B6258]">
             {emptyNote}
           </p>
         ) : null}
@@ -310,9 +310,9 @@ export default function LessonQaPanel({
               ? `Ask about this lesson · ${lessonTitle}`
               : "Ask about this lesson"
           }
-          className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-[10px] border border-[#EDE6E0] bg-white px-3.5 text-[0.8125rem] font-medium text-[#2A2438] transition-[transform,background-color] duration-200 hover:bg-[#FFF0E8] active:scale-[0.98]"
+          className="pointer-events-auto inline-flex h-11 items-center gap-2 rounded-[10px] border border-[#E9D7C9] bg-white px-3.5 text-[0.8125rem] font-medium text-[#1F1B15] transition-[transform,background-color] duration-200 hover:bg-[#FFE8D6] active:scale-[0.98]"
         >
-          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#FFF0E8] text-[#FF8A6B]">
+          <span className="flex h-7 w-7 items-center justify-center rounded-[8px] bg-[#FFE8D6] text-[#E85D04]">
             <MessageCircle className="h-3.5 w-3.5" strokeWidth={2.25} />
           </span>
           Ask about lesson
@@ -325,18 +325,18 @@ export default function LessonQaPanel({
     <div
       className={cn(
         isDock
-          ? "flex h-[min(70vh,640px)] w-full flex-col overflow-hidden rounded-[1.75rem] bg-white shadow-[0_12px_40px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06"
-          : "pointer-events-auto flex max-h-[min(72vh,560px)] w-full max-w-[380px] flex-col overflow-hidden rounded-[1.75rem] border border-[#EDE6E0] bg-white shadow-[0_12px_40px_rgba(42,36,56,0.06)] sm:w-[360px]",
+          ? "flex h-[min(70vh,640px)] w-full flex-col overflow-hidden rounded-[2rem] border border-[#E9D7C9] bg-white/90 shadow-[0_24px_60px_-40px_rgba(31,27,21,0.45)]"
+          : "pointer-events-auto flex max-h-[min(72vh,560px)] w-full max-w-[380px] flex-col overflow-hidden rounded-[2rem] border border-[#E9D7C9] bg-white shadow-[0_24px_60px_-40px_rgba(31,27,21,0.45)] sm:w-[360px]",
       )}
       role={isDock ? "complementary" : "dialog"}
       aria-label="Ask about this lesson"
     >
-      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#EDE6E0] px-4 py-3">
+      <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[#E9D7C9] px-4 py-3">
         <div className="min-w-0">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.12em] text-[#6B6478]">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.12em] text-[#6B6258]">
             Lesson Q&A
           </p>
-          <p className="mt-0.5 truncate text-[0.875rem] font-medium text-[#2A2438]">
+          <p className="mt-0.5 truncate text-[0.875rem] font-medium text-[#1F1B15]">
             {lessonTitle || "Current lesson"}
           </p>
         </div>
@@ -346,7 +346,7 @@ export default function LessonQaPanel({
               type="button"
               disabled={sending}
               onClick={() => void handleClear()}
-              className="rounded-[6px] px-2 py-1 text-[0.75rem] text-[#6B6478] transition-colors hover:bg-[#FFF0E8] hover:text-[#6B6478] disabled:opacity-50"
+              className="rounded-[6px] px-2 py-1 text-[0.75rem] text-[#6B6258] transition-colors hover:bg-[#FFE8D6] hover:text-[#6B6258] disabled:opacity-50"
             >
               Clear
             </button>
@@ -356,7 +356,7 @@ export default function LessonQaPanel({
               type="button"
               aria-label="Close lesson Q&A"
               onClick={() => setOpen(false)}
-              className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-[6px] text-[#6B6478] transition-colors hover:bg-[#FFF0E8] hover:text-[#2A2438]"
+              className="ml-0.5 flex h-7 w-7 items-center justify-center rounded-[6px] text-[#6B6258] transition-colors hover:bg-[#FFE8D6] hover:text-[#1F1B15]"
             >
               <X className="h-4 w-4" />
             </button>
@@ -365,7 +365,7 @@ export default function LessonQaPanel({
       </header>
 
       {error ? (
-        <div className="shrink-0 border-b border-[#EDE6E0] bg-[#FFF0EE] px-4 py-2 text-[0.8125rem] text-[#C24B3A]">
+        <div className="shrink-0 border-b border-[#E9D7C9] bg-[#FFE4E6] px-4 py-2 text-[0.8125rem] text-[#BE123C]">
           {error}
         </div>
       ) : null}
@@ -379,12 +379,12 @@ export default function LessonQaPanel({
         )}
       >
         {loading ? (
-          <div className="flex flex-1 items-center justify-center gap-2 py-10 text-[0.875rem] text-[#6B6478]">
+          <div className="flex flex-1 items-center justify-center gap-2 py-10 text-[0.875rem] text-[#6B6258]">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading…
           </div>
         ) : messages.length === 0 && !streamingText && !sending ? (
-          <p className="px-1 py-2 text-[0.75rem] leading-snug text-[#6B6478]">
+          <p className="px-1 py-2 text-[0.75rem] leading-snug text-[#6B6258]">
             Ask about vocabulary or grammar in this lesson — answers use the
             books linked to this skill.
           </p>
@@ -395,23 +395,23 @@ export default function LessonQaPanel({
             ))}
             {streamingText || (sending && !streamingText) ? (
               <div className="flex justify-start">
-                <div className="max-w-[88%] rounded-[12px_12px_12px_4px] bg-[#FFF0E8] px-3.5 py-2.5 text-[0.875rem] leading-[1.55] text-[#2A2438]">
+                <div className="max-w-[88%] rounded-[12px_12px_12px_4px] bg-[#FFE8D6] px-3.5 py-2.5 text-[0.875rem] leading-[1.55] text-[#1F1B15]">
                   {streamingText ? (
                     <>
                       <p className="whitespace-pre-wrap">{streamingText}</p>
                       {streamingCite ? (
-                        <p className="mt-2 text-[0.75rem] text-[#6B6478]">
+                        <p className="mt-2 text-[0.75rem] text-[#6B6258]">
                           {streamingCite}
                         </p>
                       ) : null}
                       {streamingEmptyNote ? (
-                        <p className="mt-1.5 text-[0.75rem] text-[#6B6478]">
+                        <p className="mt-1.5 text-[0.75rem] text-[#6B6258]">
                           {streamingEmptyNote}
                         </p>
                       ) : null}
                     </>
                   ) : (
-                    <Loader2 className="h-4 w-4 animate-spin text-[#6B6478]" />
+                    <Loader2 className="h-4 w-4 animate-spin text-[#6B6258]" />
                   )}
                 </div>
               </div>
@@ -422,8 +422,8 @@ export default function LessonQaPanel({
       </div>
 
       {showChips ? (
-        <div className="shrink-0 space-y-1.5 border-t border-[#EDE6E0] px-3.5 py-2.5">
-          <p className="text-[0.75rem] font-medium uppercase tracking-[0.1em] text-[#6B6478]">
+        <div className="shrink-0 space-y-1.5 border-t border-[#E9D7C9] px-3.5 py-2.5">
+          <p className="text-[0.75rem] font-medium uppercase tracking-[0.1em] text-[#6B6258]">
             Suggestions
           </p>
           <div className="flex flex-col gap-1">
@@ -433,7 +433,7 @@ export default function LessonQaPanel({
                 type="button"
                 disabled={sending || loading}
                 onClick={() => void sendContent(prompt)}
-                className="rounded-[8px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-left text-[0.8125rem] leading-snug text-[#2A2438] transition-colors hover:border-[#D9D0C8] hover:bg-[#FFF0E8] disabled:opacity-50"
+                className="rounded-[8px] border border-[#E9D7C9] bg-[#FFFAF5] px-3 py-2 text-left text-[0.8125rem] leading-snug text-[#1F1B15] transition-colors hover:border-[#D4C0AE] hover:bg-[#FFE8D6] disabled:opacity-50"
               >
                 {prompt}
               </button>
@@ -443,7 +443,7 @@ export default function LessonQaPanel({
       ) : null}
 
       <form
-        className="flex shrink-0 items-center gap-2 border-t border-[#EDE6E0] px-3 py-2.5"
+        className="flex shrink-0 items-center gap-2 border-t border-[#E9D7C9] px-3 py-2.5"
         onSubmit={(e) => {
           e.preventDefault();
           void sendContent(draft);
@@ -454,12 +454,12 @@ export default function LessonQaPanel({
           onChange={(e) => setDraft(e.target.value)}
           placeholder="Ask about this lesson…"
           disabled={sending || loading}
-          className="min-h-11 rounded-[8px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#6B6478] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
+          className="min-h-11 rounded-[8px] border-[#E9D7C9] bg-[#FFFAF5] text-[0.875rem] text-[#1F1B15] placeholder:text-[#6B6258] focus-visible:border-[#E85D04] focus-visible:ring-0"
         />
         <Button
           type="submit"
           disabled={sending || loading || !draft.trim()}
-          className="min-h-11 w-11 shrink-0 rounded-[8px] bg-[#FF8A6B] p-0 text-white hover:bg-[#F47A5A] active:scale-[0.98]"
+          className="min-h-11 w-11 shrink-0 rounded-[8px] bg-[#E85D04] p-0 text-white hover:bg-[#D04F00] active:scale-[0.98]"
           aria-label="Send"
         >
           {sending ? (

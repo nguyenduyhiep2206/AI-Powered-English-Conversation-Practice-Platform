@@ -130,13 +130,13 @@ export default function DashboardPage() {
   }
 
   return (
-    <div className="relative min-h-screen overflow-x-hidden bg-[#FFF8F4] text-[#2A2438]">
+    <div className="relative min-h-screen overflow-x-hidden bg-[#FFF5EB] text-[#1F1B15]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-[22rem]"
         style={{
           background:
-            "radial-gradient(ellipse 70% 60% at 18% 0%, rgba(255, 138, 107, 0.26), transparent 55%), radial-gradient(ellipse 50% 45% at 92% 8%, rgba(140, 198, 232, 0.2), transparent 50%)",
+            "radial-gradient(ellipse 65% 55% at 14% 0%, rgba(232, 93, 4, 0.16), transparent 55%), radial-gradient(ellipse 50% 45% at 90% 10%, rgba(13, 148, 136, 0.1), transparent 52%)",
         }}
       />
 
@@ -146,7 +146,7 @@ export default function DashboardPage() {
             access?.has_in_progress ? (
               <Link
                 href="/onboarding/placement"
-                className="hidden text-[0.75rem] font-medium text-[#7B6EF6] transition-colors hover:text-[#6758E8] sm:inline"
+                className="hidden text-[0.75rem] font-medium text-[#9A3412] transition-colors hover:text-[#E85D04] sm:inline"
               >
                 Resume placement
               </Link>
@@ -154,14 +154,14 @@ export default function DashboardPage() {
           }
         />
 
-        <main className="mx-auto max-w-3xl px-5 py-8 sm:px-6 sm:py-10">
-          <header className="mb-8">
-            <h1 className="text-3xl font-semibold tracking-tight text-[#2A2438] sm:text-[2rem]">
+        <main className="mx-auto w-full max-w-2xl px-4 py-8 sm:px-5 sm:py-10">
+          <header className="mb-8 sm:mb-9">
+            <h1 className="text-3xl font-semibold tracking-tight text-[#1F1B15] sm:text-[2rem]">
               {level ? `${level} foundation` : "Your roadmap"}
             </h1>
-            <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed text-[#6B6478]">
+            <p className="mt-2 max-w-prose text-[0.9375rem] leading-relaxed text-[#6B6258]">
               {activeWeek
-                ? `Continue with “${activeWeek.skill_title || activeWeek.skill_slug}” — practice until mastery is ready, then complete the week.`
+                ? `Continue with “${activeWeek.skill_title || activeWeek.skill_slug}”. Practice until mastery is ready, then complete the week.`
                 : level
                   ? nextBand
                     ? `Theme units at ${level}. Finish this band, then challenge toward ${nextBand} when ready.`
@@ -171,22 +171,22 @@ export default function DashboardPage() {
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
               {weeks.length > 0 ? (
-                <span className="rounded-2xl bg-white px-3 py-1.5 text-[0.75rem] font-semibold text-[#2A2438] ring-1 ring-[#2A2438]/06">
+                <span className="rounded-2xl bg-white px-3 py-1.5 text-[0.75rem] font-semibold text-[#1F1B15] ring-1 ring-[#E9D7C9]">
                   {completedCount}/{weeks.length} steps done
                 </span>
               ) : null}
               {level ? (
-                <span className="rounded-2xl bg-white/80 px-3 py-1.5 text-[0.75rem] font-semibold text-[#5C5468] ring-1 ring-[#2A2438]/06">
+                <span className="rounded-2xl bg-[#CCFBF1] px-3 py-1.5 text-[0.75rem] font-semibold text-[#115E59] ring-1 ring-[#99F6E4]">
                   CEFR {level}
                 </span>
               ) : null}
               {nextBand ? (
-                <span className="rounded-2xl bg-[#8CC6E8]/20 px-3 py-1.5 text-[0.75rem] font-semibold text-[#3D7FA0] ring-1 ring-[#8CC6E8]/35">
+                <span className="rounded-2xl bg-[#FFE8D6] px-3 py-1.5 text-[0.75rem] font-semibold text-[#9A3412] ring-1 ring-[#FFD0B0]">
                   Next {nextBand}
                 </span>
               ) : null}
               {placementScore != null ? (
-                <span className="rounded-2xl bg-[#C4B0E8]/20 px-3 py-1.5 text-[0.75rem] font-semibold text-[#6B5B9A] ring-1 ring-[#C4B0E8]/40">
+                <span className="rounded-2xl bg-white px-3 py-1.5 text-[0.75rem] font-semibold text-[#6B6258] ring-1 ring-[#E9D7C9]">
                   Sub-level {placementScore}/10
                 </span>
               ) : null}
@@ -199,19 +199,19 @@ export default function DashboardPage() {
               aria-busy="true"
               aria-live="polite"
             >
-              <Loader2 className="h-6 w-6 animate-spin text-[#FF8A6B]" />
-              <p className="text-[0.875rem] text-[#8A8396]">Loading your path…</p>
+              <Loader2 className="h-6 w-6 animate-spin text-[#E85D04]" />
+              <p className="text-[0.875rem] text-[#6B6258]">Loading your path…</p>
             </div>
           ) : error ? (
             <div
-              className="rounded-[1.75rem] bg-[#FFF0EE] px-5 py-6 text-[0.875rem] text-[#C24B3A] ring-1 ring-[#FF8A6B]/25"
+              className="rounded-[2rem] bg-[#FFE4E6] px-5 py-6 text-[0.875rem] text-[#BE123C] ring-1 ring-[#FECDD3]"
               role="alert"
             >
               <p className="font-semibold">Couldn’t load your path</p>
               <p className="mt-1 leading-relaxed">{error}</p>
               <Button
                 type="button"
-                className="mt-4 h-10 rounded-2xl bg-[#FF8A6B] px-4 text-[0.875rem] font-semibold text-white hover:bg-[#F47A5A]"
+                className="mt-4 h-10 rounded-2xl bg-[#E85D04] px-4 text-[0.875rem] font-semibold text-white hover:bg-[#D04F00]"
                 onClick={() => {
                   setLoading(true);
                   setError(null);
@@ -222,14 +222,14 @@ export default function DashboardPage() {
               </Button>
             </div>
           ) : weeks.length === 0 && !showBandExit ? (
-            <section className="rounded-[1.75rem] bg-white px-6 py-14 text-center shadow-[0_18px_50px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06">
-              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FF8A6B]/15 text-[#FF8A6B]">
+            <section className="rounded-[2.5rem] border border-[#E9D7C9] bg-white/75 px-6 py-14 text-center shadow-[0_24px_60px_-40px_rgba(31,27,21,0.45)]">
+              <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-[#FFE8D6] text-[#E85D04]">
                 <RouteIcon className="h-6 w-6" aria-hidden />
               </div>
-              <h2 className="mt-5 text-xl font-semibold tracking-tight text-[#2A2438]">
+              <h2 className="mt-5 text-xl font-semibold tracking-tight text-[#1F1B15]">
                 Create your first path
               </h2>
-              <p className="mx-auto mt-2 max-w-sm text-[0.9375rem] leading-relaxed text-[#6B6478]">
+              <p className="mx-auto mt-2 max-w-sm text-[0.9375rem] leading-relaxed text-[#6B6258]">
                 {level
                   ? `We’ll pick the next ${level} theme units from covered skills in your zone.`
                   : "We’ll pick theme units from covered catalog skills in your zone."}
@@ -238,8 +238,8 @@ export default function DashboardPage() {
                 type="button"
                 size="lg"
                 className={cn(
-                  "mt-7 h-11 rounded-2xl bg-[#FF8A6B] px-6 text-[0.9375rem] font-semibold text-white",
-                  "shadow-[0_10px_24px_rgba(255,138,107,0.28)] hover:bg-[#F47A5A]",
+                  "mt-7 h-11 rounded-2xl bg-[#E85D04] px-6 text-[0.9375rem] font-semibold text-white",
+                  "shadow-[0_10px_22px_-8px_rgba(232,93,4,0.55)] hover:bg-[#D04F00]",
                   "active:scale-[0.98]",
                 )}
                 disabled={assembling}
@@ -267,13 +267,13 @@ export default function DashboardPage() {
               ) : null}
 
               {showBandExit ? (
-                <section className="mt-10 rounded-[1.75rem] bg-white px-6 py-7 shadow-[0_12px_36px_rgba(42,36,56,0.05)] ring-1 ring-[#2A2438]/06">
-                  <h2 className="text-xl font-semibold tracking-tight text-[#2A2438]">
+                <section className="mt-8 rounded-[2.5rem] border border-[#E9D7C9] bg-white/75 px-6 py-7 shadow-[0_24px_60px_-40px_rgba(31,27,21,0.35)]">
+                  <h2 className="text-xl font-semibold tracking-tight text-[#1F1B15]">
                     {level
                       ? `${level} foundation checkpoint`
                       : "Foundation checkpoint"}
                   </h2>
-                  <p className="mt-2 max-w-lg text-[0.9375rem] leading-relaxed text-[#6B6478]">
+                  <p className="mt-2 max-w-lg text-[0.9375rem] leading-relaxed text-[#6B6258]">
                     {nextBand
                       ? `No more eligible steps at this level. Review weak skills below, then take a level challenge when ready for ${nextBand}. This path is not an official CEFR certificate.`
                       : "No more eligible steps at this level. Review weak skills below to keep building."}
@@ -281,7 +281,7 @@ export default function DashboardPage() {
                   {weeks.length === 0 ? (
                     <Button
                       type="button"
-                      className="mt-5 h-10 rounded-2xl border border-[#EDE6E0] bg-[#FFFCF9] text-[#2A2438] hover:bg-[#FFF8F4]"
+                      className="mt-5 h-10 rounded-2xl border border-[#E9D7C9] bg-[#FFFAF5] text-[#1F1B15] hover:bg-white"
                       disabled={assembling}
                       onClick={handleAssemble}
                     >

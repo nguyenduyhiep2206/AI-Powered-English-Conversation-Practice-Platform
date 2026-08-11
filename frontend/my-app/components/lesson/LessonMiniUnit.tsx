@@ -40,16 +40,16 @@ type Props = {
 };
 
 const PRIMARY_BTN =
-  "h-11 w-full rounded-2xl bg-[#FF8A6B] font-semibold text-white hover:bg-[#F47A5A]";
+  "h-11 w-full rounded-2xl bg-[#E85D04] font-semibold text-white hover:bg-[#D04F00]";
 
 const SECONDARY_BTN =
-  "h-11 w-full rounded-2xl border border-[#EDE6E0] bg-white font-semibold text-[#2A2438] hover:bg-[#FFF0E8]";
+  "h-11 w-full rounded-2xl border border-[#E9D7C9] bg-white font-semibold text-[#1F1B15] hover:bg-[#FFE8D6]";
 
 const PANEL =
-  "space-y-5 rounded-[1.75rem] border border-[#EDE6E0] bg-white p-6 shadow-[0_12px_40px_rgba(42,36,56,0.04)]";
+  "space-y-5 rounded-[1.75rem] border border-[#E9D7C9] bg-white p-6 shadow-[0_12px_40px_rgba(31,27,21,0.04)]";
 
 const EYEBROW =
-  "text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6478]";
+  "text-[0.75rem] font-medium uppercase tracking-[0.14em] text-[#6B6258]";
 
 const STEP_LABEL: Record<Step, string> = {
   hook: "Hook",
@@ -107,20 +107,20 @@ function LessonContextStrip({ content }: { content: LessonContent }) {
   if (!passage && targets.length === 0) return null;
 
   return (
-    <div className="rounded-2xl border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3 ring-1 ring-[#2A2438]/04">
+    <div className="rounded-2xl border border-[#E9D7C9] bg-[#FFFAF5] px-4 py-3 ring-1 ring-[#1F1B15]/04">
       <button
         type="button"
-        className="flex w-full items-center justify-between gap-3 text-left text-[0.8125rem] font-medium text-[#5C5468] cursor-pointer"
+        className="flex w-full items-center justify-between gap-3 text-left text-[0.8125rem] font-medium text-[#6B6258] cursor-pointer"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
         <span>Lesson reference</span>
-        <span className="text-[#7B6EF6]">{open ? "Hide" : "Show"}</span>
+        <span className="text-[#9A3412]">{open ? "Hide" : "Show"}</span>
       </button>
       {open ? (
         <div className="mt-3 space-y-3">
           {passage ? (
-            <p className="max-h-36 overflow-y-auto whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#2A2438]">
+            <p className="max-h-36 overflow-y-auto whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#1F1B15]">
               {passage}
             </p>
           ) : null}
@@ -129,11 +129,11 @@ function LessonContextStrip({ content }: { content: LessonContent }) {
               {targets.map((t) => (
                 <li
                   key={t.surface}
-                  className="rounded-[10px] border border-[#EDE6E0] bg-white px-2.5 py-1 text-[0.75rem] text-[#2A2438]"
+                  className="rounded-[10px] border border-[#E9D7C9] bg-white px-2.5 py-1 text-[0.75rem] text-[#1F1B15]"
                 >
                   <span className="font-medium">{t.surface}</span>
                   {t.gloss ? (
-                    <span className="text-[#6B6478]"> — {t.gloss}</span>
+                    <span className="text-[#6B6258]"> · {t.gloss}</span>
                   ) : null}
                 </li>
               ))}
@@ -170,7 +170,7 @@ function CheckPanel({
   return (
     <div className={PANEL}>
       <p className={EYEBROW}>{label}</p>
-      <p className="text-[0.9375rem] font-medium text-[#2A2438]">
+      <p className="text-[0.9375rem] font-medium text-[#1F1B15]">
         {check.prompt}
       </p>
 
@@ -187,10 +187,10 @@ function CheckPanel({
                 onClick={() => onAnswer(option)}
                 className={`rounded-[12px] border px-4 py-3 text-left text-[0.875rem] transition-colors ${
                   revealed && isCorrect
-                    ? "border-[#8CC6E8]/50 bg-[rgba(140,198,232,0.18)] text-[#3D7FA0]"
+                    ? "border-[#0D9488]/50 bg-[rgba(13,148,136,0.18)] text-[#2F9E44]"
                     : selected
-                      ? "border-[#FF8A6B] bg-[#FFF0E8] text-[#2A2438]"
-                      : "border-[#EDE6E0] text-[#6B6478] hover:border-[#FF8A6B]/40"
+                      ? "border-[#E85D04] bg-[#FFE8D6] text-[#1F1B15]"
+                      : "border-[#E9D7C9] text-[#6B6258] hover:border-[#E85D04]/40"
                 }`}
               >
                 {option}
@@ -204,7 +204,7 @@ function CheckPanel({
           disabled={revealed}
           onChange={(e) => onAnswer(e.target.value)}
           placeholder="Your answer"
-          className="h-11 rounded-[12px] border-[#EDE6E0] bg-[#FFFCF9] text-[0.875rem] text-[#2A2438] placeholder:text-[#6B6478] focus-visible:border-[#FF8A6B] focus-visible:ring-0"
+          className="h-11 rounded-[12px] border-[#E9D7C9] bg-[#FFFAF5] text-[0.875rem] text-[#1F1B15] placeholder:text-[#6B6258] focus-visible:border-[#E85D04] focus-visible:ring-0"
         />
       )}
 
@@ -212,7 +212,7 @@ function CheckPanel({
         <div className="space-y-3">
           <p
             className={`text-[0.875rem] ${
-              correct ? "text-[#3D7FA0]" : "text-[#C24B3A]"
+              correct ? "text-[#2F9E44]" : "text-[#BE123C]"
             }`}
           >
             {correct ? "Correct" : `Answer: ${check.answer}`}
@@ -383,18 +383,18 @@ export default function LessonMiniUnit({
   const progressLabel = `${STEP_LABEL[step]} · ${stepPos + 1} of ${order.length}`;
 
   return (
-    <section className="space-y-6 text-[#2A2438]">
+    <section className="space-y-6 text-[#1F1B15]">
       {embedded ? (
-        <div className="mb-5 border-b border-[#EDE6E0] pb-4">
+        <div className="mb-5 border-b border-[#E9D7C9] pb-4">
           {packLabel ? (
-            <p className="text-[0.75rem] font-medium text-[#C45D42]">
+            <p className="text-[0.75rem] font-medium text-[#9A3412]">
               {packLabel}
             </p>
           ) : null}
           {objective ? (
-            <p className="mt-1 text-[0.875rem] text-[#6B6478]">{objective}</p>
+            <p className="mt-1 text-[0.875rem] text-[#6B6258]">{objective}</p>
           ) : null}
-          <p className="mt-2 text-[0.75rem] font-medium text-[#6B6478]">
+          <p className="mt-2 text-[0.75rem] font-medium text-[#6B6258]">
             {progressLabel}
           </p>
         </div>
@@ -403,11 +403,11 @@ export default function LessonMiniUnit({
           <p className={EYEBROW}>
             Learn{packLabel ? ` · ${packLabel}` : ""} · {progressLabel}
           </p>
-          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
+          <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#1F1B15]">
             {title}
           </h1>
           {objective ? (
-            <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6B6478]">
+            <p className="mt-2 text-[0.875rem] leading-relaxed text-[#6B6258]">
               {objective}
             </p>
           ) : null}
@@ -438,8 +438,8 @@ export default function LessonMiniUnit({
                 className={cn(
                   "rounded-2xl px-2.5 py-1.5 text-[0.75rem] font-medium ring-1",
                   active
-                    ? "bg-[#FFF0E8] text-[#C45D42] ring-[#FF8A6B]/35"
-                    : "bg-white text-[#6B6478] ring-[#EDE6E0]",
+                    ? "bg-[#FFE8D6] text-[#9A3412] ring-[#E85D04]/35"
+                    : "bg-white text-[#6B6258] ring-[#E9D7C9]",
                   disabled && "opacity-40",
                 )}
               >
@@ -455,7 +455,7 @@ export default function LessonMiniUnit({
       {step === "hook" && content.hook ? (
         <div className={PANEL}>
           <p className={EYEBROW}>Hook</p>
-          <p className="text-[0.9375rem] leading-relaxed text-[#2A2438]">
+          <p className="text-[0.9375rem] leading-relaxed text-[#1F1B15]">
             {content.hook}
           </p>
           <StepActions onBack={backHandler}>
@@ -475,9 +475,9 @@ export default function LessonMiniUnit({
         <div className={PANEL}>
           <p className={EYEBROW}>Notice</p>
           {content.passage.gloss ? (
-            <p className="text-[0.875rem] text-[#6B6478]">{content.passage.gloss}</p>
+            <p className="text-[0.875rem] text-[#6B6258]">{content.passage.gloss}</p>
           ) : null}
-          <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed text-[#2A2438]">
+          <p className="whitespace-pre-wrap text-[0.9375rem] leading-relaxed text-[#1F1B15]">
             {content.passage.text}
           </p>
           <StepActions onBack={backHandler}>
@@ -496,13 +496,13 @@ export default function LessonMiniUnit({
       {step === "form" && content.form?.rows?.length ? (
         <div className={PANEL}>
           <p className={EYEBROW}>Form</p>
-          <h2 className="text-[1.25rem] font-medium text-[#2A2438]">
+          <h2 className="text-[1.25rem] font-medium text-[#1F1B15]">
             {content.form.title || "Pattern"}
           </h2>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[280px] border-collapse text-[0.875rem]">
               <thead>
-                <tr className="border-b border-[#EDE6E0] text-left text-[#6B6478]">
+                <tr className="border-b border-[#E9D7C9] text-left text-[#6B6258]">
                   <th className="py-2 pr-3 font-medium">Label</th>
                   <th className="py-2 pr-3 font-medium">Pattern</th>
                   <th className="py-2 font-medium">Example</th>
@@ -512,15 +512,15 @@ export default function LessonMiniUnit({
                 {content.form.rows.map((row, i) => (
                   <tr
                     key={`${row.pattern}-${i}`}
-                    className="border-b border-[#EDE6E0]/70"
+                    className="border-b border-[#E9D7C9]/70"
                   >
-                    <td className="py-2.5 pr-3 text-[#6B6478]">
+                    <td className="py-2.5 pr-3 text-[#6B6258]">
                       {row.label || "—"}
                     </td>
-                    <td className="py-2.5 pr-3 font-medium text-[#2A2438]">
+                    <td className="py-2.5 pr-3 font-medium text-[#1F1B15]">
                       {row.pattern}
                     </td>
-                    <td className="py-2.5 text-[#2A2438]">
+                    <td className="py-2.5 text-[#1F1B15]">
                       {row.example || "—"}
                     </td>
                   </tr>
@@ -550,11 +550,11 @@ export default function LessonMiniUnit({
               return (
                 <li
                   key={t.surface}
-                  className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem]"
+                  className="rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-3 py-2 text-[0.875rem]"
                 >
-                  <span className="font-medium text-[#2A2438]">{t.surface}</span>
+                  <span className="font-medium text-[#1F1B15]">{t.surface}</span>
                   {gloss ? (
-                    <span className="ml-2 text-[#6B6478]"> — {gloss}</span>
+                    <span className="ml-2 text-[#6B6258]"> · {gloss}</span>
                   ) : null}
                 </li>
               );
@@ -588,22 +588,22 @@ export default function LessonMiniUnit({
 
       {step === "write" ? (
         <div className={PANEL}>
-          <p className="text-[0.9375rem] font-medium text-[#2A2438]">
+          <p className="text-[0.9375rem] font-medium text-[#1F1B15]">
             {content.writing.prompt}
           </p>
           {content.writing.must_use?.length ? (
-            <p className="text-[0.875rem] text-[#6B6478]">
+            <p className="text-[0.875rem] text-[#6B6258]">
               Try to use: {content.writing.must_use.join(", ")}
             </p>
           ) : null}
           <textarea
-            className="min-h-[140px] w-full rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-3 py-2 text-[0.875rem] text-[#2A2438] outline-none placeholder:text-[#6B6478] focus:border-[#FF8A6B]"
+            className="min-h-[140px] w-full rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-3 py-2 text-[0.875rem] text-[#1F1B15] outline-none placeholder:text-[#6B6258] focus:border-[#E85D04]"
             value={writingText}
             onChange={(e) => setWritingText(e.target.value)}
             placeholder="Write in English…"
           />
           {writingError ? (
-            <p className="text-[0.875rem] text-[#C24B3A]" role="alert">
+            <p className="text-[0.875rem] text-[#BE123C]" role="alert">
               {writingError}
             </p>
           ) : null}
@@ -625,11 +625,11 @@ export default function LessonMiniUnit({
         <div className={PANEL}>
           <div>
             <p className={EYEBROW}>Your task</p>
-            <p className="mt-2 text-[0.9375rem] font-medium leading-relaxed text-[#2A2438]">
+            <p className="mt-2 text-[0.9375rem] font-medium leading-relaxed text-[#1F1B15]">
               {content.writing.prompt}
             </p>
             {content.writing.must_use?.length ? (
-              <p className="mt-2 text-[0.875rem] text-[#6B6478]">
+              <p className="mt-2 text-[0.875rem] text-[#6B6258]">
                 Try to use: {content.writing.must_use.join(", ")}
               </p>
             ) : null}
@@ -637,7 +637,7 @@ export default function LessonMiniUnit({
 
           <div>
             <p className={EYEBROW}>Your writing</p>
-            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#6B6478]">
+            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#6B6258]">
               {feedback.original}
             </p>
           </div>
@@ -646,7 +646,7 @@ export default function LessonMiniUnit({
             <p className={EYEBROW}>
               {feedback.usable === false ? "Example answer" : "Suggested rewrite"}
             </p>
-            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#2A2438]">
+            <p className="mt-2 whitespace-pre-wrap text-[0.875rem] leading-relaxed text-[#1F1B15]">
               {feedback.corrected}
             </p>
           </div>
@@ -654,7 +654,7 @@ export default function LessonMiniUnit({
           {feedback.notes.length ? (
             <div>
               <p className={EYEBROW}>Coach notes</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-[0.875rem] text-[#6B6478]">
+              <ul className="mt-2 list-disc space-y-1 pl-5 text-[0.875rem] text-[#6B6258]">
                 {feedback.notes.map((note) => (
                   <li key={note}>{note}</li>
                 ))}
@@ -663,20 +663,20 @@ export default function LessonMiniUnit({
           ) : null}
 
           {content.form?.rows?.length ? (
-            <div className="rounded-[12px] border border-[#EDE6E0] bg-[#FFFCF9] px-4 py-3">
+            <div className="rounded-[12px] border border-[#E9D7C9] bg-[#FFFAF5] px-4 py-3">
               <p className={EYEBROW}>Remember</p>
-              <ul className="mt-2 space-y-1.5 text-[0.8125rem] leading-relaxed text-[#5C5468]">
+              <ul className="mt-2 space-y-1.5 text-[0.8125rem] leading-relaxed text-[#6B6258]">
                 {content.form.rows.slice(0, 4).map((row, i) => (
                   <li key={`${row.pattern}-${i}`}>
                     {row.label ? (
-                      <span className="font-medium text-[#2A2438]">
+                      <span className="font-medium text-[#1F1B15]">
                         {row.label}
                         {": "}
                       </span>
                     ) : null}
                     <span>{row.pattern}</span>
                     {row.example ? (
-                      <span className="text-[#6B6478]"> — {row.example}</span>
+                      <span className="text-[#6B6258]"> · {row.example}</span>
                     ) : null}
                   </li>
                 ))}

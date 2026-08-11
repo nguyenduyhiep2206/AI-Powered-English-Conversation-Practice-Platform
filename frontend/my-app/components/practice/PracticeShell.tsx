@@ -50,13 +50,13 @@ export function PracticeShell({
   banner,
 }: Props) {
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[#FFF8F4] text-[#2A2438]">
+    <div className="relative min-h-screen overflow-hidden bg-[#FFF5EB] text-[#1F1B15]">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0"
         style={{
           background:
-            "radial-gradient(ellipse 60% 40% at 10% 0%, rgba(255,164,140,0.28), transparent 55%), radial-gradient(ellipse 50% 35% at 90% 10%, rgba(140,198,232,0.22), transparent 50%)",
+            "radial-gradient(ellipse 60% 40% at 10% 0%, rgba(232,93,4,0.14), transparent 55%), radial-gradient(ellipse 50% 35% at 90% 10%, rgba(13,148,136,0.1), transparent 50%)",
         }}
       />
       <div className="relative">
@@ -66,15 +66,15 @@ export function PracticeShell({
             <div className="min-w-0">
               <Link
                 href="/dashboard"
-                className="inline-flex min-h-11 items-center gap-1.5 text-[0.875rem] font-medium text-[#7B6EF6] transition-colors hover:text-[#6758E8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]"
+                className="inline-flex min-h-11 items-center gap-1.5 text-[0.875rem] font-medium text-[#9A3412] transition-colors hover:text-[#E85D04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
               >
                 <ArrowLeft className="h-4 w-4" aria-hidden />
                 Back to path
               </Link>
-              <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#2A2438]">
+              <h1 className="mt-2 text-[1.75rem] font-semibold tracking-tight text-[#1F1B15]">
                 {title}
               </h1>
-              <p className="mt-1 text-[0.875rem] leading-relaxed text-[#6B6478]">
+              <p className="mt-1 text-[0.875rem] leading-relaxed text-[#6B6258]">
                 {subtitle}
               </p>
               {showSteps ? (
@@ -90,8 +90,8 @@ export function PracticeShell({
                 className={cn(
                   "inline-flex min-h-9 items-center rounded-2xl px-3.5 text-[0.8125rem] font-semibold",
                   readyToComplete
-                    ? "bg-[#FF8A6B] text-white shadow-[0_8px_20px_rgba(255,138,107,0.28)]"
-                    : "bg-white text-[#6B6478] ring-1 ring-[#2A2438]/06",
+                    ? "bg-[#2F9E44] text-white shadow-[0_8px_20px_-8px_rgba(47,158,68,0.55)]"
+                    : "bg-white text-[#6B6258] ring-1 ring-[#E9D7C9]",
                 )}
               >
                 Mastery {masteryPct}%
@@ -102,16 +102,16 @@ export function PracticeShell({
           {banner}
 
           {loading ? (
-            <div className="flex items-center justify-center gap-2 py-20 text-[0.875rem] text-[#6B6478]">
-              <Loader2 className="h-5 w-5 animate-spin" aria-hidden />
+            <div className="flex items-center justify-center gap-2 py-20 text-[0.875rem] text-[#6B6258]">
+              <Loader2 className="h-5 w-5 animate-spin text-[#E85D04]" aria-hidden />
               {loadingLabel ?? "Loading…"}
             </div>
           ) : phase === "learn" ? (
             <div className="grid gap-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(280px,1fr)] lg:items-start">
               <div className="min-w-0 space-y-3">
-                <div className="rounded-[1.75rem] bg-white p-5 shadow-[0_12px_40px_rgba(42,36,56,0.06)] ring-1 ring-[#2A2438]/06 sm:p-7">
+                <div className="rounded-[2rem] border border-[#E9D7C9] bg-white/80 p-5 shadow-[0_24px_60px_-40px_rgba(31,27,21,0.45)] sm:p-7">
                   {lessonTitle ? (
-                    <h2 className="text-[1.25rem] font-semibold tracking-tight text-[#2A2438]">
+                    <h2 className="text-[1.25rem] font-semibold tracking-tight text-[#1F1B15]">
                       {lessonTitle}
                     </h2>
                   ) : null}

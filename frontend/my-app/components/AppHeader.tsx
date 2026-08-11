@@ -69,21 +69,21 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
   const navClass = (active: boolean) =>
     cn(
       "inline-flex min-h-11 items-center gap-1.5 rounded-xl px-2 text-[0.875rem] transition-colors",
-      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] focus-visible:ring-offset-2 focus-visible:ring-offset-white",
       active
-        ? "font-semibold text-[#FF8A6B]"
-        : "text-[#8A8396] hover:text-[#2A2438]",
+        ? "font-semibold text-[#E85D04]"
+        : "text-[#8A8178] hover:text-[#1F1B15]",
     );
 
   const showAvatar = isPresetAvatar(avatarUrl);
 
   return (
-    <header className="border-b border-[#2A2438]/06 bg-white/85 backdrop-blur-md">
-      <div className="mx-auto flex max-w-5xl items-center justify-between gap-3 px-5 py-2.5 sm:gap-4 sm:px-6">
+    <header className="sticky top-0 z-50 border-b border-[#E9D7C9]/80 bg-[#FFFAF5]/90 backdrop-blur-md">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3 px-5 py-2.5 sm:gap-4 sm:px-6">
         <Link
           href="/dashboard"
           aria-label="EnglishFlow home"
-          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#FF8A6B] shadow-[0_6px_16px_rgba(255,138,107,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B] focus-visible:ring-offset-2"
+          className="inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#E85D04] shadow-[0_6px_16px_rgba(232,93,4,0.28)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] focus-visible:ring-offset-2"
         >
           <span className="text-[0.875rem] font-bold tracking-tight text-white">
             E
@@ -140,7 +140,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
               aria-controls={menuId}
               aria-label="Open account menu"
               onClick={() => setMenuOpen((open) => !open)}
-              className="flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-2xl bg-[#C4B0E8] text-[0.875rem] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B] focus-visible:ring-offset-2"
+              className="flex h-11 w-11 cursor-pointer items-center justify-center overflow-hidden rounded-2xl bg-[#0D9488] text-[0.875rem] font-semibold text-white transition-opacity hover:opacity-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] focus-visible:ring-offset-2"
             >
               {showAvatar ? (
                 // eslint-disable-next-line @next/next/no-img-element -- preset PNGs from /public
@@ -150,7 +150,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   className="h-full w-full object-cover"
                 />
               ) : (
-                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#8CC6E8] text-[0.75rem] leading-none">
+                <span className="flex h-7 w-7 items-center justify-center rounded-xl bg-[#E85D04] text-[0.75rem] leading-none">
                   {initial}
                 </span>
               )}
@@ -160,13 +160,13 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
               <div
                 id={menuId}
                 role="menu"
-                className="absolute right-0 z-50 mt-2 min-w-[11rem] rounded-2xl bg-white py-1 shadow-[0_12px_32px_rgba(42,36,56,0.1)] ring-1 ring-[#2A2438]/06"
+                className="absolute right-0 z-[100] mt-2 min-w-[11rem] rounded-2xl bg-white py-1 shadow-[0_12px_32px_rgba(31,27,21,0.1)] ring-1 ring-[#E9D7C9]"
               >
                 <Link
                   href="/profile"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#1F1B15] transition-colors hover:bg-[#FFF5EB] focus-visible:bg-[#FFF5EB] focus-visible:outline-none"
                 >
                   Profile
                 </Link>
@@ -174,7 +174,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   href="/profile/settings"
                   role="menuitem"
                   onClick={() => setMenuOpen(false)}
-                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#2A2438] transition-colors hover:bg-[#FFF8F4] focus-visible:bg-[#FFF8F4] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#1F1B15] transition-colors hover:bg-[#FFF5EB] focus-visible:bg-[#FFF5EB] focus-visible:outline-none"
                 >
                   Settings
                 </Link>
@@ -182,7 +182,7 @@ export default function AppHeader({ extraActions }: AppHeaderProps) {
                   type="button"
                   role="menuitem"
                   onClick={handleSignOut}
-                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#C24B3A] transition-colors hover:bg-[#FFF0EE] focus-visible:bg-[#FFF0EE] focus-visible:outline-none"
+                  className="flex min-h-11 w-full cursor-pointer rounded-xl items-center px-4 text-left text-[0.875rem] text-[#BE123C] transition-colors hover:bg-[#FFE4E6] focus-visible:bg-[#FFE4E6] focus-visible:outline-none"
                 >
                   Sign out
                 </button>

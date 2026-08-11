@@ -32,18 +32,18 @@ export function StepChips({
         const className = cn(
           "inline-flex min-h-9 items-center gap-1.5 rounded-2xl px-3 text-[0.75rem] font-medium ring-1",
           step.state === "active" &&
-            "bg-[#FFF0E8] text-[#C45D42] ring-[#FF8A6B]/35",
+            "bg-[#FFE8D6] text-[#9A3412] ring-[#E85D04]/35",
           step.state === "done" &&
-            "bg-[#E8F4FB] text-[#3D7FA0] ring-[#8CC6E8]/40",
+            "bg-[#D8F3DC] text-[#2F9E44] ring-[#2F9E44]/35",
           step.state === "upcoming" &&
-            "bg-white/70 text-[#6B6478] ring-[#2A2438]/06",
+            "bg-white/80 text-[#6B6258] ring-[#E9D7C9]",
           interactive &&
-            "cursor-pointer transition-colors hover:ring-[#FF8A6B]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#FF8A6B]",
+            "cursor-pointer transition-colors hover:ring-[#E85D04]/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]",
           !interactive && step.state !== "active" && "opacity-80",
         );
         const body = (
           <>
-            <span className="tabular-nums text-[#B0A9B8]">{i + 1}.</span>
+            <span className="tabular-nums text-[#A89F94]">{i + 1}.</span>
             {step.label}
             {step.detail ? ` ${step.detail}` : ""}
             {step.state === "done" ? (
