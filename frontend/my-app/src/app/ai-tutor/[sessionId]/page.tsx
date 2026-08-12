@@ -7,8 +7,6 @@ import { ArrowLeft, Lightbulb, Loader2 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
 import TutorFeedbackRail from "@/components/tutor/TutorFeedbackRail";
 import TutorScenarioRail from "@/components/tutor/TutorScenarioRail";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import {
   collectFeedbackItems,
@@ -31,10 +29,10 @@ function MessageBubble({ message }: { message: TutorMessage }) {
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
       <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-3 text-sm leading-relaxed",
+          "max-w-[85%] px-4 py-3 text-[0.9375rem] leading-relaxed",
           isUser
-            ? "bg-primary text-primary-foreground"
-            : "border border-border/60 bg-card text-foreground",
+            ? "rounded-[1.25rem_1.25rem_0.35rem_1.25rem] bg-[#E85D04] text-white shadow-[0_8px_20px_rgba(232,93,4,0.22)]"
+            : "rounded-[1.25rem_1.25rem_1.25rem_0.35rem] bg-white text-[#1F1B15] shadow-[0_6px_18px_rgba(31,27,21,0.06)] ring-1 ring-[#E9D7C9]",
         )}
       >
         <p className="whitespace-pre-wrap">{message.content}</p>
@@ -69,24 +67,28 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
       <button
         type="button"
         aria-label="Close summary"
-        className="absolute inset-0 bg-[#111111]/30"
+        className="absolute inset-0 bg-[#1F1B15]/40 backdrop-blur-[2px]"
         onClick={onClose}
       />
       <div
         role="dialog"
         aria-modal="true"
-        className="relative z-10 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-lg"
+        aria-labelledby="tutor-summary-title"
+        className="relative z-10 max-h-[85vh] w-full max-w-md overflow-y-auto rounded-[1.75rem] bg-white p-6 shadow-[0_24px_60px_rgba(31,27,21,0.18)] ring-1 ring-[#1F1B15]/06 sm:p-7"
       >
-        <h2 className="text-xl font-semibold tracking-tight text-foreground">
+        <h2
+          id="tutor-summary-title"
+          className="text-[1.75rem] font-semibold tracking-tight text-[#1F1B15]"
+        >
           Session summary
         </h2>
 
         {summary.went_well.length > 0 ? (
           <section className="mt-5">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <h3 className="text-[0.9375rem] font-semibold text-[#2F9E44]">
               Went well
-            </p>
-            <ul className="mt-2 space-y-1.5 text-sm text-foreground">
+            </h3>
+            <ul className="mt-2 space-y-1.5 text-[0.9375rem] text-[#1F1B15]">
               {summary.went_well.map((item) => (
                 <li key={item} className="leading-relaxed">
                   {item}
@@ -98,10 +100,10 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
 
         {summary.fix_next.length > 0 ? (
           <section className="mt-5">
-            <p className="text-[11px] uppercase tracking-[0.14em] text-muted-foreground">
+            <h3 className="text-[0.9375rem] font-semibold text-[#9A3412]">
               Fix next
-            </p>
-            <ul className="mt-2 space-y-1.5 text-sm text-foreground">
+            </h3>
+            <ul className="mt-2 space-y-1.5 text-[0.9375rem] text-[#1F1B15]">
               {summary.fix_next.map((item) => (
                 <li key={item} className="leading-relaxed">
                   {item}
@@ -112,7 +114,7 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
         ) : null}
 
         {hasSignals ? (
-          <p className="mt-5 text-sm text-muted-foreground">
+          <p className="mt-5 text-[0.875rem] text-[#6B6258]">
             Some target skills may need more practice — review weak skills on
             your dashboard.
           </p>
@@ -120,13 +122,20 @@ function SummaryModal({ summary, onClose }: SummaryModalProps) {
 
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           {hasSignals ? (
-            <Button asChild type="button" variant="secondary" className="flex-1">
-              <Link href="/dashboard">Review weak skills</Link>
-            </Button>
+            <Link
+              href="/dashboard"
+              className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl bg-[#FFFAF5] text-[0.875rem] font-semibold text-[#9A3412] ring-1 ring-[#E9D7C9] transition-colors hover:bg-[#FFE8D6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
+            >
+              Review weak skills
+            </Link>
           ) : null}
-          <Button type="button" className="flex-1" onClick={onClose}>
+          <button
+            type="button"
+            className="inline-flex h-11 flex-1 items-center justify-center rounded-2xl bg-[#E85D04] text-[0.875rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color] hover:bg-[#D04F00] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] active:scale-[0.98]"
+            onClick={onClose}
+          >
             Back to topics
-          </Button>
+          </button>
         </div>
       </div>
     </div>
@@ -358,175 +367,204 @@ export default function TutorSessionPage() {
   const title = scenario?.title ?? "AI Tutor";
 
   return (
-    <div className="flex min-h-screen flex-col bg-background">
-      <AppHeader />
+    <div className="relative flex min-h-screen flex-col overflow-x-hidden bg-[#FFF5EB] text-[#1F1B15]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 50% 35% at 8% 0%, rgba(232, 93, 4, 0.12), transparent 55%), radial-gradient(ellipse 40% 30% at 92% 8%, rgba(13, 148, 136, 0.1), transparent 50%)",
+        }}
+      />
 
-      <div className="flex min-h-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center gap-3 border-b border-border/60 px-4 py-3 sm:px-6">
-          <Button asChild type="button" variant="ghost" size="sm">
-            <Link href="/ai-tutor">
-              <ArrowLeft className="mr-1.5 h-4 w-4" />
+      <div className="relative flex min-h-screen flex-col">
+        <AppHeader />
+
+        <div className="flex min-h-0 flex-1 flex-col">
+          <header className="flex flex-wrap items-center gap-3 border-b border-[#E9D7C9]/80 bg-[#FFFAF5]/80 px-4 py-3 backdrop-blur-md sm:px-6">
+            <Link
+              href="/ai-tutor"
+              className="inline-flex min-h-11 items-center gap-1.5 rounded-2xl px-3 text-[0.875rem] font-medium text-[#9A3412] transition-colors hover:bg-white hover:text-[#E85D04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]"
+            >
+              <ArrowLeft className="h-4 w-4" aria-hidden />
               Topics
             </Link>
-          </Button>
 
-          {scenario ? (
-            <Badge variant="outline" className="uppercase">
-              {scenario.level}
-            </Badge>
-          ) : null}
-
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-base font-semibold tracking-tight text-foreground sm:text-lg">
-              {title}
-            </h1>
-            <p className="text-xs text-muted-foreground">
-              {session
-                ? isActive
-                  ? "Session in progress"
-                  : "Session completed"
-                : loading
-                  ? "Loading…"
-                  : "—"}
-            </p>
-          </div>
-
-          {isActive ? (
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              disabled={ending || loading}
-              onClick={() => void handleEnd()}
-            >
-              {ending ? "Ending…" : "End session"}
-            </Button>
-          ) : null}
-        </header>
-
-        {loading ? (
-          <div className="flex flex-1 items-center justify-center gap-2 text-muted-foreground">
-            <Loader2 className="h-5 w-5 animate-spin" />
-            Loading session…
-          </div>
-        ) : error && !session ? (
-          <div className="mx-auto w-full max-w-lg px-4 py-8">
-            <div className="rounded-xl border border-destructive/40 bg-destructive/10 px-4 py-6 text-sm text-destructive">
-              {error}
-            </div>
-          </div>
-        ) : (
-          <div className="relative flex min-h-0 flex-1">
             {scenario ? (
-              <TutorScenarioRail scenario={scenario} status={session?.status} />
+              <span className="rounded-2xl bg-[#FFE8D6] px-2.5 py-1 text-[0.75rem] font-semibold text-[#9A3412]">
+                {scenario.level}
+              </span>
             ) : null}
 
-            <section className="flex min-w-0 flex-1 flex-col">
-              <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:px-6">
-                {messages.length === 0 && !isStreaming ? (
-                  <p className="py-8 text-center text-sm text-muted-foreground">
-                    Send your first message to start the conversation.
-                  </p>
-                ) : null}
+            <div className="min-w-0 flex-1">
+              <h1 className="truncate text-[1.25rem] font-semibold tracking-tight text-[#1F1B15]">
+                {title}
+              </h1>
+              <p className="text-[0.8125rem] text-[#8A8178]">
+                {session
+                  ? isActive
+                    ? "Session in progress"
+                    : "Session completed"
+                  : loading
+                    ? "Loading…"
+                    : "—"}
+              </p>
+            </div>
 
-                {messages.map((message) => (
-                  <MessageBubble key={message.id} message={message} />
-                ))}
+            {isActive ? (
+              <button
+                type="button"
+                disabled={ending || loading}
+                aria-busy={ending}
+                onClick={() => void handleEnd()}
+                className="inline-flex min-h-11 items-center rounded-2xl bg-white px-4 text-[0.875rem] font-semibold text-[#BE123C] ring-1 ring-[#E9D7C9] transition-colors hover:bg-[#FFE4E6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#BE123C] disabled:opacity-60"
+              >
+                {ending ? "Ending…" : "End session"}
+              </button>
+            ) : null}
+          </header>
 
-                {streamingText || (sending && !streamingText) ? (
-                  <div className="flex justify-start">
-                    <div className="max-w-[85%] rounded-2xl border border-border/60 bg-card px-4 py-3 text-sm leading-relaxed">
-                      {streamingText ? (
-                        <p className="whitespace-pre-wrap">{streamingText}</p>
-                      ) : (
-                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-
-                <div ref={bottomRef} />
+          {loading ? (
+            <div className="flex flex-1 items-center justify-center gap-2 text-[0.875rem] text-[#8A8178]">
+              <Loader2 className="h-5 w-5 animate-spin text-[#E85D04]" aria-hidden />
+              Loading session…
+            </div>
+          ) : error && !session ? (
+            <div className="mx-auto w-full max-w-lg px-4 py-8">
+              <div
+                className="rounded-2xl bg-[#FFE4E6] px-4 py-6 text-[0.875rem] text-[#BE123C] ring-1 ring-[#BE123C]/25"
+                role="alert"
+              >
+                {error}
               </div>
-
-              {error ? (
-                <p
-                  className="border-t border-border/40 px-4 py-2 text-sm text-destructive sm:px-6"
-                  role="alert"
-                >
-                  {error}
-                </p>
+            </div>
+          ) : (
+            <div className="relative flex min-h-0 flex-1">
+              {scenario ? (
+                <TutorScenarioRail
+                  scenario={scenario}
+                  status={session?.status}
+                />
               ) : null}
 
-              {revealedHint ? (
-                <div className="border-t border-amber-200/60 bg-amber-50/60 px-4 py-2.5 text-sm text-amber-950 sm:px-6 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-                  <span className="font-medium">Hint: </span>
-                  {revealedHint}
+              <section className="flex min-w-0 flex-1 flex-col">
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-4 py-4 sm:px-6">
+                  {messages.length === 0 && !isStreaming ? (
+                    <p className="py-8 text-center text-[0.875rem] text-[#8A8178]">
+                      Send your first message to start the conversation.
+                    </p>
+                  ) : null}
+
+                  {messages.map((message) => (
+                    <MessageBubble key={message.id} message={message} />
+                  ))}
+
+                  {streamingText || (sending && !streamingText) ? (
+                    <div className="flex justify-start">
+                      <div className="max-w-[85%] rounded-[1.25rem_1.25rem_1.25rem_0.35rem] bg-white px-4 py-3 text-[0.9375rem] leading-relaxed shadow-[0_6px_18px_rgba(31,27,21,0.06)] ring-1 ring-[#E9D7C9]">
+                        {streamingText ? (
+                          <p className="whitespace-pre-wrap">{streamingText}</p>
+                        ) : (
+                          <Loader2
+                            className="h-4 w-4 animate-spin text-[#8A8178]"
+                            aria-hidden
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div ref={bottomRef} />
                 </div>
-              ) : null}
 
-              {isActive ? (
-                <form
-                  onSubmit={handleSend}
-                  className="border-t border-border/60 px-4 py-3 sm:px-6"
-                >
-                  <textarea
-                    value={draft}
-                    onChange={(event) => setDraft(event.target.value)}
-                    placeholder="Type your reply…"
-                    rows={3}
-                    disabled={sending}
-                    className="w-full resize-none rounded-xl border border-border bg-background px-4 py-3 text-sm leading-relaxed text-foreground placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 disabled:opacity-60"
-                  />
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Button type="submit" disabled={sending || !draft.trim()}>
-                      {sending ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Sending…
-                        </>
-                      ) : (
-                        "Send"
-                      )}
-                    </Button>
-                    <span
-                      className="inline-flex"
-                      title={latestHint ? undefined : "No hint yet"}
-                    >
-                      <Button
-                        type="button"
-                        variant="outline"
-                        disabled={!latestHint || sending}
-                        onClick={handleHint}
-                      >
-                        <Lightbulb className="mr-1.5 h-4 w-4" />
-                        Hint
-                      </Button>
-                    </span>
-                  </div>
-                </form>
-              ) : (
-                <div className="border-t border-border/60 px-4 py-5 text-center sm:px-6">
-                  <p className="text-sm text-muted-foreground">
-                    This session is no longer active.
-                  </p>
-                  <Button
-                    type="button"
-                    className="mt-3"
-                    onClick={() => router.push("/ai-tutor")}
+                {error ? (
+                  <p
+                    className="border-t border-[#E9D7C9] bg-[#FFE4E6] px-4 py-2.5 text-[0.875rem] text-[#BE123C] sm:px-6"
+                    role="alert"
                   >
-                    Back to topics
-                  </Button>
-                </div>
-              )}
-            </section>
+                    {error}
+                  </p>
+                ) : null}
 
-            <TutorFeedbackRail
-              items={feedbackItems}
-              open={feedbackOpen}
-              onOpenChange={setFeedbackOpen}
-            />
-          </div>
-        )}
+                {revealedHint ? (
+                  <div className="border-t border-[#0D9488]/20 bg-[#CCFBF1]/50 px-4 py-2.5 text-[0.875rem] text-[#115E59] sm:px-6">
+                    <span className="font-semibold">Hint: </span>
+                    {revealedHint}
+                  </div>
+                ) : null}
+
+                {isActive ? (
+                  <form
+                    onSubmit={handleSend}
+                    className="border-t border-[#E9D7C9] bg-[#FFFAF5]/90 px-4 py-3 backdrop-blur-sm sm:px-6"
+                  >
+                    <textarea
+                      value={draft}
+                      onChange={(event) => setDraft(event.target.value)}
+                      placeholder="Type your reply…"
+                      rows={3}
+                      disabled={sending}
+                      className="w-full resize-none rounded-2xl border border-[#E9D7C9] bg-white px-4 py-3 text-[0.9375rem] leading-relaxed text-[#1F1B15] placeholder:text-[#A89F94] focus-visible:border-[#E85D04] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04]/25 disabled:opacity-60"
+                    />
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <button
+                        type="submit"
+                        disabled={sending || !draft.trim()}
+                        aria-busy={sending}
+                        className="inline-flex h-11 items-center rounded-2xl bg-[#E85D04] px-5 text-[0.875rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color] hover:bg-[#D04F00] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] active:scale-[0.98] disabled:opacity-60"
+                      >
+                        {sending ? (
+                          <>
+                            <Loader2
+                              className="mr-2 h-4 w-4 animate-spin"
+                              aria-hidden
+                            />
+                            Sending…
+                          </>
+                        ) : (
+                          "Send"
+                        )}
+                      </button>
+                      <span
+                        className="inline-flex"
+                        title={latestHint ? undefined : "No hint yet"}
+                      >
+                        <button
+                          type="button"
+                          disabled={!latestHint || sending}
+                          onClick={handleHint}
+                          className="inline-flex h-11 items-center rounded-2xl bg-white px-4 text-[0.875rem] font-semibold text-[#115E59] ring-1 ring-[#E9D7C9] transition-colors hover:bg-[#CCFBF1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#0D9488] disabled:opacity-50"
+                        >
+                          <Lightbulb className="mr-1.5 h-4 w-4" aria-hidden />
+                          Hint
+                        </button>
+                      </span>
+                    </div>
+                  </form>
+                ) : (
+                  <div className="border-t border-[#E9D7C9] px-4 py-5 text-center sm:px-6">
+                    <p className="text-[0.875rem] text-[#8A8178]">
+                      This session is no longer active.
+                    </p>
+                    <button
+                      type="button"
+                      className="mt-3 inline-flex h-11 items-center rounded-2xl bg-[#E85D04] px-5 text-[0.875rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color] hover:bg-[#D04F00] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] active:scale-[0.98]"
+                      onClick={() => router.push("/ai-tutor")}
+                    >
+                      Back to topics
+                    </button>
+                  </div>
+                )}
+              </section>
+
+              <TutorFeedbackRail
+                items={feedbackItems}
+                open={feedbackOpen}
+                onOpenChange={setFeedbackOpen}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {summary ? (

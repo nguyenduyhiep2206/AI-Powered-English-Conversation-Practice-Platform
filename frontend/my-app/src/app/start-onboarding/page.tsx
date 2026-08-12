@@ -5,22 +5,48 @@ import { useRouter } from "next/navigation";
 import {
   ArrowRight,
   ClipboardList,
+  Clock3,
+  Loader2,
   PencilLine,
-  Target,
-  Clock,
   Route as RouteIcon,
-  ListChecks,
+  Target,
 } from "lucide-react";
 import AppHeader from "@/components/AppHeader";
-import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
-import { fetchOnboardingStatus, type OnboardingStep } from "@/lib/onboarding-status";
+import { cn } from "@/lib/utils";
+import {
+  fetchOnboardingStatus,
+  type OnboardingStep,
+} from "@/lib/onboarding-status";
+
+const STEPS = [
+  {
+    icon: ClipboardList,
+    title: "Quick survey",
+    desc: "Why you learn, daily study time, and how we place your level",
+    tone: "bg-[#FFE8D6] text-[#E85D04]",
+  },
+  {
+    icon: PencilLine,
+    title: "Placement test",
+    desc: "Optional — only if you want help finding your CEFR level",
+    tone: "bg-[#CCFBF1] text-[#0D9488]",
+  },
+  {
+    icon: Target,
+    title: "Personalized plan",
+    desc: "Get your CEFR level (A1–C1) and a roadmap built around it",
+    tone: "bg-[#D8F3DC] text-[#2F9E44]",
+  },
+] as const;
+
+const LEVELS = ["A1", "A2", "B1", "B2", "C1"] as const;
 
 export default function StartOnboardingPage() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState<OnboardingStep>("survey");
   const [ready, setReady] = useState(false);
   const [navigating, setNavigating] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     fetchOnboardingStatus()
@@ -34,11 +60,12 @@ export default function StartOnboardingPage() {
       })
       .catch((err) => {
         console.error("Failed to load onboarding status:", err);
+        setLoadError(
+          err instanceof Error ? err.message : "Could not load setup status",
+        );
         setReady(true);
       });
   }, [router]);
-
-  if (!ready) return null;
 
   const isContinue = currentStep === "placement";
 
@@ -48,106 +75,159 @@ export default function StartOnboardingPage() {
     router.push(isContinue ? "/onboarding/placement" : "/onboarding");
   }
 
-  // Survey preferences + adaptive placement (6–15 questions) → level + roadmap
-  const steps = [
-    {
-      icon: ClipboardList,
-      title: "Quick Survey",
-      desc: "Why you learn, daily study time, and how we place your level",
-    },
-    {
-      icon: PencilLine,
-      title: "Placement Test",
-      desc: "Adaptive test if you need help finding your CEFR level",
-    },
-    {
-      icon: Target,
-      title: "Personalized Plan",
-      desc: "Get your CEFR level (A1–C1) and a roadmap built around it",
-    },
-  ];
-
   return (
-    <div className="min-h-screen bg-background">
-      <AppHeader />
+    <div className="relative min-h-screen overflow-x-hidden bg-[#FFF5EB] text-[#1F1B15]">
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-0"
+        style={{
+          background:
+            "radial-gradient(ellipse 60% 45% at 12% 10%, rgba(232, 93, 4, 0.16), transparent 58%), radial-gradient(ellipse 50% 40% at 88% 72%, rgba(13, 148, 136, 0.12), transparent 55%), radial-gradient(ellipse 35% 30% at 70% 8%, rgba(47, 158, 68, 0.08), transparent 50%)",
+        }}
+      />
 
-      <main className="mx-auto flex min-h-[calc(100vh-73px)] max-w-3xl items-center px-6 py-12">
-        <div className="w-full overflow-hidden rounded-xl border border-border bg-card">
-          <div className="flex flex-col items-center gap-4 border-b border-border bg-card px-8 py-10 text-center md:px-12 md:py-12">
-            <div className="flex h-16 w-16 items-center justify-center rounded-xl border border-border bg-secondary">
-              <RouteIcon className="h-8 w-8 text-foreground" strokeWidth={2} />
+      <div className="relative flex min-h-screen flex-col">
+        <AppHeader />
+
+        <main className="mx-auto flex w-full max-w-3xl flex-1 items-center px-5 py-10 sm:px-8 md:py-12">
+          {!ready ? (
+            <div className="flex w-full items-center justify-center gap-2 py-20 text-[0.875rem] text-[#8A8178]">
+              <Loader2
+                className="h-5 w-5 animate-spin text-[#E85D04]"
+                aria-hidden
+              />
+              Preparing your setup…
             </div>
-            <Badge variant="outline" className="gap-1.5">
-              <Clock className="h-3 w-3" />
-              ~5–7 min
-            </Badge>
-            <h1 className="max-w-xl text-3xl font-semibold tracking-tight text-foreground md:text-4xl">
-              {isContinue ? "Continue your setup" : "Let's build your personalized English plan!"}
-            </h1>
-            <p className="max-w-lg text-sm text-muted-foreground md:text-base">
-              {isContinue
-                ? "Pick up right where you left off — we saved your progress."
-                : "A short setup — then lessons at the right level (placement only if you need it)."}
-            </p>
-          </div>
-
-          <div className="grid gap-3 px-6 py-8 md:grid-cols-3 md:px-10">
-            {steps.map((s, i) => (
-              <div
-                key={s.title}
-                className="ef-card-hover flex flex-col gap-3 rounded-xl border border-border bg-card/60 p-5"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-primary/30 bg-primary/15 text-primary">
-                    <s.icon className="h-5 w-5" />
+          ) : (
+            <div
+              className="ef-fade-up w-full overflow-hidden rounded-[1.75rem] bg-white shadow-[0_18px_50px_rgba(31,27,21,0.08)] ring-1 ring-[#1F1B15]/06"
+              style={{ ["--ef-index" as string]: 0 }}
+            >
+              <div className="relative border-b border-[#E9D7C9] px-6 py-10 text-center sm:px-10 md:py-12">
+                <div
+                  aria-hidden
+                  className="pointer-events-none absolute inset-0"
+                  style={{
+                    background:
+                      "radial-gradient(ellipse 70% 70% at 50% 0%, rgba(232, 93, 4, 0.12), transparent 60%)",
+                  }}
+                />
+                <div className="relative flex flex-col items-center">
+                  <div className="grid h-14 w-14 place-items-center rounded-2xl bg-[#E85D04] text-white shadow-[0_10px_28px_rgba(232,93,4,0.28)]">
+                    <RouteIcon className="h-7 w-7" aria-hidden />
                   </div>
-                  <span className="text-xs font-medium text-muted-foreground">Step {i + 1}</span>
-                </div>
-                <div>
-                  <h3 className="text-sm font-semibold text-foreground">{s.title}</h3>
-                  <p className="mt-1 text-xs leading-relaxed text-muted-foreground">{s.desc}</p>
+
+                  <span className="mt-5 inline-flex items-center gap-1.5 rounded-2xl bg-[#CCFBF1] px-3 py-1.5 text-[0.75rem] font-semibold text-[#115E59]">
+                    <Clock3 className="h-3.5 w-3.5" aria-hidden />
+                    Survey ~2 min
+                  </span>
+
+                  <h1 className="mt-4 max-w-xl text-[1.75rem] font-semibold tracking-tight text-[#1F1B15] md:text-[2rem]">
+                    {isContinue
+                      ? "Continue your setup"
+                      : "Build your personalized English plan"}
+                  </h1>
+                  <p className="mt-3 max-w-lg text-[0.9375rem] leading-relaxed text-[#6B6258]">
+                    {isContinue
+                      ? "Pick up right where you left off — we saved your progress."
+                      : "A short survey first. A placement test only if you ask us to find your level."}
+                  </p>
                 </div>
               </div>
-            ))}
-          </div>
 
-          {/* CEFR level preview — reflects the placement test scoring table in the spec (§2.3) */}
-          <div className="mx-6 mb-8 flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-border/80 bg-muted/50 px-5 py-4 md:mx-10">
-            <ListChecks className="h-4 w-4 shrink-0 text-muted-foreground" />
-            <span className="text-xs text-muted-foreground">Your result maps to a CEFR level:</span>
-            <div className="flex flex-wrap gap-1.5">
-              {["A1", "A2", "B1", "B2", "C1"].map((lvl) => (
-                <Badge
-                  key={lvl}
-                  variant="outline"
-                  className="border-border/90 px-2 py-0.5 text-[11px] font-medium text-foreground"
+              {loadError ? (
+                <div
+                  className="mx-6 mt-6 rounded-2xl bg-[#FFE4E6] px-4 py-3 text-[0.875rem] text-[#BE123C] ring-1 ring-[#BE123C]/25 md:mx-10"
+                  role="alert"
                 >
-                  {lvl}
-                </Badge>
-              ))}
-            </div>
-          </div>
+                  {loadError}. You can still start setup.
+                </div>
+              ) : null}
 
-          <div className="flex flex-col-reverse justify-center items-center gap-3 border-t border-border px-6 py-6 md:flex-row md:px-10">
-            <Button
-              size="lg"
-              className="w-full md:w-auto"
-              disabled={navigating}
-              aria-busy={navigating}
-              onClick={handleContinue}
-            >
-              {navigating
-                ? isContinue
-                  ? "Opening placement…"
-                  : "Starting…"
-                : isContinue
-                  ? "Continue Placement Test"
-                  : "Start Onboarding"}
-              {!navigating ? <ArrowRight className="ml-1.5 h-4 w-4" /> : null}
-            </Button>
-          </div>
-        </div>
-      </main>
+              <ol className="space-y-0 px-6 py-8 md:px-10">
+                {STEPS.map((step, index) => {
+                  const Icon = step.icon;
+                  const isLast = index === STEPS.length - 1;
+                  return (
+                    <li key={step.title} className="relative flex gap-4">
+                      <div className="flex w-11 shrink-0 flex-col items-center">
+                        <span
+                          className={cn(
+                            "relative z-[1] grid size-11 place-items-center rounded-full",
+                            step.tone,
+                          )}
+                        >
+                          <Icon className="h-5 w-5" aria-hidden />
+                        </span>
+                        {!isLast ? (
+                          <span
+                            aria-hidden
+                            className="mt-1 w-0.5 flex-1 min-h-6 rounded-full bg-[#E9D7C9]"
+                          />
+                        ) : null}
+                      </div>
+                      <div className={cn("min-w-0 pb-6", isLast && "pb-0")}>
+                        <p className="text-[0.8125rem] font-medium text-[#8A8178]">
+                          Step {index + 1}
+                        </p>
+                        <h2 className="mt-0.5 text-[1.25rem] font-semibold tracking-tight text-[#1F1B15]">
+                          {step.title}
+                        </h2>
+                        <p className="mt-1 text-[0.875rem] leading-relaxed text-[#6B6258]">
+                          {step.desc}
+                        </p>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
+
+              <div className="mx-6 mb-8 rounded-2xl bg-[#FFFAF5] px-5 py-4 ring-1 ring-[#E9D7C9] md:mx-10">
+                <p className="text-[0.875rem] font-medium text-[#6B6258]">
+                  Your result maps to a CEFR level
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {LEVELS.map((lvl) => (
+                    <span
+                      key={lvl}
+                      className="rounded-2xl bg-white px-3 py-1 text-[0.8125rem] font-semibold text-[#9A3412] ring-1 ring-[#E9D7C9]"
+                    >
+                      {lvl}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex justify-center border-t border-[#E9D7C9] px-6 py-6 md:px-10">
+                <button
+                  type="button"
+                  disabled={navigating}
+                  aria-busy={navigating}
+                  onClick={handleContinue}
+                  className="inline-flex h-11 w-full items-center justify-center rounded-2xl bg-[#E85D04] px-6 text-[0.9375rem] font-semibold text-white shadow-[0_10px_24px_rgba(232,93,4,0.28)] transition-[transform,background-color,box-shadow] duration-200 hover:bg-[#D04F00] hover:shadow-[0_12px_28px_rgba(232,93,4,0.34)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E85D04] active:scale-[0.98] disabled:opacity-60 md:w-auto"
+                >
+                  {navigating ? (
+                    <>
+                      <Loader2
+                        className="mr-2 h-4 w-4 animate-spin"
+                        aria-hidden
+                      />
+                      {isContinue ? "Opening placement…" : "Starting…"}
+                    </>
+                  ) : (
+                    <>
+                      {isContinue
+                        ? "Continue placement test"
+                        : "Start onboarding"}
+                      <ArrowRight className="ml-1.5 h-4 w-4" aria-hidden />
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

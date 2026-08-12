@@ -1,5 +1,6 @@
 # Local editor / agent tooling
 .agents/
 .cursor/
+.impeccable/
 .superpowers/
 .vscode/
