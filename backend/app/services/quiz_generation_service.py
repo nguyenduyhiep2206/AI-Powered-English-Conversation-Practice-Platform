@@ -34,6 +34,7 @@ from app.services.cefr_descriptors import (
     passage_length_range,
 )
 from app.services.llm_client import chat_json
+from app.services.passage_text import strip_embedded_mcq_choice_blocks
 from app.services.quiz_grade import canonicalize_matching_answer
 from app.services.skill_drill_align import (
     align_score,
@@ -57,6 +58,10 @@ PART 6 (toeic_part=r6) — Text Completion:
 - One short workplace document (email, letter, memo, flyer, or notice), ~80–140 words, grounded in the EXCERPT.
 - Put 3–4 blanks inside the passage, each marked like: ------- (1)  then ------- (2) etc.
 - Start the passage with a document cue line when helpful, e.g. "E-mail" / "Memo" / "Flyer:" and headers (To/From/Subject) for emails.
+- Passage text is the document ONLY. Do NOT append answer choices, (A)/(B)/(C)/(D),
+  lists like "(1)\\noption\\noption", or question stems such as
+  "(1) Which answer choice best completes the blank?" — stems and choices belong
+  only in each item's stem/options fields.
 - For EACH blank, emit a separate question item with the SAME passage text and SAME passage_group.
 - Stem examples: "Choose the best answer for blank (1)." (match blank numbers).
 - Options: mix types across the set — at least one full-sentence insertion, plus word form / vocab / transition / pronoun as appropriate.
@@ -309,7 +314,8 @@ def build_generation_prompt(
         f"For r6/r7 passages, aim about {min_chars}-{max_chars} characters "
         f"(stay within that band). r5 has no passage.",
         "Match official TOEIC RC layout: Part 5 = one sentence + ------- blank; "
-        "Part 6 = document with numbered blanks + options below; "
+        "Part 6 = document with numbered blanks only (choices are separate JSON options, "
+        "never printed under the passage); "
         "Part 7 = notice/email/article + comprehension questions.",
         f"Generate exactly {count} questions matching the blueprint below.",
     ]
@@ -725,7 +731,9 @@ async def _ensure_passage_for_item(
 ) -> int | None:
     """Create or reuse QuizPassageDB for r6/r7 items that share passage_group/text."""
     toeic_part = item.get("toeic_part")
-    passage_text = (item.get("passage") or "").strip()
+    passage_text = strip_embedded_mcq_choice_blocks(
+        (item.get("passage") or "").strip()
+    )
     if toeic_part not in {"r6", "r7"} or not passage_text:
         return None
     group_key = str(item.get("passage_group") or "").strip() or passage_text

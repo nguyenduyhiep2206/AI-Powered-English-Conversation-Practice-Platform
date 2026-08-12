@@ -26,7 +26,7 @@ from app.services.placement.score_map import (
     reading_scale,
     writing_scale,
 )
-from app.services.placement.writing_grader import grade_writing_task
+from app.services.placement.writing_grader import grade_writing_batch
 INSUFFICIENT_BANK_MSG = "Placement bank not ready: not enough published TOEIC items."
 # Back-compat alias for API mapping
 INSUFFICIENT_ADAPTIVE_BANK_MSG = INSUFFICIENT_BANK_MSG
@@ -52,7 +52,7 @@ async def _get_profile(db: AsyncSession, user_id: int) -> UserProfileDB | None:
 async def _require_survey_done(db: AsyncSession, user_id: int) -> UserProfileDB:
     profile = await _get_profile(db, user_id)
     if profile is None or not profile.survey_done:
-        raise PermissionError("Hoàn thành survey trước khi làm placement")
+        raise PermissionError("Complete survey before doing placement")
     return profile
 
 
@@ -110,6 +110,7 @@ def _question_to_item(q: QuizQuestionDB) -> dict[str, Any]:
         "answer": q.answer,
         "skill_id": int(q.skill_id) if q.skill_id else None,
         "cefr_level": cefr,
+        "difficulty": q.difficulty,
         "passage_id": int(q.passage_id) if q.passage_id else None,
         "prompt_words": q.prompt_words,
         "media_url": q.media_url,
@@ -233,7 +234,7 @@ async def _require_owner_attempt(
     if attempt is None or int(attempt.user_id) != user_id:
         raise PermissionError("Placement attempt không hợp lệ")
     if attempt.status != PlacementAttemptStatusEnum.in_progress:
-        raise RuntimeError("Placement attempt không còn in_progress")
+        raise RuntimeError("Placement attempt is not in_progress")
     return attempt
 
 
@@ -274,7 +275,7 @@ async def start_or_resume_session(db: AsyncSession, user_id: int) -> dict[str, A
 
     now = _now()
     if profile.placement_score is not None:
-        raise RuntimeError("Bạn đã hoàn thành placement")
+        raise RuntimeError("You have already completed the placement")
 
     by_part, passages = await _load_published_toeic_pool(db)
     try:
@@ -316,7 +317,7 @@ async def submit_reading_answers(
 ) -> dict[str, Any]:
     attempt = await _require_owner_attempt(db, user_id, attempt_id)
     if attempt.section != "reading":
-        raise ValueError("Không còn ở section Reading")
+        raise ValueError("Not in Reading section")
     snap = dict(attempt.form_snapshot or {})
     answer_key = snap.get("_answers") or {}
     reading_ids = set(snap.get("_reading_ids") or [])
@@ -326,7 +327,7 @@ async def submit_reading_answers(
         qid = int(row["item_id"])
         given = str(row.get("given_answer") or "")
         if qid not in reading_ids:
-            raise ValueError(f"item_id {qid} không thuộc đề Reading")
+            raise ValueError(f"item_id {qid} not in Reading section")
         expected = str(answer_key.get(str(qid)) or "")
         correct = grade_placement_answer(expected, given)
         meta = items.get(str(qid)) or {}
@@ -353,23 +354,15 @@ async def submit_writing_answer(
     item_id: int,
     text: str,
 ) -> dict[str, Any]:
+    """Save writing text only; AI grading runs once on complete_session."""
     attempt = await _require_owner_attempt(db, user_id, attempt_id)
     if attempt.section != "writing":
-        raise ValueError("Chưa vào section Writing")
+        raise ValueError("Not in Writing section")
     snap = dict(attempt.form_snapshot or {})
     writing_ids = set(snap.get("_writing_ids") or [])
     if item_id not in writing_ids:
-        raise ValueError(f"item_id {item_id} không thuộc đề Writing")
+        raise ValueError(f"item_id {item_id} not in Writing section")
     meta = (snap.get("_items") or {}).get(str(item_id)) or {}
-    part = str(meta.get("toeic_part") or "")
-    graded = grade_writing_task(
-        part=part,
-        stem=str(meta.get("stem") or ""),
-        task_brief=meta.get("task_brief"),
-        prompt_words=meta.get("prompt_words"),
-        media_url=meta.get("media_url"),
-        text=text,
-    )
     await _upsert_answer(
         db,
         attempt_id=int(attempt.id),
@@ -378,27 +371,10 @@ async def submit_writing_answer(
         cefr_level=meta.get("cefr_level"),
         given_answer=text,
         is_correct=None,
-        score=float(graded["score"]),
-        ai_scores=graded.get("ai_scores"),
-        ai_feedback=graded.get("ai_feedback"),
+        score=None,
+        ai_scores=None,
+        ai_feedback=None,
     )
-    feedback = list(snap.get("_writing_feedback") or [])
-    entry = {
-        "item_id": item_id,
-        "score": graded["score"],
-        "feedback": graded.get("ai_feedback"),
-    }
-    replaced = False
-    for i, row in enumerate(feedback):
-        if int(row.get("item_id") or -1) == item_id:
-            feedback[i] = entry
-            replaced = True
-            break
-    if not replaced:
-        feedback.append(entry)
-    snap["_writing_feedback"] = feedback
-    attempt.form_snapshot = snap
-    flag_modified(attempt, "form_snapshot")
     await db.commit()
     await db.refresh(attempt)
     return await _public_session(db, attempt)
@@ -407,12 +383,12 @@ async def submit_writing_answer(
 async def advance_section(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
     attempt = await _require_owner_attempt(db, user_id, attempt_id)
     if attempt.section != "reading":
-        raise ValueError("Chỉ advance từ Reading sang Writing")
+        raise ValueError("Can only advance from Reading to Writing")
     snap = attempt.form_snapshot or {}
     reading_ids = list(snap.get("_reading_ids") or [])
     answered = await _answered_question_ids(db, int(attempt.id))
     if not _timed_out(attempt) and not set(reading_ids).issubset(answered):
-        raise ValueError("Chưa trả lời hết Reading (hoặc chờ hết giờ)")
+        raise ValueError("Not all reading questions answered")
 
     await _fill_missing_reading_wrong(db, attempt, reading_ids, answered)
     correct = await _count_reading_correct(db, int(attempt.id))
@@ -428,7 +404,7 @@ async def advance_section(db: AsyncSession, user_id: int, attempt_id: int) -> di
 async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> dict[str, Any]:
     attempt = await _require_owner_attempt(db, user_id, attempt_id)
     if attempt.section == "reading":
-        raise ValueError("Hãy advance sang Writing trước khi complete")
+        raise ValueError("Please advance to Writing before completing")
     if attempt.section == "done":
         return await _public_session(db, attempt, done=True)
 
@@ -436,9 +412,10 @@ async def complete_session(db: AsyncSession, user_id: int, attempt_id: int) -> d
     writing_ids = list(snap.get("_writing_ids") or [])
     answered = await _answered_question_ids(db, int(attempt.id))
     if not _timed_out(attempt) and not set(writing_ids).issubset(answered):
-        raise ValueError("Chưa nộp hết Writing (hoặc chờ hết giờ)")
+        raise ValueError("Not all writing questions submitted")
 
     await _fill_missing_writing_zero(db, attempt, writing_ids, answered)
+    await _grade_all_writing(db, attempt, writing_ids)
     raw = await _sum_writing_scores(db, int(attempt.id), writing_ids)
     attempt.writing_raw = raw
     attempt.writing_scale = writing_scale(raw)
@@ -570,6 +547,77 @@ async def _fill_missing_writing_zero(
             score=0.0,
             ai_feedback="No response submitted.",
         )
+
+
+async def _grade_all_writing(
+    db: AsyncSession,
+    attempt: PlacementAttemptDB,
+    writing_ids: list[int],
+) -> None:
+    """Batch-grade saved writing texts once; fallback per item inside grader."""
+    if not writing_ids:
+        return
+    snap = dict(attempt.form_snapshot or {})
+    items = snap.get("_items") or {}
+    rows = (
+        await db.execute(
+            select(PlacementAttemptAnswerDB).where(
+                PlacementAttemptAnswerDB.attempt_id == int(attempt.id),
+                PlacementAttemptAnswerDB.question_id.in_(writing_ids),
+            )
+        )
+    ).scalars().all()
+    by_qid = {int(r.question_id): r for r in rows}
+
+    tasks: list[dict[str, Any]] = []
+    for qid in writing_ids:
+        meta = items.get(str(qid)) or {}
+        row = by_qid.get(qid)
+        text = (row.given_answer if row else "") or ""
+        tasks.append(
+            {
+                "item_id": qid,
+                "part": str(meta.get("toeic_part") or ""),
+                "stem": str(meta.get("stem") or ""),
+                "task_brief": meta.get("task_brief"),
+                "prompt_words": meta.get("prompt_words"),
+                "text": text,
+            }
+        )
+
+    graded_map = grade_writing_batch(tasks)
+    feedback: list[dict[str, Any]] = []
+    for qid in writing_ids:
+        meta = items.get(str(qid)) or {}
+        graded = graded_map.get(qid) or {
+            "score": 0.0,
+            "ai_scores": {},
+            "ai_feedback": "No response submitted.",
+        }
+        row = by_qid.get(qid)
+        await _upsert_answer(
+            db,
+            attempt_id=int(attempt.id),
+            question_id=qid,
+            skill_id=meta.get("skill_id"),
+            cefr_level=meta.get("cefr_level"),
+            given_answer=(row.given_answer if row else "") or "",
+            is_correct=None,
+            score=float(graded["score"]),
+            ai_scores=graded.get("ai_scores"),
+            ai_feedback=graded.get("ai_feedback"),
+        )
+        feedback.append(
+            {
+                "item_id": qid,
+                "score": graded["score"],
+                "feedback": graded.get("ai_feedback"),
+            }
+        )
+
+    snap["_writing_feedback"] = feedback
+    attempt.form_snapshot = snap
+    flag_modified(attempt, "form_snapshot")
 
 
 async def _count_reading_correct(db: AsyncSession, attempt_id: int) -> int:

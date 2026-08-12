@@ -4,6 +4,7 @@
 **Trạng thái:** Implemented (core path) — review FE polish / admin writing generate hook as follow-up  
 **Thay thế:** `docs/superpowers/specs/2026-07-23-adaptive-placement-design.md` (path placement)  
 **Mở rộng:** AI quiz generation (`quiz_generation_service`) → format Reading TOEIC  
+**Tiếp nối (difficulty strata + validation):** `docs/superpowers/specs/2026-08-11-placement-difficulty-validation-design.md`  
 **Rubric Writing:** [ZIM – Tiêu chí chấm TOEIC Writing](https://zim.vn/tieu-chi-cham-diem-toeic-writing)  
 **Phụ thuộc:** Survey Busuu-style; skill graph + book ingest; roadmap `current_level` + `placement_score`
 
