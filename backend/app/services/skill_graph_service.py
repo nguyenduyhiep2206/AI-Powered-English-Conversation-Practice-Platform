@@ -446,7 +446,8 @@ async def sync_skills_from_preview(
     catalog_skills = await load_catalog_skills(db, book.cefr_level)
     if not catalog_skills:
         raise ValueError(
-            "No catalog skills for this CEFR level — run: python -m app.seeds.cefr_ladder_a1_a2"
+            "No catalog skills for this CEFR level — run: "
+            "python -m app.seeds.core_inventory_catalog --wipe"
         )
 
     mappings, llm_used = await _resolve_attach_mappings(

@@ -72,8 +72,9 @@ Breaking note: generate defaults to `skill_drill` (not TOEIC). Use `mode=toeic` 
 After catalog seed, map skills into can-do units:
 
 ```bash
-python -m app.seeds.cefr_ladder_a1_a2
-python -m app.seeds.theme_units_a1_a2
+python -m app.seeds.core_inventory_catalog --wipe
+# optional / outdated vs new catalog slugs:
+# python -m app.seeds.theme_units_a1_a2
 ```
 
 Roadmap weeks expose `theme_unit_*` fields; the learner dashboard groups by unit and shows a light weak-skills review hub.

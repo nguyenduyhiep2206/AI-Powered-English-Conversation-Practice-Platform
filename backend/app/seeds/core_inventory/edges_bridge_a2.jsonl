@@ -1,0 +1,15 @@
+{"from_slug": "past_simple", "to_slug": "past_simple_a2", "relation": "prerequisite"}
+{"from_slug": "going_to", "to_slug": "going_to_a2", "relation": "prerequisite"}
+{"from_slug": "comparatives_superlatives", "to_slug": "adjectives_comparative_a2", "relation": "prerequisite"}
+{"from_slug": "directions", "to_slug": "directions_a2", "relation": "prerequisite"}
+{"from_slug": "can_cant", "to_slug": "modals_can_could_a2", "relation": "prerequisite"}
+{"from_slug": "present_continuous", "to_slug": "present_continuous_future", "relation": "prerequisite"}
+{"from_slug": "questions_basic", "to_slug": "questions_a2", "relation": "prerequisite"}
+{"from_slug": "describing_habits_routines", "to_slug": "describing_habits_routines_a2", "relation": "prerequisite"}
+{"from_slug": "vocab_holidays", "to_slug": "vocab_holidays_a2", "relation": "prerequisite"}
+{"from_slug": "imperatives", "to_slug": "imperatives_a2", "relation": "prerequisite"}
+{"from_slug": "vocab_food_drink", "to_slug": "vocab_food_drink_a2", "relation": "prerequisite"}
+{"from_slug": "vocab_hobbies_leisure", "to_slug": "vocab_hobbies_leisure_a2", "relation": "prerequisite"}
+{"from_slug": "adverbs_frequency", "to_slug": "adverbs_frequency_a2", "relation": "prerequisite"}
+{"from_slug": "vocab_town_shops", "to_slug": "vocab_town_shops_a2", "relation": "prerequisite"}
+{"from_slug": "vocab_work_jobs", "to_slug": "vocab_work_jobs_a2", "relation": "prerequisite"}

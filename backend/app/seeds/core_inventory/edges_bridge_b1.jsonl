@@ -1,0 +1,14 @@
+{"from_slug": "present_perfect_basic", "to_slug": "present_perfect_b1", "relation": "prerequisite"}
+{"from_slug": "past_continuous", "to_slug": "past_continuous_b1", "relation": "prerequisite"}
+{"from_slug": "zero_first_conditional", "to_slug": "conditionals_2nd_3rd", "relation": "prerequisite"}
+{"from_slug": "describing_past_experiences", "to_slug": "describing_experiences_events", "relation": "prerequisite"}
+{"from_slug": "phrasal_verbs_common", "to_slug": "phrasal_verbs_extended", "relation": "prerequisite"}
+{"from_slug": "linkers_sequential_past", "to_slug": "linkers_sequential_past_b1", "relation": "prerequisite"}
+{"from_slug": "modals_have_to", "to_slug": "modals_must_have_to", "relation": "prerequisite"}
+{"from_slug": "going_to_vs_will", "to_slug": "will_going_to_prediction", "relation": "prerequisite"}
+{"from_slug": "past_simple_a2", "to_slug": "past_simple_b1", "relation": "prerequisite"}
+{"from_slug": "vocab_education", "to_slug": "vocab_education_b1", "relation": "prerequisite"}
+{"from_slug": "wh_questions_past", "to_slug": "wh_questions_past_b1", "relation": "prerequisite"}
+{"from_slug": "describing_places", "to_slug": "describing_places_b1", "relation": "prerequisite"}
+{"from_slug": "vocab_travel_services", "to_slug": "vocab_travel_services_b1", "relation": "prerequisite"}
+{"from_slug": "vocab_town_shops_a2", "to_slug": "vocab_town_shops_b1", "relation": "prerequisite"}
